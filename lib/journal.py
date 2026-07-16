@@ -8,9 +8,24 @@ from pathlib import Path
 from lib.helpers import BASE_DIR, ensure_dir, load_config
 
 
-GENERATED_DIR = BASE_DIR / "generated"
-JOURNAL_DIR = BASE_DIR / "journal"
-INCLUDE_DIR = BASE_DIR / "include"
+# ─── Directory accessors (multi-company aware) ───────────────────────────────
+
+def get_generated_dir():
+    """Return the generated/ directory for the active company."""
+    from lib.helpers import get_company_dir
+    return get_company_dir() / 'generated'
+
+
+def get_journal_dir():
+    """Return the journal/ directory for the active company."""
+    from lib.helpers import get_company_dir
+    return get_company_dir() / 'journal'
+
+
+def get_include_dir():
+    """Return the include/ directory for the active company."""
+    from lib.helpers import get_company_dir
+    return get_company_dir() / 'include'
 
 
 # ─── Tag management ──────────────────────────────────────────────────────────
@@ -21,12 +36,13 @@ def _tag_enabled(key):
     If the tags: section is missing from config, all tags are enabled.
     If the section exists, a tag is enabled if its key is True or absent.
     """
-    from lib.helpers import CONFIG_FILE
+    from lib.helpers import get_config_file
     import yaml
-    if not CONFIG_FILE.exists():
+    config_file = get_config_file()
+    if not config_file.exists():
         return True
     try:
-        with open(CONFIG_FILE) as f:
+        with open(config_file) as f:
             config = yaml.safe_load(f) or {}
     except Exception:
         return True
@@ -141,15 +157,18 @@ def format_entry(date, description, postings, tags=None):
 def ensure_year_structure(year):
     """Create year directories and aggregator if they don't exist."""
     year_str = str(year)
+    generated_dir = get_generated_dir()
+    journal_dir = get_journal_dir()
+    include_dir = get_include_dir()
 
     # Create directories
-    ensure_dir(GENERATED_DIR / year_str)
-    ensure_dir(JOURNAL_DIR / year_str)
+    ensure_dir(generated_dir / year_str)
+    ensure_dir(journal_dir / year_str)
 
     # Create year aggregator in include/ if missing
-    year_include = INCLUDE_DIR / f"{year_str}.journal"
+    year_include = include_dir / f"{year_str}.journal"
     if not year_include.exists():
-        ensure_dir(INCLUDE_DIR)
+        ensure_dir(include_dir)
         content = (
             f"; Year {year_str} — managed by 'pair' tool\n"
             f"\n"
@@ -172,13 +191,13 @@ def ensure_year_structure(year):
 
         # Create empty user journals so includes don't error
         for name in ('opening', 'adjustments'):
-            jpath = JOURNAL_DIR / year_str / f"{name}.journal"
+            jpath = journal_dir / year_str / f"{name}.journal"
             if not jpath.exists():
                 write_journal_atomic(jpath, f"; {name.title()} entries for {year_str}\n\n")
 
         # Create empty generated journals so includes don't error
         for name in ('amortization', 'loan-payments', 'expenses', 'assets', 'payroll', 'revenue'):
-            gpath = GENERATED_DIR / year_str / f"{name}.journal"
+            gpath = generated_dir / year_str / f"{name}.journal"
             if not gpath.exists():
                 write_journal_atomic(gpath, "")
 
@@ -188,12 +207,13 @@ def ensure_year_structure(year):
 
 def update_company_journal():
     """Rebuild include/company.journal from existing year files."""
-    ensure_dir(INCLUDE_DIR)
-    company_journal = INCLUDE_DIR / "company.journal"
+    include_dir = get_include_dir()
+    ensure_dir(include_dir)
+    company_journal = include_dir / "company.journal"
 
     # Find all year includes
     years = sorted([
-        f.stem for f in INCLUDE_DIR.glob("*.journal")
+        f.stem for f in include_dir.glob("*.journal")
         if f.stem.isdigit()
     ])
 

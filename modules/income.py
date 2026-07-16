@@ -8,7 +8,7 @@ from lib.helpers import (
     validate_date, validate_positive_number, parse_global_flags
 )
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, GENERATED_DIR
+    format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 INCOME_TYPES = ['interest', 'grant', 'gain', 'insurance', 'other']
@@ -118,7 +118,7 @@ def cmd_add(flags, args):
 
     year = income_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "income.journal"
+    journal_path = get_generated_dir() / year / "income.journal"
     append_journal(journal_path, entry)
 
     if not flags.get('quiet'):

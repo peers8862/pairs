@@ -6,7 +6,7 @@ from pathlib import Path
 
 from lib.helpers import BASE_DIR, parse_global_flags
 from lib.yaml_store import list_entities, load_entity
-from lib.journal import GENERATED_DIR
+from lib.journal import get_generated_dir
 
 
 SEARCH_MODULES = [
@@ -112,10 +112,10 @@ def _search_journals(query):
     results = []
     query_lower = query.lower()
 
-    if not GENERATED_DIR.exists():
+    if not get_generated_dir().exists():
         return results
 
-    for journal_file in sorted(GENERATED_DIR.rglob("*.journal")):
+    for journal_file in sorted(get_generated_dir().rglob("*.journal")):
         try:
             lines = journal_file.read_text().splitlines()
         except (OSError, UnicodeDecodeError):
@@ -135,7 +135,8 @@ def _search_journals(query):
                     })
 
     # Also search manual journal files
-    journal_dir = BASE_DIR / "journal"
+    from lib.helpers import get_company_dir
+    journal_dir = get_company_dir() / "journal"
     if journal_dir.exists():
         for journal_file in sorted(journal_dir.rglob("*.journal")):
             try:

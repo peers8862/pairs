@@ -8,7 +8,7 @@ from lib.helpers import (
     validate_date, validate_positive_number, parse_global_flags
 )
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, GENERATED_DIR
+    format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 TO_ACCOUNT_OPTIONS = {
@@ -106,7 +106,7 @@ def cmd_transfer(flags, args):
 
     year = transfer_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "transfers.journal"
+    journal_path = get_generated_dir() / year / "transfers.journal"
     append_journal(journal_path, entry)
 
     if not flags.get('quiet'):

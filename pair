@@ -29,9 +29,10 @@ MODULE_MAP = {
     'income': 'modules.income',
     'transfer': 'modules.transfer',
     'division': 'modules.division',
+    'company': 'modules.company',
 }
 
-CORE_COMMANDS = ['init', 'generate', 'worth', 'journal', 'year', 'status', 'where', 'pairs', 'config', 'entry']
+CORE_COMMANDS = ['init', 'generate', 'worth', 'journal', 'year', 'status', 'where', 'pairs', 'config', 'entry', 'switch']
 
 
 def main():
@@ -90,6 +91,10 @@ def main():
     elif command == 'config':
         from modules.config import cmd_config
         cmd_config(sys.argv[2:])
+    # Switch active company (shortcut for 'company use')
+    elif command == 'switch':
+        from modules.company import cmd_use
+        cmd_use(sys.argv[2:])
     # Module dispatch
     elif command in MODULE_MAP:
         module = __import__(MODULE_MAP[command], fromlist=['dispatch'])
@@ -103,11 +108,14 @@ def main():
 def print_usage():
     print("""pair — business accounting on hledger
 
+  Supports multiple companies and holding structures.
+  Each company gets its own directory under companies/<slug>/.
+
   pair                      Interactive entry from any accounting pair
   pair --help               This help
 
 Core commands:
-  init                      First-time setup
+  init                      First-time setup (creates first company)
   config                    View/edit configuration
   generate                  Regenerate journals from YAML
   worth                     Net worth report
@@ -116,6 +124,13 @@ Core commands:
   entry                     Interactive entry (same as bare 'pair')
   status                    System status and pending items
   where <query>             Find entities and entries
+
+Company management:
+  company                   Show active company
+  company list              List all companies
+  company add               Add a new company
+  company use <slug>        Switch active company
+  switch <slug>             Switch active company (shortcut)
 
 Modules:
   asset add|list|show|edit|dispose|amort|writedown|summary

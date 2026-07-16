@@ -17,7 +17,7 @@ from lib.helpers import (
 )
 from lib.journal import (
     format_entry, generated_header, write_journal_atomic, append_journal,
-    ensure_year_structure, GENERATED_DIR, JOURNAL_DIR, INCLUDE_DIR
+    ensure_year_structure, get_generated_dir, get_journal_dir, get_include_dir
 )
 
 
@@ -1283,7 +1283,7 @@ def cmd_defer(flags, args):
 
     year = defer_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "revenue.journal"
+    journal_path = get_generated_dir() / year / "revenue.journal"
     append_journal(journal_path, entry)
 
     print(f"  Journal entry written to generated/{year}/revenue.journal")
@@ -1368,7 +1368,7 @@ def cmd_recognize(flags, args):
 
     year = recognize_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "revenue.journal"
+    journal_path = get_generated_dir() / year / "revenue.journal"
     append_journal(journal_path, entry)
 
     new_remaining = remaining - amount_val

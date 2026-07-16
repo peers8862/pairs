@@ -6,7 +6,7 @@ from pathlib import Path
 
 from lib.helpers import BASE_DIR, parse_global_flags
 from lib.yaml_store import list_entities, load_entity
-from lib.journal import INCLUDE_DIR, GENERATED_DIR, JOURNAL_DIR
+from lib.journal import get_include_dir, get_generated_dir, get_journal_dir
 
 
 def cmd_status(args):
@@ -39,7 +39,7 @@ Shows:
 
 def _show_include_chain():
     """Check include chain health."""
-    company_journal = INCLUDE_DIR / "company.journal"
+    company_journal = get_include_dir() / "company.journal"
 
     print("  Include Chain")
     print("  " + "─" * 50)
@@ -54,7 +54,7 @@ def _show_include_chain():
 
     # List year files
     year_files = sorted([
-        f for f in INCLUDE_DIR.glob("*.journal")
+        f for f in get_include_dir().glob("*.journal")
         if f.stem.isdigit()
     ])
 
@@ -65,7 +65,7 @@ def _show_include_chain():
         print(f"    (no year files found)")
 
     # Check accounts.journal
-    accounts_file = INCLUDE_DIR / "accounts.journal"
+    accounts_file = get_include_dir() / "accounts.journal"
     if accounts_file.exists():
         print(f"  ✓ include/accounts.journal exists")
     else:
@@ -105,7 +105,7 @@ def _show_pending_amortization():
         # Check if amortization journal has an entry for current period
         amort_current = False
         year_str = str(today.year)
-        amort_file = GENERATED_DIR / year_str / "amortization.journal"
+        amort_file = get_generated_dir() / year_str / "amortization.journal"
         if amort_file.exists():
             content = amort_file.read_text()
             # Look for this asset's entry in the current period
@@ -201,9 +201,9 @@ def _show_entity_counts():
 
     # Count generated year directories
     gen_years = sorted([
-        d.name for d in GENERATED_DIR.iterdir()
+        d.name for d in get_generated_dir().iterdir()
         if d.is_dir() and d.name.isdigit()
-    ]) if GENERATED_DIR.exists() else []
+    ]) if get_generated_dir().exists() else []
     print(f"  {'Years':<20} {len(gen_years)} ({', '.join(gen_years) if gen_years else 'none'})")
 
     print()

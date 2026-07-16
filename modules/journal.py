@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from lib.helpers import load_config, expand_path, parse_global_flags, BASE_DIR
-from lib.journal import GENERATED_DIR, INCLUDE_DIR
+from lib.journal import get_generated_dir, get_include_dir
 
 
 def cmd_journal(args):
@@ -122,7 +122,7 @@ def _hledger_journal(config, from_date, to_date, module_filter, with_accounts):
 
     output = ""
     if with_accounts:
-        accounts_file = INCLUDE_DIR / "accounts.journal"
+        accounts_file = get_include_dir() / "accounts.journal"
         if accounts_file.exists():
             output += accounts_file.read_text() + "\n"
 
@@ -140,7 +140,7 @@ def _direct_journal(from_date, to_date, module_filter, with_accounts):
 
     # Include accounts if requested
     if with_accounts:
-        accounts_file = INCLUDE_DIR / "accounts.journal"
+        accounts_file = get_include_dir() / "accounts.journal"
         if accounts_file.exists():
             output_parts.append(accounts_file.read_text())
             output_parts.append("")
@@ -171,7 +171,7 @@ def _direct_journal(from_date, to_date, module_filter, with_accounts):
 
     # Collect entries
     for year in range(start_year, end_year + 1):
-        year_dir = GENERATED_DIR / str(year)
+        year_dir = get_generated_dir() / str(year)
         if not year_dir.exists():
             continue
 

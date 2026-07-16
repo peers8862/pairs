@@ -10,7 +10,7 @@ from lib.helpers import (
     validate_date, validate_positive_number, parse_global_flags, BASE_DIR
 )
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, GENERATED_DIR
+    format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -180,7 +180,7 @@ def cmd_add(flags, args):
     # Write to journal
     year = expense_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "expenses.journal"
+    journal_path = get_generated_dir() / year / "expenses.journal"
     append_journal(journal_path, entry)
 
     if not flags.get('quiet'):
@@ -216,7 +216,7 @@ def cmd_list(flags, args):
 
     entries = []
     for year in years:
-        journal_path = GENERATED_DIR / year / "expenses.journal"
+        journal_path = get_generated_dir() / year / "expenses.journal"
         if journal_path.exists():
             entries.extend(_parse_expense_journal(journal_path, period_filter, category_filter, division_filter))
 
