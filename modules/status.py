@@ -1,4 +1,4 @@
-"""company status — show include chain status and pending items."""
+"""pair status — show include chain status and pending items."""
 
 import sys
 from datetime import date, datetime
@@ -25,7 +25,7 @@ def cmd_status(args):
 
 
 def print_help():
-    print("""company status — show include chain and pending items
+    print("""pair status — show include chain and pending items
 
 Shows:
   - Include chain status (company.journal, year files)
@@ -48,7 +48,7 @@ def _show_include_chain():
         print(f"  ✓ include/company.journal exists")
     else:
         print(f"  ✗ include/company.journal MISSING")
-        print(f"    Run 'company generate' to create it.")
+        print(f"    Run 'pair generate' to create it.")
         print()
         return
 
@@ -120,7 +120,7 @@ def _show_pending_amortization():
         print("  " + "─" * 50)
         for name in pending:
             print(f"  ⚠ {name}")
-        print(f"\n    Run 'company asset amort' to generate entries.")
+        print(f"\n    Run 'pair asset amort' to generate entries.")
         print()
 
 
@@ -176,7 +176,7 @@ def _show_pending_payments():
         print("  " + "─" * 50)
         for name, reason in pending:
             print(f"  ⚠ {name} — {reason}")
-        print(f"\n    Run 'company liability pay <slug>' to record payments.")
+        print(f"\n    Run 'pair liability pay <slug>' to record payments.")
         print()
 
 

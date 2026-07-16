@@ -1,4 +1,4 @@
-"""company contact — client, vendor, employee, and lender management."""
+"""pair contact — client, vendor, employee, and lender management."""
 
 import sys
 
@@ -44,7 +44,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company contact — contact management
+    print("""pair contact — contact management
 
 Actions:
   add                 Add a new contact
@@ -60,7 +60,7 @@ Roles: client, vendor, employee, lender, entity
 """)
 
 
-# ─── company contact add ─────────────────────────────────────────────────────
+# ─── pair contact add ─────────────────────────────────────────────────────
 
 def cmd_add(flags, args):
     """Add a new contact."""
@@ -104,7 +104,7 @@ def cmd_add(flags, args):
     }
 
     if company:
-        contact_data['company'] = company
+        contact_data['pair'] = company
     if email:
         contact_data['email'] = email
     if phone:
@@ -120,7 +120,7 @@ def cmd_add(flags, args):
     if role == 'entity':
         print("\nBilling identity details:")
         config = load_config()
-        currency = config.get('company', {}).get('currency', 'CAD')
+        currency = config.get('pair', {}).get('currency', 'CAD')
 
         bn = prompt("Business number (optional)", required=False)
         tax = prompt("Default tax %", default="13")
@@ -145,7 +145,7 @@ def cmd_add(flags, args):
     print(f"\n  Saved: contacts/{slug}.yaml")
 
 
-# ─── company contact list ────────────────────────────────────────────────────
+# ─── pair contact list ────────────────────────────────────────────────────
 
 def cmd_list(flags, args):
     """List all contacts."""
@@ -156,7 +156,7 @@ def cmd_list(flags, args):
 
     slugs = list_entities(MODULE)
     if not slugs:
-        print("No contacts recorded. Use 'company contact add' to start.")
+        print("No contacts recorded. Use 'pair contact add' to start.")
         return
 
     print(f"\n{'Name':<30} {'Role':<10} {'Company':<20} {'Email':<25}")
@@ -172,18 +172,18 @@ def cmd_list(flags, args):
 
         count += 1
         print(f"{contact['name']:<30} {contact.get('role', ''):<10} "
-              f"{contact.get('company', ''):<20} {contact.get('email', ''):<25}")
+              f"{contact.get('pair', ''):<20} {contact.get('email', ''):<25}")
 
     print(f"\n  {count} contact(s)")
     print()
 
 
-# ─── company contact show ────────────────────────────────────────────────────
+# ─── pair contact show ────────────────────────────────────────────────────
 
 def cmd_show(flags, args):
     """Show details for a specific contact."""
     if not args:
-        print("Usage: company contact show <slug>")
+        print("Usage: pair contact show <slug>")
         sys.exit(1)
 
     slug = args[0]
@@ -196,8 +196,8 @@ def cmd_show(flags, args):
     print(f"  {'─' * 50}")
     print(f"  Slug:           {slug}")
     print(f"  Role:           {contact.get('role', 'N/A')}")
-    if contact.get('company'):
-        print(f"  Company:        {contact['company']}")
+    if contact.get('pair'):
+        print(f"  Company:        {contact['pair']}")
     if contact.get('email'):
         print(f"  Email:          {contact['email']}")
     if contact.get('phone'):
@@ -262,12 +262,12 @@ def _show_references(slug):
             print(f"    {ref}")
 
 
-# ─── company contact edit ────────────────────────────────────────────────────
+# ─── pair contact edit ────────────────────────────────────────────────────
 
 def cmd_edit(flags, args):
     """Edit a contact interactively."""
     if not args:
-        print("Usage: company contact edit <slug>")
+        print("Usage: pair contact edit <slug>")
         sys.exit(1)
 
     slug = args[0]
@@ -281,7 +281,7 @@ def cmd_edit(flags, args):
 
     contact['name'] = prompt("Name", default=contact['name'])
     contact['role'] = prompt_choice("Role", ROLES, default=contact.get('role'))
-    contact['company'] = prompt("Company", default=contact.get('company', ''),
+    contact['pair'] = prompt("Company", default=contact.get('pair', ''),
                                 required=False) or None
     contact['email'] = prompt("Email", default=contact.get('email', ''),
                               required=False) or None
@@ -302,12 +302,12 @@ def cmd_edit(flags, args):
     print(f"\n  Updated: contacts/{slug}.yaml")
 
 
-# ─── company contact remove ──────────────────────────────────────────────────
+# ─── pair contact remove ──────────────────────────────────────────────────
 
 def cmd_remove(flags, args):
     """Remove a contact."""
     if not args:
-        print("Usage: company contact remove <slug>")
+        print("Usage: pair contact remove <slug>")
         sys.exit(1)
 
     slug = args[0]

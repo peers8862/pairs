@@ -21,12 +21,12 @@ hledger is the single source of truth for all financial state. The tool generate
 
 - User records an asset with: cost, date acquired, useful life (months), salvage value, method (straight-line or declining balance)
 - Tool generates monthly/annual amortization journal entries: `Expenses:Amortization` / `Assets:Accumulated Amortization:*`
-- A `company asset amort` command regenerates or extends amortization entries
-- Net book value = Cost − Accumulated Amortization (visible in `company worth`)
+- A `pair asset amort` command regenerates or extends amortization entries
+- Net book value = Cost − Accumulated Amortization (visible in `pair worth`)
 
 ## Net worth view
 
-- `company worth` runs `hledger bs` filtered to the company's accounts
+- `pair worth` runs `hledger bs` filtered to the company's accounts
 - Shows: total assets (fixed + current), total liabilities, equity/net worth
 - Optionally shows breakdown by category and change over time
 
@@ -71,7 +71,7 @@ Keep the consult billing features intact as the `revenue` / `invoice` module —
 
 1. Assets + amortization
 2. Liabilities
-3. Net worth reporting (`company worth`)
+3. Net worth reporting (`pair worth`)
 4. Expenses
 5. Contacts
 6. Contracts

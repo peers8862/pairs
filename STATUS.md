@@ -12,7 +12,7 @@
 
 ## Modules
 
-### Asset (`company asset`)
+### Asset (`pair asset`)
 - [BUILT] `add` — interactive + --batch, auto-slug, division prompt, payment method (cash/financed)
 - [BUILT] `list` — table with totals, --all (disposed), --category, --division, --sort (name/cost/nbv/date), --detail (expanded columns), --format csv
 - [BUILT] `summary` — aggregate by category (count, total cost, total NBV)
@@ -24,7 +24,7 @@
 - [BUILT] `writedown <slug>` — partial impairment without full disposal (pair 0010)
 - [BUILT] Declining balance rate: warns if >1, rejects if >100, offers conversion
 
-### Liability (`company liability`)
+### Liability (`pair liability`)
 - [BUILT] `add` — interactive, auto PMT calculation, all loan types (loan/lease/credit-line/payable)
 - [BUILT] `list` — with remaining balance, --all, --type filter
 - [BUILT] `show <slug>` — details, payments made, total interest, remaining balance
@@ -32,7 +32,7 @@
 - [BUILT] `payments` — bulk generate scheduled entries, --through, --liability
 - [BUILT] `reclassify <slug>` — move between liability accounts (pair 1100)
 
-### Worth (`company worth`)
+### Worth (`pair worth`)
 - [BUILT] Default report — current/fixed assets, liabilities (long/short term), net equity
 - [BUILT] `--detail` — cost/amort/NBV columns for fixed assets
 - [BUILT] `--period <date>` — point-in-time snapshot
@@ -41,7 +41,7 @@
 - [BUILT] `--raw` — pass-through to hledger bs
 - [BUILT] Hybrid: computes from YAML + queries hledger for current assets when available
 
-### Revenue (`company revenue`)
+### Revenue (`pair revenue`)
 - [BUILT] `project add` / `project list` — billing project management
 - [BUILT] `rate <project>` — update rate for a project
 - [BUILT] `log` / `log --batch` / `log edit` — time entry management
@@ -55,69 +55,69 @@
 - [BUILT] `recognize <slug>` — manually draw down deferred revenue, track remaining
 - [BUILT] `deferred` — list all deferred items with balances
 
-### Expense (`company expense`)
+### Expense (`pair expense`)
 - [BUILT] `add` — interactive + --batch, category selection, bank/credit-card, --division
 - [BUILT] `list` — with --period (YYYY, YYYY-MM, YYYY-QN), --category, --division
 
-### Income (`company income`)
+### Income (`pair income`)
 - [BUILT] `add` — non-operating income (interest, grants, gains, insurance, other), pair 0110/0111
 
-### Transfer (`company transfer`)
+### Transfer (`pair transfer`)
 - [BUILT] Interactive asset-to-asset move (bank-to-bank, petty cash), pair 1011
 
-### Contact (`company contact`)
+### Contact (`pair contact`)
 - [BUILT] `add` — interactive, auto-slug, all roles (client/vendor/employee/lender/entity)
 - [BUILT] `list` — with --role filter, count
 - [BUILT] `show <slug>` — full details + cross-reference tracking (which assets/liabilities/contracts reference this contact)
 - [BUILT] `edit <slug>` — interactive field editing
 - [BUILT] `remove <slug>` — with reference warning and confirmation
 
-### Contract (`company contract`)
+### Contract (`pair contract`)
 - [BUILT] `add` — interactive, parties, renewal terms, linked assets/liabilities
 - [BUILT] `list` — with --status, --type, --expiring N (days), expiry warnings (⚠/✗)
 - [BUILT] `show <slug>` — full details, party resolution, days until expiry
 - [BUILT] `edit <slug>` — interactive field editing
 
-### Equity (`company equity`)
+### Equity (`pair equity`)
 - [BUILT] `invest` — owner puts cash in (pair 1001)
 - [BUILT] `draw` — owner takes cash out (pair 1001 reversed)
 - [BUILT] `convert` — convert liability to equity / debt-for-equity swap (pair 1010)
 
-### Tax (`company tax`)
+### Tax (`pair tax`)
 - [BUILT] `summary` — HST collected vs paid, net owing, period-aware (--period, --year)
 - [BUILT] `remit` — record remittance payment to CRA
 
-### Recurring (`company recurring`)
+### Recurring (`pair recurring`)
 - [BUILT] `add` — define entry with frequency (monthly/quarterly/annual/biweekly), accounts, pair code
 - [BUILT] `list` — show all with last generated date
 - [BUILT] `generate` — fill in missing occurrences through a date, --entry, --through, --dry-run
 - [BUILT] `remove <slug>` — delete definition (generated entries preserved)
 
-### Budget (`company budget`)
+### Budget (`pair budget`)
 - [BUILT] `set` — set monthly budget per account per year
 - [BUILT] `vs` — compare actual vs budget for a period, variance with warnings
 
-### Payroll (`company payroll`)
+### Payroll (`pair payroll`)
 - [BUILT] `run` — contractor (simple) or employee (with deductions: CPP, EI, tax)
 - [BUILT] `list` — show pay runs for a year
 
-### Division (`company division`)
+### Division (`pair division`)
 - [BUILT] `list` — show configured divisions with entity counts across modules
 
-### Year (`company year`)
+### Year (`pair year`)
 - [BUILT] `new <YYYY>` — scaffold directories, includes, empty journals
 - [BUILT] `close <YYYY>` — generate closing entries (zero income/expense into retained earnings, pair 1101)
 
 ## Core Commands
 
-- [BUILT] `company init` — first-time setup, creates config, dirs, account chart, journal file if missing
-- [BUILT] `company config` — view current config, prompt to edit (name, currency, divisions, tags, style)
-- [BUILT] `company generate` — regenerate all generated journals from YAML, --module, --year, --dry-run
-- [BUILT] `company journal` — synthesized output for any period, --from/--to, --year, --module, --output, --with-accounts
-- [BUILT] `company status` — include chain health, pending amortization/payments, entity counts
-- [BUILT] `company where <query>` — search YAML filenames/content and journal entries
-- [BUILT] `company pairs` — BitLedger reference table (wide 3-column + grouped), --normal, --reversals, --edge, <number> drill-down
-- [BUILT] `company pair` — interactive entry creation from any of 14 pairs, direction choice, smart account defaults, preview
+- [BUILT] `pair init` — first-time setup, creates config, dirs, account chart, journal file if missing
+- [BUILT] `pair config` — view current config, prompt to edit (name, currency, divisions, tags, style)
+- [BUILT] `pair generate` — regenerate all generated journals from YAML, --module, --year, --dry-run
+- [BUILT] `pair journal` — synthesized output for any period, --from/--to, --year, --module, --output, --with-accounts
+- [BUILT] `pair status` — include chain health, pending amortization/payments, entity counts
+- [BUILT] `pair where <query>` — search YAML filenames/content and journal entries
+- [BUILT] `pair pairs` — BitLedger reference table (wide 3-column + grouped), --normal, --reversals, --edge, <number> drill-down
+- [BUILT] `pair entry` — interactive entry creation from any of 14 pairs, direction choice, smart account defaults, preview
 
 ## BitLedger Pair Coverage
 
@@ -161,14 +161,14 @@
 
 - [PENDING] Inventory/COGS module — stock quantities, cost layering (FIFO/LIFO/average), purchase costing, sales reducing inventory. Deferred: complex domain, only needed for product businesses.
 - [PENDING] Bank reconciliation CSV import — the module structure exists but does not do CSV/OFX import or statement matching. Significant feature for future phase.
-- [PENDING] Narrow terminal fallback for `company pairs` wide table — currently assumes wide terminal
+- [PENDING] Narrow terminal fallback for `pair pairs` wide table — currently assumes wide terminal
 - [PENDING] `defaults.last_division` auto-tracking — division prompt works without it, minor convenience
 
 ## Planning / Future
 
-- [PLANNING] `company asset transfer <slug> --to <division>` — move asset between divisions
+- [PLANNING] `pair asset transfer <slug> --to <division>` — move asset between divisions
 - [PLANNING] Division-level P&L reporting — income statement per division
-- [PLANNING] `company revenue receive` — quick cash receipt without full invoice (for style: simple)
+- [PLANNING] `pair revenue receive` — quick cash receipt without full invoice (for style: simple)
 - [PLANNING] Multi-currency worth report with conversion flags (--cost, --value=now)
 - [PLANNING] `company report` — customizable report builder wrapping hledger queries
 - [PLANNING] Migration script for existing consult users (automate entity → contact conversion)

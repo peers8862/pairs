@@ -1,4 +1,4 @@
-"""company tax — tax remittance tracking and summaries."""
+"""pair tax — tax remittance tracking and summaries."""
 
 import sys
 import subprocess
@@ -36,7 +36,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company tax — tax remittance tracking
+    print("""pair tax — tax remittance tracking
 
 Actions:
   summary             Show tax collected vs paid for a period
@@ -53,12 +53,12 @@ Flags for 'remit':
 """)
 
 
-# ─── company tax summary ─────────────────────────────────────────────────────
+# ─── pair tax summary ─────────────────────────────────────────────────────
 
 def cmd_summary(flags, args):
     """Show tax collected vs paid summary."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     journal_file = config.get('journal_file')
 
     # Parse period
@@ -84,7 +84,7 @@ def cmd_summary(flags, args):
         print(f"\n  Tax Summary — {period or year_only}")
         print(f"  {'─' * 50}")
         print(f"  (Requires hledger and configured journal for full summary)")
-        print(f"  Run 'company init' to set up journal path.")
+        print(f"  Run 'pair init' to set up journal path.")
         print()
 
 
@@ -123,7 +123,7 @@ def _hledger_tax_summary(config, period, currency):
     print()
 
     if net_owing > 0:
-        print(f"  Use 'company tax remit' to record payment to CRA.")
+        print(f"  Use 'pair tax remit' to record payment to CRA.")
     elif net_owing < 0:
         print(f"  You have a refund of {currency} {abs(net_owing):,.2f} to claim.")
     else:
@@ -131,12 +131,12 @@ def _hledger_tax_summary(config, period, currency):
     print()
 
 
-# ─── company tax remit ───────────────────────────────────────────────────────
+# ─── pair tax remit ───────────────────────────────────────────────────────
 
 def cmd_remit(flags, args):
     """Record a tax remittance payment."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
 
     # Parse args

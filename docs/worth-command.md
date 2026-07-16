@@ -1,9 +1,9 @@
-# `company worth` — Net Worth Reporting
+# `pair worth` — Net Worth Reporting
 
 ## Default Output
 
 ```
-$ company worth
+$ pair worth
 
 ══════════════════════════════════════════════════════════════
   Company Net Worth — Clairlea Consulting
@@ -86,14 +86,14 @@ NBV = cost + accumulated (where accumulated is stored negative) = 80000 + (-2000
 ### `--period <date>`
 Net worth as of a specific date:
 ```bash
-company worth --period 2026-06-30
+pair worth --period 2026-06-30
 ```
 Passes `-e 2026-07-01` to hledger (exclusive end date).
 
 ### `--monthly`
 Period-over-period change:
 ```
-$ company worth --monthly
+$ pair worth --monthly
 
   Net Worth — Monthly Change (2026)
 
@@ -116,19 +116,19 @@ Same as monthly but grouped by quarter/year.
 ### `--detail`
 Full account tree instead of summary:
 ```bash
-company worth --detail
+pair worth --detail
 ```
 
 ### `--raw`
 Pass-through to `hledger bs`:
 ```bash
-company worth --raw   # → hledger bs -f <journal>
+pair worth --raw   # → hledger bs -f <journal>
 ```
 
 ### `--cost` / `--value=now`
 Multi-currency conversion (passed to hledger):
 ```bash
-company worth --value=now    # convert all to default currency at today's rate
+pair worth --value=now    # convert all to default currency at today's rate
 ```
 
 ## Liability Classification

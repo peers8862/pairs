@@ -1,4 +1,4 @@
-"""Configuration viewer and editor for hledger-company."""
+"""Configuration viewer and editor for pair."""
 
 import sys
 import yaml
@@ -37,7 +37,7 @@ def _print_config(config):
     print("══════════════════════════════════════════════════════════════")
     print()
 
-    company = config.get("company", {})
+    company = config.get("pair", {})
     print(f"  Company name:     {company.get('name', '—')}")
     print(f"  Slug:             {company.get('slug', '—')}")
     print(f"  Currency:         {company.get('currency', '—')}")
@@ -86,7 +86,7 @@ def _edit_config(config):
     print("\nEditing configuration (press Enter to keep current value):\n")
 
     # Company name
-    company = config.setdefault("company", {})
+    company = config.setdefault("pair", {})
     company["name"] = prompt(
         "Company name",
         default=company.get("name", ""),
@@ -153,14 +153,14 @@ def _edit_config(config):
 # ─── Command entry point ─────────────────────────────────────────────────────
 
 def cmd_config(args):
-    """Handle 'company config' command.
+    """Handle 'pair config' command.
 
     With no args: display config and offer to edit.
     """
     flags, remaining = parse_global_flags(args)
 
     if flags["help"]:
-        print("Usage: company config")
+        print("Usage: pair config")
         print()
         print("View and edit project configuration.")
         print()

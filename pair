@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""company - business accounting on hledger."""
+"""pair - business accounting on hledger, organized by accounting pairs."""
 
 import sys
 import os
@@ -31,13 +31,22 @@ MODULE_MAP = {
     'division': 'modules.division',
 }
 
-CORE_COMMANDS = ['init', 'generate', 'worth', 'journal', 'year', 'status', 'where', 'pair', 'pairs', 'config']
+CORE_COMMANDS = ['init', 'generate', 'worth', 'journal', 'year', 'status', 'where', 'pairs', 'config', 'entry']
 
 
 def main():
+    # If invoked as 'pairs' (symlink), show reference table
+    invoked_as = os.path.basename(sys.argv[0])
+    if invoked_as == 'pairs':
+        from modules.pairs import cmd_pairs
+        cmd_pairs(sys.argv[1:])
+        return
+
     if len(sys.argv) < 2:
-        print_usage()
-        sys.exit(0)
+        # No args = launch interactive pair entry
+        from modules.pairs import cmd_pair
+        cmd_pair([])
+        return
 
     command = sys.argv[1]
 
@@ -69,11 +78,12 @@ def main():
     elif command == 'worth':
         from modules.worth import dispatch
         dispatch(sys.argv[2:])
-    # Pairs reference and pair entry
+    # Pairs reference table
     elif command == 'pairs':
         from modules.pairs import cmd_pairs
         cmd_pairs(sys.argv[2:])
-    elif command == 'pair':
+    # Explicit entry command (alias for no-arg behavior)
+    elif command == 'entry':
         from modules.pairs import cmd_pair
         cmd_pair(sys.argv[2:])
     # Config
@@ -86,39 +96,43 @@ def main():
         module.dispatch(sys.argv[2:])
     else:
         print(f"Unknown command: {command}")
-        print("Run 'company --help' for usage.")
+        print("Run 'pair --help' for usage.")
         sys.exit(1)
 
 
 def print_usage():
-    print("""company — business accounting on hledger
+    print("""pair — business accounting on hledger
+
+  pair                      Interactive entry from any accounting pair
+  pair --help               This help
 
 Core commands:
-  init                    First-time setup
-  config                  View/edit configuration
-  generate                Regenerate journals from YAML
-  worth                   Net worth report
-  journal                 Synthesized journal for any period
-  pairs                   BitLedger pair reference (14 relationships)
-  pair                    Create an entry from any accounting pair
-  status                  Show include chain and pending items
-  where <query>           Find where entries/files live
+  init                      First-time setup
+  config                    View/edit configuration
+  generate                  Regenerate journals from YAML
+  worth                     Net worth report
+  journal                   Synthesized journal for any period
+  pairs                     BitLedger pair reference table
+  entry                     Interactive entry (same as bare 'pair')
+  status                    System status and pending items
+  where <query>             Find entities and entries
 
 Modules:
-  asset add|list|summary|show|edit|dispose|amort
-  liability add|list|show|pay|payments
+  asset add|list|show|edit|dispose|amort|writedown|summary
+  liability add|list|show|pay|payments|reclassify
   expense add|list
-  income add
-  transfer
+  income add                Non-operating income
+  transfer                  Asset-to-asset moves
   revenue project|log|invoice|paid|outstanding|status|export|undo|rate|defer|recognize|deferred
-  division list
   contact add|list|show|edit|remove
   contract add|list|show|edit
   payroll run|list
-  equity invest|draw
+  equity invest|draw|convert
+  division list             Show divisions with counts
   tax summary|remit
   recurring add|list|generate
   budget set|vs
+  year new|close
 
 Global flags:
   --help          Show help for any command
@@ -127,7 +141,7 @@ Global flags:
   --dry-run       Preview without writing
   --date DATE     Override today's date (YYYY-MM-DD)
 
-Use 'company <command> --help' for details.
+Use 'pair <command> --help' for details.
 """)
 
 

@@ -1,4 +1,4 @@
-"""company where — find where entries/files live."""
+"""pair where — find where entries/files live."""
 
 import sys
 import re
@@ -57,9 +57,9 @@ def cmd_where(args):
 
 
 def print_help():
-    print("""company where — find where entries/files live
+    print("""pair where — find where entries/files live
 
-Usage: company where <query>
+Usage: pair where <query>
 
 Searches across:
   - YAML filenames in assets/, liabilities/, contacts/, contracts/

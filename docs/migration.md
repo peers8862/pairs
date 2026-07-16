@@ -4,22 +4,22 @@
 
 | consult command | hledger-company command | Status | Changes |
 |---|---|---|---|
-| `consult init` | `company init` | Rework | Broader scope: sets up all module dirs, account chart, include chain |
-| `consult entity add` | `company contact add --role entity` | Rename + Rework | Entities become contacts with `role: entity` + `billing:` section |
-| `consult entity list` | `company contact list --role entity` | Rename | Filter by role |
-| `consult entity edit <slug>` | `company contact edit <slug>` | Rename | Broader schema |
-| `consult project new` | `company revenue project add` | Rename | Direct port |
-| `consult project list` | `company revenue project list` | Rename | Direct port |
-| `consult rate <project>` | `company revenue rate <project>` | Rename | Direct port |
-| `consult log` | `company revenue log` | Rename | Direct port |
-| `consult log --batch` | `company revenue log --batch` | Rename | Direct port |
-| `consult log edit` | `company revenue log edit` | Rename | Direct port |
-| `consult status` | `company revenue status` | Rename | Direct port |
-| `consult invoice` | `company revenue invoice` | Minor rework | Journal path may change; invoices keep own dir |
-| `consult paid` | `company revenue paid` | Minor rework | Same as invoice |
-| `consult outstanding` | `company revenue outstanding` | Rename | Direct port |
-| `consult export` | `company revenue export` | Rename | Direct port |
-| `consult undo` | `company revenue undo` | Rename | Direct port |
+| `consult init` | `pair init` | Rework | Broader scope: sets up all module dirs, account chart, include chain |
+| `consult entity add` | `pair contact add --role entity` | Rename + Rework | Entities become contacts with `role: entity` + `billing:` section |
+| `consult entity list` | `pair contact list --role entity` | Rename | Filter by role |
+| `consult entity edit <slug>` | `pair contact edit <slug>` | Rename | Broader schema |
+| `consult project new` | `pair revenue project add` | Rename | Direct port |
+| `consult project list` | `pair revenue project list` | Rename | Direct port |
+| `consult rate <project>` | `pair revenue rate <project>` | Rename | Direct port |
+| `consult log` | `pair revenue log` | Rename | Direct port |
+| `consult log --batch` | `pair revenue log --batch` | Rename | Direct port |
+| `consult log edit` | `pair revenue log edit` | Rename | Direct port |
+| `consult status` | `pair revenue status` | Rename | Direct port |
+| `consult invoice` | `pair revenue invoice` | Minor rework | Journal path may change; invoices keep own dir |
+| `consult paid` | `pair revenue paid` | Minor rework | Same as invoice |
+| `consult outstanding` | `pair revenue outstanding` | Rename | Direct port |
+| `consult export` | `pair revenue export` | Rename | Direct port |
+| `consult undo` | `pair revenue undo` | Rename | Direct port |
 
 ## Helper Function Reusability
 
@@ -111,12 +111,12 @@ def list_entities(directory):
 4. Update config schema (add defaults for new modules)
 5. Existing journals and PDFs untouched
 
-**User impact:** Replace `consult` with `company revenue` in aliases/scripts. Everything else is additive.
+**User impact:** Replace `consult` with `pair revenue` in aliases/scripts. Everything else is additive.
 
 ## Build Order
 
 1. Extract helpers → `lib/`
-2. Wrap existing consult commands under `company revenue *`
+2. Wrap existing consult commands under `pair revenue *`
 3. Build asset module (add, list, show, amort, dispose)
 4. Build liability module (add, list, pay, payments)
 5. Build worth module (net worth reporting)

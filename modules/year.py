@@ -1,4 +1,4 @@
-"""company year — fiscal year management."""
+"""pair year — fiscal year management."""
 
 import sys
 import subprocess
@@ -38,7 +38,7 @@ def cmd_year(args):
 
 
 def print_help():
-    print("""company year — fiscal year management
+    print("""pair year — fiscal year management
 
 Actions:
   new <YYYY>          Scaffold a new fiscal year
@@ -49,12 +49,12 @@ Retained Earnings. Written to journal/<year>/closing.journal.
 """)
 
 
-# ─── company year new ────────────────────────────────────────────────────────
+# ─── pair year new ────────────────────────────────────────────────────────
 
 def cmd_new(flags, args):
     """Scaffold a new fiscal year."""
     if not args:
-        print("Usage: company year new <YYYY>")
+        print("Usage: pair year new <YYYY>")
         sys.exit(1)
 
     year = int(args[0])
@@ -62,7 +62,7 @@ def cmd_new(flags, args):
     print(f"Year {year} scaffolded.")
 
 
-# ─── company year close ──────────────────────────────────────────────────────
+# ─── pair year close ──────────────────────────────────────────────────────
 
 def cmd_close(flags, args):
     """Generate closing entries that zero out income/expenses into Retained Earnings.
@@ -71,7 +71,7 @@ def cmd_close(flags, args):
     writes closing entries to journal/<year>/closing.journal. Pair 1101.
     """
     if not args:
-        print("Usage: company year close <YYYY>")
+        print("Usage: pair year close <YYYY>")
         sys.exit(1)
 
     year_str = args[0]
@@ -82,7 +82,7 @@ def cmd_close(flags, args):
         sys.exit(1)
 
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     close_date = f"{year}-12-31"
 
     print(f"\nClosing year {year}...")

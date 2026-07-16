@@ -1,4 +1,4 @@
-"""company income — non-operating income transactions."""
+"""pair income — non-operating income transactions."""
 
 import sys
 from datetime import date
@@ -34,7 +34,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company income — non-operating income
+    print("""pair income — non-operating income
 
 Actions:
   add                 Record non-operating income (interest, grants, gains, etc.)
@@ -49,12 +49,12 @@ Flags:
 """)
 
 
-# ─── company income add ──────────────────────────────────────────────────────
+# ─── pair income add ──────────────────────────────────────────────────────
 
 def cmd_add(flags, args):
     """Record non-operating income."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
 
     # Parse args

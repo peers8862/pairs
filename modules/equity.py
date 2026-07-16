@@ -1,4 +1,4 @@
-"""company equity — owner investment and draw transactions."""
+"""pair equity — owner investment and draw transactions."""
 
 import sys
 from datetime import date
@@ -37,7 +37,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company equity — owner investment and draws
+    print("""pair equity — owner investment and draws
 
 Actions:
   invest              Record owner investing into the business
@@ -51,12 +51,12 @@ Flags:
 """)
 
 
-# ─── company equity invest ───────────────────────────────────────────────────
+# ─── pair equity invest ───────────────────────────────────────────────────
 
 def cmd_invest(flags, args):
     """Record owner investment."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
 
     # Parse args
@@ -100,12 +100,12 @@ def cmd_invest(flags, args):
         print(f"  Written to: generated/{year}/equity.journal")
 
 
-# ─── company equity draw ─────────────────────────────────────────────────────
+# ─── pair equity draw ─────────────────────────────────────────────────────
 
 def cmd_draw(flags, args):
     """Record owner draw."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
 
     # Parse args
@@ -149,7 +149,7 @@ def cmd_draw(flags, args):
         print(f"  Written to: generated/{year}/equity.journal")
 
 
-# ─── company equity convert ──────────────────────────────────────────────────
+# ─── pair equity convert ──────────────────────────────────────────────────
 
 def cmd_convert(flags, args):
     """Convert liability to equity (debt-to-equity conversion).
@@ -157,7 +157,7 @@ def cmd_convert(flags, args):
     Writes: DR Liability, CR Equity. Pair 1010.
     """
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
 
     # Parse args
     liability_slug = None
@@ -178,7 +178,7 @@ def cmd_convert(flags, args):
     if not liability_slug:
         slugs = list_entities("liabilities")
         if not slugs:
-            print("No liabilities found. Add one with 'company liability add'.")
+            print("No liabilities found. Add one with 'pair liability add'.")
             sys.exit(1)
 
         if len(slugs) == 1:

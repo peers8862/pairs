@@ -1,1 +1,1 @@
-# hledger-company shared library
+# pair shared library
