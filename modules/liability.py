@@ -14,7 +14,7 @@ from lib.helpers import (
 from lib.yaml_store import load_entity, save_entity, list_entities, entity_exists
 from lib.journal import (
     format_entry, generated_header, write_journal_atomic, append_journal,
-    ensure_year_structure, GENERATED_DIR
+    ensure_year_structure, get_generated_dir
 )
 
 
@@ -220,7 +220,7 @@ def _write_creation_entry(liab, config):
 
     entry = format_entry(date_str, f"New liability: {name}", postings, tags)
 
-    journal_path = GENERATED_DIR / year / "liabilities.journal"
+    journal_path = get_generated_dir() / year / "liabilities.journal"
     append_journal(journal_path, entry)
 
 
@@ -391,7 +391,7 @@ def cmd_pay(flags, args):
                          f"Payment: {liab['name']} ({payments_made}/{total_payments})",
                          postings, tags)
 
-    journal_path = GENERATED_DIR / year / "loan-payments.journal"
+    journal_path = get_generated_dir() / year / "loan-payments.journal"
     append_journal(journal_path, entry)
 
     # Track payment in YAML
@@ -461,7 +461,7 @@ def cmd_payments(flags, args):
     total_entries = 0
     for year_str, entries in sorted(entries_by_year.items()):
         ensure_year_structure(int(year_str))
-        journal_path = GENERATED_DIR / year_str / "loan-payments.journal"
+        journal_path = get_generated_dir() / year_str / "loan-payments.journal"
         header = generated_header("liabilities/*.yaml", "pair liability payments")
         content = header + "".join(entries)
         write_journal_atomic(journal_path, content)
@@ -702,7 +702,7 @@ def cmd_reclassify(flags, args):
 
     year = reclass_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "loan-payments.journal"
+    journal_path = get_generated_dir() / year / "loan-payments.journal"
     append_journal(journal_path, entry)
 
     # Update YAML account

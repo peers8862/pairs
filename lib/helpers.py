@@ -11,7 +11,57 @@ from decimal import Decimal, ROUND_HALF_UP
 # ─── Paths ───────────────────────────────────────────────────────────────────
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-CONFIG_FILE = BASE_DIR / "config.yaml"
+GLOBAL_CONFIG_FILE = BASE_DIR / 'global.yaml'
+
+
+# ─── Global config (multi-company) ──────────────────────────────────────────
+
+def load_global_config():
+    """Load global.yaml. Returns dict or empty dict if missing."""
+    if not GLOBAL_CONFIG_FILE.exists():
+        return {}
+    with open(GLOBAL_CONFIG_FILE) as f:
+        return yaml.safe_load(f) or {}
+
+
+def save_global_config(data):
+    """Save global.yaml."""
+    with open(GLOBAL_CONFIG_FILE, 'w') as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+
+def get_active_company():
+    """Return the active company slug from global.yaml, or None."""
+    config = load_global_config()
+    return config.get('active')
+
+
+def get_company_dir():
+    """Return Path to active company directory.
+
+    Reads global.yaml to find the active company slug, then returns
+    BASE_DIR / 'companies' / slug. Falls back to BASE_DIR if global.yaml
+    doesn't exist (backward compat during init).
+    """
+    if not GLOBAL_CONFIG_FILE.exists():
+        return BASE_DIR
+    config = load_global_config()
+    active = config.get('active')
+    if not active:
+        return BASE_DIR
+    return BASE_DIR / 'companies' / active
+
+
+# ─── Company config ──────────────────────────────────────────────────────────
+
+def get_config_file():
+    """Return path to active company's config.yaml."""
+    return get_company_dir() / 'config.yaml'
+
+
+# Keep CONFIG_FILE for backward compat in modules that import it directly.
+# This is a module-level reference; prefer get_config_file() for runtime use.
+CONFIG_FILE = None  # Sentinel — use get_config_file() instead
 
 
 # ─── Money ───────────────────────────────────────────────────────────────────
@@ -36,17 +86,20 @@ def ensure_dir(path):
 # ─── Config ──────────────────────────────────────────────────────────────────
 
 def load_config():
-    """Load config.yaml or exit with message."""
-    if not CONFIG_FILE.exists():
-        print("No config.yaml found. Run 'company init' first.")
+    """Load company config.yaml or exit with message."""
+    config_file = get_config_file()
+    if not config_file.exists():
+        print("No config.yaml found. Run 'pair init' first.")
         sys.exit(1)
-    with open(CONFIG_FILE) as f:
+    with open(config_file) as f:
         return yaml.safe_load(f)
 
 
 def save_config(config):
-    """Write config.yaml."""
-    with open(CONFIG_FILE, "w") as f:
+    """Write company config.yaml."""
+    config_file = get_config_file()
+    ensure_dir(config_file.parent)
+    with open(config_file, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
 

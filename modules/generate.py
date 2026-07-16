@@ -7,7 +7,7 @@ from pathlib import Path
 from lib.helpers import BASE_DIR, parse_global_flags, load_config
 from lib.yaml_store import list_entities, load_entity
 from lib.journal import (
-    GENERATED_DIR, ensure_year_structure, update_company_journal,
+    get_generated_dir, ensure_year_structure, update_company_journal,
     generated_header, write_journal_atomic
 )
 
@@ -142,7 +142,7 @@ def _generate_assets(year_filter=None, dry_run=False, quiet=False):
                       f"({len(entries)} entries)")
         else:
             ensure_year_structure(int(year_str))
-            journal_path = GENERATED_DIR / year_str / "amortization.journal"
+            journal_path = get_generated_dir() / year_str / "amortization.journal"
             header = generated_header("assets/*.yaml", "pair generate --module assets")
             content = header + "".join(entries)
             write_journal_atomic(journal_path, content)
@@ -194,7 +194,7 @@ def _generate_liabilities(year_filter=None, dry_run=False, quiet=False):
                       f"({len(entries)} entries)")
         else:
             ensure_year_structure(int(year_str))
-            journal_path = GENERATED_DIR / year_str / "loan-payments.journal"
+            journal_path = get_generated_dir() / year_str / "loan-payments.journal"
             header = generated_header("liabilities/*.yaml",
                                       "pair generate --module liabilities")
             content = header + "".join(entries)

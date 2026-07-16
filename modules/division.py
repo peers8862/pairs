@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from lib.helpers import load_config, parse_global_flags, BASE_DIR
 from lib.yaml_store import list_entities, load_entity
-from lib.journal import GENERATED_DIR
+from lib.journal import get_generated_dir
 
 
 def dispatch(args):
@@ -104,10 +104,10 @@ def _scan_expense_journals():
     """Scan generated expense journals for division tags."""
     division_counts = {}
 
-    if not GENERATED_DIR.exists():
+    if not get_generated_dir().exists():
         return division_counts
 
-    for year_dir in sorted(GENERATED_DIR.iterdir()):
+    for year_dir in sorted(get_generated_dir().iterdir()):
         if not year_dir.is_dir():
             continue
         expenses_file = year_dir / "expenses.journal"

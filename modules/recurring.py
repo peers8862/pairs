@@ -12,7 +12,7 @@ from lib.helpers import (
 )
 from lib.yaml_store import load_entity, save_entity, list_entities, entity_exists
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, GENERATED_DIR
+    format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -220,7 +220,7 @@ def cmd_generate(flags, args):
             if flags.get('dry_run'):
                 print(journal_entry)
             else:
-                journal_path = GENERATED_DIR / year / "recurring.journal"
+                journal_path = get_generated_dir() / year / "recurring.journal"
                 append_journal(journal_path, journal_entry)
 
             count += 1

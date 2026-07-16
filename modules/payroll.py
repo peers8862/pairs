@@ -11,7 +11,7 @@ from lib.helpers import (
 )
 from lib.yaml_store import load_entity, save_entity, list_entities
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, GENERATED_DIR
+    format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -150,7 +150,7 @@ def cmd_run(flags, args):
     # Write
     year = pay_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "payroll.journal"
+    journal_path = get_generated_dir() / year / "payroll.journal"
     append_journal(journal_path, entry)
 
     if not flags.get('quiet'):
@@ -170,7 +170,7 @@ def cmd_list(flags, args):
         if a == '--year' and i + 1 < len(args):
             year = args[i + 1]
 
-    journal_path = GENERATED_DIR / year / "payroll.journal"
+    journal_path = get_generated_dir() / year / "payroll.journal"
     if not journal_path.exists():
         print(f"No payroll entries for {year}.")
         return

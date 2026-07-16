@@ -10,7 +10,7 @@ from lib.helpers import (
     validate_positive_number, expand_path, parse_global_flags
 )
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, GENERATED_DIR
+    format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -180,7 +180,7 @@ def cmd_remit(flags, args):
 
     year = remit_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "tax.journal"
+    journal_path = get_generated_dir() / year / "tax.journal"
     append_journal(journal_path, entry)
 
     if not flags.get('quiet'):

@@ -12,7 +12,7 @@ from lib.helpers import (
 )
 from lib.journal import (
     format_entry, write_journal_atomic, ensure_year_structure,
-    JOURNAL_DIR, GENERATED_DIR
+    get_journal_dir, get_generated_dir
 )
 
 
@@ -142,7 +142,7 @@ def cmd_close(flags, args):
 
     # Write to journal/<year>/closing.journal
     ensure_year_structure(year)
-    closing_path = JOURNAL_DIR / year_str / "closing.journal"
+    closing_path = get_journal_dir() / year_str / "closing.journal"
 
     if flags.get('dry_run'):
         print(f"\n  Would write to: journal/{year_str}/closing.journal")

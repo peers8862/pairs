@@ -8,7 +8,7 @@ from lib.helpers import (
     validate_date, validate_positive_number, parse_global_flags
 )
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, GENERATED_DIR
+    format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 from lib.yaml_store import load_entity, list_entities
 
@@ -91,7 +91,7 @@ def cmd_invest(flags, args):
 
     year = invest_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "equity.journal"
+    journal_path = get_generated_dir() / year / "equity.journal"
     append_journal(journal_path, entry)
 
     if not flags.get('quiet'):
@@ -140,7 +140,7 @@ def cmd_draw(flags, args):
 
     year = draw_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "equity.journal"
+    journal_path = get_generated_dir() / year / "equity.journal"
     append_journal(journal_path, entry)
 
     if not flags.get('quiet'):
@@ -226,7 +226,7 @@ def cmd_convert(flags, args):
 
     year = convert_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "equity.journal"
+    journal_path = get_generated_dir() / year / "equity.journal"
     append_journal(journal_path, entry)
 
     if not flags.get('quiet'):

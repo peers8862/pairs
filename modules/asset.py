@@ -14,7 +14,7 @@ from lib.helpers import (
 from lib.yaml_store import load_entity, save_entity, list_entities, entity_exists
 from lib.journal import (
     format_entry, generated_header, write_journal_atomic, append_journal,
-    ensure_year_structure, GENERATED_DIR
+    ensure_year_structure, get_generated_dir
 )
 
 
@@ -261,7 +261,7 @@ def _write_acquisition_entry(asset, config):
     entry = format_entry(date_str, f"Acquire asset: {name}", postings, tags)
 
     # Append to assets journal for that year
-    journal_path = GENERATED_DIR / year / "assets.journal"
+    journal_path = get_generated_dir() / year / "assets.journal"
     from lib.journal import append_journal
     append_journal(journal_path, entry)
 
@@ -757,7 +757,7 @@ def _write_disposal_entry(asset, config):
                          postings, tags)
 
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "assets.journal"
+    journal_path = get_generated_dir() / year / "assets.journal"
     from lib.journal import append_journal
     append_journal(journal_path, entry)
 
@@ -815,7 +815,7 @@ def cmd_amort(flags, args):
     total_entries = 0
     for year_str, entries in sorted(entries_by_year.items()):
         ensure_year_structure(int(year_str))
-        journal_path = GENERATED_DIR / year_str / "amortization.journal"
+        journal_path = get_generated_dir() / year_str / "amortization.journal"
         header = generated_header("assets/*.yaml", "pair asset amort")
         content = header + "".join(entries)
         write_journal_atomic(journal_path, content)
@@ -1083,7 +1083,7 @@ def cmd_writedown(flags, args):
 
     year = writedown_date[:4]
     ensure_year_structure(int(year))
-    journal_path = GENERATED_DIR / year / "assets.journal"
+    journal_path = get_generated_dir() / year / "assets.journal"
     append_journal(journal_path, entry)
 
     # Update YAML — add writedown record and adjust salvage value
