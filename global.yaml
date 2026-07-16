@@ -1,0 +1,10 @@
+active: babb
+companies:
+- name: Clairlea
+  slug: clairlea
+  currency: CAD
+  journal_file: ~/accounting/companies/clairlea/clairlea-main.journal
+- name: Babb
+  slug: babb
+  currency: CAD
+  journal_file: ~/accounting/companies/babb/babb-main.journal

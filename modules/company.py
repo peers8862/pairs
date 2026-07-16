@@ -135,6 +135,7 @@ def cmd_add():
     })
     config['companies'] = companies
     save_global_config(config)
+    _write_prompt_cache(config['active'])
 
     print(f"\n  Company '{name}' created at companies/{slug}/")
     print(f"  Switch to it with: pair switch {slug}")
@@ -171,6 +172,7 @@ def cmd_use(args):
 
     config['active'] = slug
     save_global_config(config)
+    _write_prompt_cache(slug)
     print(f"Switched to: {found['name']} ({slug})")
 
 
@@ -335,3 +337,12 @@ Usage:
   pair company use <slug>   Switch active company
   pair switch <slug>        Switch active company (shortcut)
 """)
+
+
+def _write_prompt_cache(slug):
+    """Write active company to ~/.pair_prompt for shell PS1 integration."""
+    prompt_file = Path.home() / '.pair_prompt'
+    try:
+        prompt_file.write_text(f"[{slug}] ")
+    except OSError:
+        pass  # non-critical
