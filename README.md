@@ -1,4 +1,4 @@
-# hledger-company
+# Pairs
 
 A command-line business accounting tool built on [hledger](https://hledger.org). Track assets, liabilities, net worth, revenue, expenses, payroll, and more — all in plain text.
 
@@ -28,66 +28,67 @@ All financial data lives in hledger journals. Metadata lives in YAML. One `inclu
 ## Install
 
 ```bash
-git clone <repo-url> hledger-company
-cd hledger-company
-chmod +x company
-ln -s "$(pwd)/company" ~/.local/bin/company
+git clone <repo-url> pair
+cd pair
+chmod +x pair
+ln -s "$(pwd)/pair" ~/.local/bin/pair
+ln -s "$(pwd)/pairs" ~/.local/bin/pairs
 ```
 
 ## Quick start
 
 ```bash
-company init                  # first-time setup
-company asset add             # record a capital asset
-company asset amort           # generate amortization entries
-company liability add         # record a loan or debt
-company worth                 # see your net worth
+pair init                  # first-time setup
+pair asset add             # record a capital asset
+pair asset amort           # generate amortization entries
+pair liability add         # record a loan or debt
+pair worth                 # see your net worth
 ```
 
 ## Commands
 
 ```
-company init                    First-time setup
-company generate                Regenerate journals from YAML
-company config                  View/edit configuration
-company status                  System status and pending items
-company where <query>           Find entities and entries
-company worth                   Net worth report
-company journal                 Synthesized journal for any period
-company pairs                   BitLedger pair reference table
-company pair                    Interactive entry from any pair
+pair init                    First-time setup
+pair generate                Regenerate journals from YAML
+pair config                  View/edit configuration
+pair status                  System status and pending items
+pair where <query>           Find entities and entries
+pair worth                   Net worth report
+pair journal                 Synthesized journal for any period
+pair pairs                   BitLedger pair reference table
+pair entry                    Interactive entry from any pair
 
-company asset add|list|show|edit|dispose|amort|writedown|summary
-company liability add|list|show|pay|payments|reclassify
-company expense add|list
-company income add              Non-operating income
-company transfer                Asset-to-asset moves
-company revenue project|log|invoice|paid|outstanding|status|export|undo|rate|defer|recognize|deferred
-company contact add|list|show|edit|remove
-company contract add|list|show|edit
-company payroll run|list
-company equity invest|draw|convert
-company division list           Show divisions with counts
-company tax summary|remit
-company recurring add|list|generate
-company budget set|vs
-company year new|close
+pair asset add|list|show|edit|dispose|amort|writedown|summary
+pair liability add|list|show|pay|payments|reclassify
+pair expense add|list
+pair income add              Non-operating income
+pair transfer                Asset-to-asset moves
+pair revenue project|log|invoice|paid|outstanding|status|export|undo|rate|defer|recognize|deferred
+pair contact add|list|show|edit|remove
+pair contract add|list|show|edit
+pair payroll run|list
+pair equity invest|draw|convert
+pair division list           Show divisions with counts
+pair tax summary|remit
+pair recurring add|list|generate
+pair budget set|vs
+pair year new|close
 ```
 
-Use `company <command> --help` for details on any command.
+Use `pair <command> --help` for details on any command.
 
 ## How it works
 
 You describe things in YAML (assets, liabilities, contacts, contracts). The tool generates hledger journal entries from that data. hledger gives you reports.
 
 ```
-YAML metadata ──→ company generate ──→ .journal files ──→ hledger reports
+YAML metadata ──→ pair generate ──→ .journal files ──→ hledger reports
    (you edit)         (tool runs)        (tool writes)      (you query)
 ```
 
 Your main hledger journal includes one file:
 ```
-include ~/path/to/hledger-company/include/company.journal
+include ~/path/to/pair/include/company.journal
 ```
 
 That single include pulls in everything — account declarations, all years, all modules.
@@ -95,7 +96,7 @@ That single include pulls in everything — account declarations, all years, all
 ## File structure
 
 ```
-hledger-company/
+pair/
 ├── company                  # CLI
 ├── config.yaml              # settings
 ├── assets/                  # one YAML per capital asset
@@ -117,7 +118,7 @@ hledger-company/
 The headline command:
 
 ```bash
-$ company worth
+$ pair worth
 
 ══════════════════════════════════════════════════════════════
   Company Net Worth — Clairlea Consulting

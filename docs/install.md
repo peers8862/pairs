@@ -10,12 +10,13 @@
 
 ```bash
 cd ~/making/hledger-company
-chmod +x company
+chmod +x pair
 ```
 
 Option A — symlink into PATH:
 ```bash
-ln -s "$(pwd)/company" ~/.local/bin/company
+ln -s "$(pwd)/pair" ~/.local/bin/pair
+ln -s "$(pwd)/pairs" ~/.local/bin/pairs
 ```
 
 Option B — alias in your shell rc:
@@ -26,7 +27,7 @@ alias company='~/making/hledger-company/company'
 ## First run
 
 ```bash
-company init
+pair init
 ```
 
 Follow the prompts. Then add the include line it gives you to your main hledger journal.
@@ -34,17 +35,17 @@ Follow the prompts. Then add the include line it gives you to your main hledger 
 ## Verify
 
 ```bash
-company --help       # see all commands
-company worth        # net worth (will be $0 until you add data)
-company asset add    # record your first asset
+pair --help       # see all commands
+pair worth        # net worth (will be $0 until you add data)
+pair asset add    # record your first asset
 ```
 
 ## Daily use
 
 ```bash
-company asset amort              # extend amortization entries
-company liability payments       # extend loan payment entries
-company expense add              # record an expense
-company revenue log              # log billable time
-company worth                    # check net worth
+pair asset amort              # extend amortization entries
+pair liability payments       # extend loan payment entries
+pair expense add              # record an expense
+pair revenue log              # log billable time
+pair worth                    # check net worth
 ```

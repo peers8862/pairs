@@ -1,4 +1,4 @@
-"""company recurring — recurring entry automation."""
+"""pair recurring — recurring entry automation."""
 
 import sys
 from datetime import date, datetime
@@ -47,7 +47,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company recurring — recurring entry automation
+    print("""pair recurring — recurring entry automation
 
 Actions:
   add                 Define a new recurring entry
@@ -62,12 +62,12 @@ Flags for 'generate':
 """)
 
 
-# ─── company recurring add ───────────────────────────────────────────────────
+# ─── pair recurring add ───────────────────────────────────────────────────
 
 def cmd_add(flags, args):
     """Define a new recurring entry."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
 
     print("Define a recurring entry\n")
@@ -111,16 +111,16 @@ def cmd_add(flags, args):
 
     save_entity(MODULE, slug, entry_data)
     print(f"\n  Saved: recurring/{slug}.yaml")
-    print(f"  Run 'company recurring generate' to produce entries.")
+    print(f"  Run 'pair recurring generate' to produce entries.")
 
 
-# ─── company recurring list ──────────────────────────────────────────────────
+# ─── pair recurring list ──────────────────────────────────────────────────
 
 def cmd_list(flags, args):
     """List all recurring entries."""
     slugs = list_entities(MODULE)
     if not slugs:
-        print("No recurring entries defined. Use 'company recurring add' to start.")
+        print("No recurring entries defined. Use 'pair recurring add' to start.")
         return
 
     print(f"\n{'Name':<30} {'Frequency':<12} {'Amount':>12} {'Last Generated':<16}")
@@ -138,7 +138,7 @@ def cmd_list(flags, args):
     print()
 
 
-# ─── company recurring generate ──────────────────────────────────────────────
+# ─── pair recurring generate ──────────────────────────────────────────────
 
 def cmd_generate(flags, args):
     """Generate pending recurring entries."""
@@ -237,12 +237,12 @@ def cmd_generate(flags, args):
         print(f"\n  Total: {total_generated} recurring entries generated.")
 
 
-# ─── company recurring remove ────────────────────────────────────────────────
+# ─── pair recurring remove ────────────────────────────────────────────────
 
 def cmd_remove(flags, args):
     """Remove a recurring entry definition."""
     if not args:
-        print("Usage: company recurring remove <slug>")
+        print("Usage: pair recurring remove <slug>")
         sys.exit(1)
 
     slug = args[0]

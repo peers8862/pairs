@@ -1,4 +1,4 @@
-"""company worth — net worth reporting."""
+"""pair worth — net worth reporting."""
 
 import sys
 import subprocess
@@ -29,15 +29,15 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company worth — net worth reporting
+    print("""pair worth — net worth reporting
 
 Usage:
-  company worth                     Current net worth
-  company worth --period DATE       Net worth as of a date
-  company worth --monthly           Monthly trend (current year)
-  company worth --quarterly         Quarterly trend
-  company worth --detail            Full account breakdown
-  company worth --raw               Pass through to hledger bs
+  pair worth                     Current net worth
+  pair worth --period DATE       Net worth as of a date
+  pair worth --monthly           Monthly trend (current year)
+  pair worth --quarterly         Quarterly trend
+  pair worth --detail            Full account breakdown
+  pair worth --raw               Pass through to hledger bs
 
 Flags:
   --period <date>     As-of date (YYYY-MM-DD)
@@ -49,13 +49,13 @@ Flags:
 """)
 
 
-# ─── company worth (main report) ────────────────────────────────────────────
+# ─── pair worth (main report) ────────────────────────────────────────────
 
 def cmd_worth(flags, args):
     """Show company net worth."""
     config = load_config()
-    company_name = config.get('company', {}).get('name', 'Company')
-    currency = config.get('company', {}).get('currency', 'CAD')
+    company_name = config.get('pair', {}).get('name', 'Company')
+    currency = config.get('pair', {}).get('currency', 'CAD')
 
     # Parse period/flags from remaining args
     period_end = None
@@ -213,13 +213,13 @@ def cmd_worth(flags, args):
 
 def _show_periodic(config, frequency, period_end):
     """Show net worth trend over time."""
-    company_name = config.get('company', {}).get('name', 'Company')
-    currency = config.get('company', {}).get('currency', 'CAD')
+    company_name = config.get('pair', {}).get('name', 'Company')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     journal_file = config.get('journal_file')
 
     if not journal_file or not _check_hledger():
         print("Periodic reports require hledger and a configured journal file.")
-        print("Run 'company init' to configure, or use 'company worth' for a point-in-time report.")
+        print("Run 'pair init' to configure, or use 'pair worth' for a point-in-time report.")
         return
 
     journal_path = str(expand_path(journal_file))

@@ -1,4 +1,4 @@
-"""company asset — capital asset management with amortization."""
+"""pair asset — capital asset management with amortization."""
 
 import sys
 from datetime import date, datetime
@@ -87,7 +87,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company asset — capital asset management
+    print("""pair asset — capital asset management
 
 Actions:
   add                 Record a new capital asset
@@ -116,12 +116,12 @@ Flags for 'amort':
 """)
 
 
-# ─── company asset add ───────────────────────────────────────────────────────
+# ─── pair asset add ───────────────────────────────────────────────────────
 
 def cmd_add(flags, args):
     """Add a new capital asset."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
 
     print("Record a capital asset\n")
 
@@ -213,7 +213,7 @@ def cmd_add(flags, args):
     _write_acquisition_entry(asset_data, config)
     print(f"  Acquisition entry written to generated/{year}/assets.journal")
 
-    print(f"\n  Run 'company asset amort' to generate amortization entries.")
+    print(f"\n  Run 'pair asset amort' to generate amortization entries.")
 
 
 def _write_acquisition_entry(asset, config):
@@ -266,7 +266,7 @@ def _write_acquisition_entry(asset, config):
     append_journal(journal_path, entry)
 
 
-# ─── company asset list ──────────────────────────────────────────────────────
+# ─── pair asset list ──────────────────────────────────────────────────────
 
 def cmd_list(flags, args):
     """List all assets."""
@@ -287,7 +287,7 @@ def cmd_list(flags, args):
 
     slugs = list_entities(MODULE)
     if not slugs:
-        print("No assets recorded. Use 'company asset add' to start.")
+        print("No assets recorded. Use 'pair asset add' to start.")
         return
 
     # Collect asset data
@@ -416,18 +416,18 @@ def _print_csv(assets, detail):
                   f"{a['cost']:.2f},{a['nbv']:.2f},{a['status']}")
 
 
-# ─── company asset show ──────────────────────────────────────────────────────
+# ─── pair asset show ──────────────────────────────────────────────────────
 
 def cmd_show(flags, args):
     """Show details for a specific asset."""
     if not args:
-        print("Usage: company asset show <slug>")
+        print("Usage: pair asset show <slug>")
         sys.exit(1)
 
     show_schedule = '--schedule' in args
     slug = args[0] if args[0] != '--schedule' else (args[1] if len(args) > 1 else None)
     if not slug:
-        print("Usage: company asset show <slug> [--schedule]")
+        print("Usage: pair asset show <slug> [--schedule]")
         sys.exit(1)
 
     asset = load_entity(MODULE, slug)
@@ -519,12 +519,12 @@ def _print_schedule(asset):
           f"{'':>17} {currency} {cost - accumulated:>11,.2f}")
 
 
-# ─── company asset edit ──────────────────────────────────────────────────────
+# ─── pair asset edit ──────────────────────────────────────────────────────
 
 def cmd_edit(flags, args):
     """Edit asset fields interactively."""
     if not args:
-        print("Usage: company asset edit <slug>")
+        print("Usage: pair asset edit <slug>")
         sys.exit(1)
 
     slug = args[0]
@@ -592,10 +592,10 @@ def cmd_edit(flags, args):
 
     save_entity(MODULE, slug, asset)
     print(f"\n  Updated: assets/{slug}.yaml")
-    print("  Run 'company asset amort' to regenerate amortization entries.")
+    print("  Run 'pair asset amort' to regenerate amortization entries.")
 
 
-# ─── company asset summary ───────────────────────────────────────────────────
+# ─── pair asset summary ───────────────────────────────────────────────────
 
 def cmd_summary(flags, args):
     """Show aggregate asset view by category."""
@@ -658,12 +658,12 @@ def cmd_summary(flags, args):
     print()
 
 
-# ─── company asset dispose ───────────────────────────────────────────────────
+# ─── pair asset dispose ───────────────────────────────────────────────────
 
 def cmd_dispose(flags, args):
     """Record asset disposal."""
     if not args:
-        print("Usage: company asset dispose <slug>")
+        print("Usage: pair asset dispose <slug>")
         sys.exit(1)
 
     slug = args[0]
@@ -762,7 +762,7 @@ def _write_disposal_entry(asset, config):
     append_journal(journal_path, entry)
 
 
-# ─── company asset amort ─────────────────────────────────────────────────────
+# ─── pair asset amort ─────────────────────────────────────────────────────
 
 def cmd_amort(flags, args):
     """Generate amortization entries."""
@@ -816,7 +816,7 @@ def cmd_amort(flags, args):
     for year_str, entries in sorted(entries_by_year.items()):
         ensure_year_structure(int(year_str))
         journal_path = GENERATED_DIR / year_str / "amortization.journal"
-        header = generated_header("assets/*.yaml", "company asset amort")
+        header = generated_header("assets/*.yaml", "pair asset amort")
         content = header + "".join(entries)
         write_journal_atomic(journal_path, content)
         total_entries += len(entries)
@@ -999,7 +999,7 @@ def _remaining_months(asset):
     return max(0, remaining)
 
 
-# ─── company asset writedown ─────────────────────────────────────────────────
+# ─── pair asset writedown ─────────────────────────────────────────────────
 
 def cmd_writedown(flags, args):
     """Record an impairment writedown on an asset.
@@ -1008,7 +1008,7 @@ def cmd_writedown(flags, args):
     Updates YAML with writedown record. Pair 0010.
     """
     if not args:
-        print("Usage: company asset writedown <slug>")
+        print("Usage: pair asset writedown <slug>")
         sys.exit(1)
 
     slug = args[0]

@@ -1,4 +1,4 @@
-"""company generate — regenerate journals from YAML."""
+"""pair generate — regenerate journals from YAML."""
 
 import sys
 from datetime import date
@@ -67,9 +67,9 @@ def cmd_generate(args):
 
 
 def print_help():
-    print("""company generate — regenerate journals from YAML
+    print("""pair generate — regenerate journals from YAML
 
-Usage: company generate [flags]
+Usage: pair generate [flags]
 
 Regenerates all generated journal files from YAML metadata:
   - Amortization entries from assets/*.yaml
@@ -143,7 +143,7 @@ def _generate_assets(year_filter=None, dry_run=False, quiet=False):
         else:
             ensure_year_structure(int(year_str))
             journal_path = GENERATED_DIR / year_str / "amortization.journal"
-            header = generated_header("assets/*.yaml", "company generate --module assets")
+            header = generated_header("assets/*.yaml", "pair generate --module assets")
             content = header + "".join(entries)
             write_journal_atomic(journal_path, content)
             if not quiet:
@@ -196,7 +196,7 @@ def _generate_liabilities(year_filter=None, dry_run=False, quiet=False):
             ensure_year_structure(int(year_str))
             journal_path = GENERATED_DIR / year_str / "loan-payments.journal"
             header = generated_header("liabilities/*.yaml",
-                                      "company generate --module liabilities")
+                                      "pair generate --module liabilities")
             content = header + "".join(entries)
             write_journal_atomic(journal_path, content)
             if not quiet:

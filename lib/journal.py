@@ -1,4 +1,4 @@
-"""Journal file management for hledger-company."""
+"""Journal file management for pair."""
 
 import os
 import tempfile
@@ -151,7 +151,7 @@ def ensure_year_structure(year):
     if not year_include.exists():
         ensure_dir(INCLUDE_DIR)
         content = (
-            f"; Year {year_str} — managed by 'company' tool\n"
+            f"; Year {year_str} — managed by 'pair' tool\n"
             f"\n"
             f"; User-editable journals\n"
             f"include ../journal/{year_str}/opening.journal\n"
@@ -198,8 +198,8 @@ def update_company_journal():
     ])
 
     lines = [
-        "; hledger-company — managed by 'company' tool\n",
-        "; Do not edit manually. Run 'company generate' to rebuild.\n",
+        "; pair — managed by 'pair' tool\n",
+        "; Do not edit manually. Run 'pair generate' to rebuild.\n",
         "\n",
         "include accounts.journal\n",
     ]

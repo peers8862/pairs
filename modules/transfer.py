@@ -1,4 +1,4 @@
-"""company transfer — asset-to-asset moves."""
+"""pair transfer — asset-to-asset moves."""
 
 import sys
 from datetime import date
@@ -30,10 +30,10 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company transfer — asset-to-asset moves
+    print("""pair transfer — asset-to-asset moves
 
 Usage:
-  company transfer              Record an asset-to-asset transfer
+  pair transfer              Record an asset-to-asset transfer
 
 Flags:
   --amount NUM        Amount
@@ -44,12 +44,12 @@ Flags:
 """)
 
 
-# ─── company transfer ────────────────────────────────────────────────────────
+# ─── pair transfer ────────────────────────────────────────────────────────
 
 def cmd_transfer(flags, args):
     """Record asset-to-asset transfer."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
 
     # Parse args

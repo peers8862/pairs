@@ -1,4 +1,4 @@
-"""company pairs / pair — account pair reference and interactive entry creation."""
+"""pair pairs / pair — account pair reference and interactive entry creation."""
 
 import sys
 from datetime import date
@@ -32,9 +32,9 @@ PAIRS = [
         'reversal_long': 'A supplier refund or expense reversal returns value from the expense back to the asset. Credit note applied, returned goods refunded.',
         'edge_long': 'Reclassifying a prepaid asset as an expense when the service period begins. Moving deposits to expense recognition.',
         'scenarios': [
-            {'desc': 'Pay monthly internet bill', 'debit': 'Expenses:Operating:Telecommunications', 'credit': 'Assets:Current:Chequing', 'command': 'company expense add'},
-            {'desc': 'Buy office supplies', 'debit': 'Expenses:Operating:Office Supplies', 'credit': 'Assets:Current:Chequing', 'command': 'company expense add'},
-            {'desc': 'Refund from supplier', 'debit': 'Assets:Current:Chequing', 'credit': 'Expenses:Operating:Office Supplies', 'command': 'company pair (reversal)'},
+            {'desc': 'Pay monthly internet bill', 'debit': 'Expenses:Operating:Telecommunications', 'credit': 'Assets:Current:Chequing', 'command': 'pair expense add'},
+            {'desc': 'Buy office supplies', 'debit': 'Expenses:Operating:Office Supplies', 'credit': 'Assets:Current:Chequing', 'command': 'pair expense add'},
+            {'desc': 'Refund from supplier', 'debit': 'Assets:Current:Chequing', 'credit': 'Expenses:Operating:Office Supplies', 'command': 'pair entry (reversal)'},
         ],
     },
     {
@@ -49,9 +49,9 @@ PAIRS = [
         'reversal_long': 'A credit card dispute won, or a vendor credit applied against an outstanding balance. The liability decreases and the expense is reversed.',
         'edge_long': 'Adjusting an accrued expense estimate at period end. Correcting over/under accruals from prior periods.',
         'scenarios': [
-            {'desc': 'Software subscription on credit card', 'debit': 'Expenses:Operating:Software Subscriptions', 'credit': 'Liabilities:Credit Card', 'command': 'company expense add'},
-            {'desc': 'Accrue wages payable', 'debit': 'Expenses:Operating:Wages', 'credit': 'Liabilities:Wages Payable', 'command': 'company payroll run'},
-            {'desc': 'Credit card dispute refund', 'debit': 'Liabilities:Credit Card', 'credit': 'Expenses:Operating:Software Subscriptions', 'command': 'company pair (reversal)'},
+            {'desc': 'Software subscription on credit card', 'debit': 'Expenses:Operating:Software Subscriptions', 'credit': 'Liabilities:Credit Card', 'command': 'pair expense add'},
+            {'desc': 'Accrue wages payable', 'debit': 'Expenses:Operating:Wages', 'credit': 'Liabilities:Wages Payable', 'command': 'pair payroll run'},
+            {'desc': 'Credit card dispute refund', 'debit': 'Liabilities:Credit Card', 'credit': 'Expenses:Operating:Software Subscriptions', 'command': 'pair entry (reversal)'},
         ],
     },
     {
@@ -66,9 +66,9 @@ PAIRS = [
         'reversal_long': 'Reversing a non-operating expense. Rare in practice — typically a correction of a prior-period amortization error.',
         'edge_long': 'Writing down an asset due to impairment. The asset\'s fair value dropped below book value and must be recognized as a loss.',
         'scenarios': [
-            {'desc': 'Monthly amortization of equipment', 'debit': 'Expenses:Non-Operating:Amortization', 'credit': 'Assets:Fixed:Equipment:Accumulated Amortization', 'command': 'company asset amort'},
-            {'desc': 'Loss on disposal of asset', 'debit': 'Expenses:Non-Operating:Loss on Disposal', 'credit': 'Assets:Fixed:Equipment', 'command': 'company asset dispose'},
-            {'desc': 'Impairment write-down', 'debit': 'Expenses:Non-Operating:Impairment', 'credit': 'Assets:Fixed:Equipment', 'command': 'company pair'},
+            {'desc': 'Monthly amortization of equipment', 'debit': 'Expenses:Non-Operating:Amortization', 'credit': 'Assets:Fixed:Equipment:Accumulated Amortization', 'command': 'pair asset amort'},
+            {'desc': 'Loss on disposal of asset', 'debit': 'Expenses:Non-Operating:Loss on Disposal', 'credit': 'Assets:Fixed:Equipment', 'command': 'pair asset dispose'},
+            {'desc': 'Impairment write-down', 'debit': 'Expenses:Non-Operating:Impairment', 'credit': 'Assets:Fixed:Equipment', 'command': 'pair entry'},
         ],
     },
     {
@@ -83,9 +83,9 @@ PAIRS = [
         'reversal_long': 'Reversing an interest charge — lender error corrected, or early payment reducing accrued interest.',
         'edge_long': 'Penalty charges or late fees accrued against a debt. Recognized as non-operating expense with corresponding liability increase.',
         'scenarios': [
-            {'desc': 'Loan interest accrual', 'debit': 'Expenses:Non-Operating:Interest', 'credit': 'Liabilities:Interest Payable', 'command': 'company liability pay'},
-            {'desc': 'Bank penalty fee accrued', 'debit': 'Expenses:Non-Operating:Penalties', 'credit': 'Liabilities:Bank Loan', 'command': 'company pair'},
-            {'desc': 'Interest overcharge reversed', 'debit': 'Liabilities:Interest Payable', 'credit': 'Expenses:Non-Operating:Interest', 'command': 'company pair (reversal)'},
+            {'desc': 'Loan interest accrual', 'debit': 'Expenses:Non-Operating:Interest', 'credit': 'Liabilities:Interest Payable', 'command': 'pair liability pay'},
+            {'desc': 'Bank penalty fee accrued', 'debit': 'Expenses:Non-Operating:Penalties', 'credit': 'Liabilities:Bank Loan', 'command': 'pair entry'},
+            {'desc': 'Interest overcharge reversed', 'debit': 'Liabilities:Interest Payable', 'credit': 'Expenses:Non-Operating:Interest', 'command': 'pair entry (reversal)'},
         ],
     },
     {
@@ -100,9 +100,9 @@ PAIRS = [
         'reversal_long': 'Issuing a refund to a client. Revenue reversed, asset (cash) reduced. Could be partial or full refund of prior payment.',
         'edge_long': 'Receiving a non-cash asset in exchange for services — barter arrangement where revenue is recognized at fair value of asset received.',
         'scenarios': [
-            {'desc': 'Client pays invoice', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Consulting', 'command': 'company revenue paid'},
-            {'desc': 'Retainer deposit received', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Consulting', 'command': 'company revenue paid'},
-            {'desc': 'Refund to client', 'debit': 'Revenue:Consulting', 'credit': 'Assets:Current:Chequing', 'command': 'company pair (reversal)'},
+            {'desc': 'Client pays invoice', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Consulting', 'command': 'pair revenue paid'},
+            {'desc': 'Retainer deposit received', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Consulting', 'command': 'pair revenue paid'},
+            {'desc': 'Refund to client', 'debit': 'Revenue:Consulting', 'credit': 'Assets:Current:Chequing', 'command': 'pair entry (reversal)'},
         ],
     },
     {
@@ -117,9 +117,9 @@ PAIRS = [
         'reversal_long': 'Reversing previously accrued revenue — client dispute, contract cancellation, or adjustment to prior-period revenue recognition.',
         'edge_long': 'Converting deferred revenue (liability) to earned revenue as service is delivered over time. Subscription or retainer drawdown.',
         'scenarios': [
-            {'desc': 'Recognize deferred revenue', 'debit': 'Liabilities:Deferred Revenue', 'credit': 'Revenue:Consulting', 'command': 'company pair'},
-            {'desc': 'Invoice sent (A/R created)', 'debit': 'Assets:Current:Accounts Receivable', 'credit': 'Revenue:Consulting', 'command': 'company revenue invoice'},
-            {'desc': 'Reverse accrued revenue', 'debit': 'Revenue:Consulting', 'credit': 'Liabilities:Deferred Revenue', 'command': 'company pair (reversal)'},
+            {'desc': 'Recognize deferred revenue', 'debit': 'Liabilities:Deferred Revenue', 'credit': 'Revenue:Consulting', 'command': 'pair entry'},
+            {'desc': 'Invoice sent (A/R created)', 'debit': 'Assets:Current:Accounts Receivable', 'credit': 'Revenue:Consulting', 'command': 'pair revenue invoice'},
+            {'desc': 'Reverse accrued revenue', 'debit': 'Revenue:Consulting', 'credit': 'Liabilities:Deferred Revenue', 'command': 'pair entry (reversal)'},
         ],
     },
     {
@@ -134,9 +134,9 @@ PAIRS = [
         'reversal_long': 'Reversing non-operating income — insurance claim denied after initial recording, or gain recalculated downward.',
         'edge_long': 'Gain recognized on disposal of a capital asset when sale proceeds exceed net book value.',
         'scenarios': [
-            {'desc': 'Interest income received', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Non-Operating:Interest Income', 'command': 'company pair'},
-            {'desc': 'Insurance payout received', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Non-Operating:Insurance Recovery', 'command': 'company pair'},
-            {'desc': 'Gain on asset sale', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Non-Operating:Gain on Disposal', 'command': 'company asset dispose'},
+            {'desc': 'Interest income received', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Non-Operating:Interest Income', 'command': 'pair entry'},
+            {'desc': 'Insurance payout received', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Non-Operating:Insurance Recovery', 'command': 'pair entry'},
+            {'desc': 'Gain on asset sale', 'debit': 'Assets:Current:Chequing', 'credit': 'Revenue:Non-Operating:Gain on Disposal', 'command': 'pair asset dispose'},
         ],
     },
     {
@@ -151,9 +151,9 @@ PAIRS = [
         'reversal_long': 'Reversing non-operating income that was recorded against a liability. Debt forgiveness rescinded or restated.',
         'edge_long': 'A creditor forgives part of a debt — the liability decreases and the difference is recognized as non-operating income (gain on settlement).',
         'scenarios': [
-            {'desc': 'Debt forgiveness by creditor', 'debit': 'Liabilities:Bank Loan', 'credit': 'Revenue:Non-Operating:Gain on Settlement', 'command': 'company pair'},
-            {'desc': 'Vendor writes off balance owed', 'debit': 'Liabilities:Accounts Payable', 'credit': 'Revenue:Non-Operating:Gain on Settlement', 'command': 'company pair'},
-            {'desc': 'Forgiveness rescinded', 'debit': 'Revenue:Non-Operating:Gain on Settlement', 'credit': 'Liabilities:Bank Loan', 'command': 'company pair (reversal)'},
+            {'desc': 'Debt forgiveness by creditor', 'debit': 'Liabilities:Bank Loan', 'credit': 'Revenue:Non-Operating:Gain on Settlement', 'command': 'pair entry'},
+            {'desc': 'Vendor writes off balance owed', 'debit': 'Liabilities:Accounts Payable', 'credit': 'Revenue:Non-Operating:Gain on Settlement', 'command': 'pair entry'},
+            {'desc': 'Forgiveness rescinded', 'debit': 'Revenue:Non-Operating:Gain on Settlement', 'credit': 'Liabilities:Bank Loan', 'command': 'pair entry (reversal)'},
         ],
     },
     {
@@ -168,9 +168,9 @@ PAIRS = [
         'reversal_long': 'Repaying a liability from an asset. Making a loan payment from the bank account — the most common balance-sheet-only transaction.',
         'edge_long': 'Refinancing — replacing one liability with another while the asset position stays the same, or drawing down a line of credit.',
         'scenarios': [
-            {'desc': 'Receive loan proceeds', 'debit': 'Assets:Current:Chequing', 'credit': 'Liabilities:Bank Loan', 'command': 'company liability add'},
-            {'desc': 'Make loan payment (principal)', 'debit': 'Liabilities:Bank Loan', 'credit': 'Assets:Current:Chequing', 'command': 'company liability pay'},
-            {'desc': 'Pay credit card balance', 'debit': 'Liabilities:Credit Card', 'credit': 'Assets:Current:Chequing', 'command': 'company liability pay'},
+            {'desc': 'Receive loan proceeds', 'debit': 'Assets:Current:Chequing', 'credit': 'Liabilities:Bank Loan', 'command': 'pair liability add'},
+            {'desc': 'Make loan payment (principal)', 'debit': 'Liabilities:Bank Loan', 'credit': 'Assets:Current:Chequing', 'command': 'pair liability pay'},
+            {'desc': 'Pay credit card balance', 'debit': 'Liabilities:Credit Card', 'credit': 'Assets:Current:Chequing', 'command': 'pair liability pay'},
         ],
     },
     {
@@ -185,9 +185,9 @@ PAIRS = [
         'reversal_long': 'Owner withdraws an asset from the business. Drawing cash for personal use, or distributing profits. Assets and equity both decrease.',
         'edge_long': 'Formal dividend declaration and payment, or in-kind distribution of business assets to owner.',
         'scenarios': [
-            {'desc': 'Owner invests cash', 'debit': 'Assets:Current:Chequing', 'credit': 'Equity:Owner Investment', 'command': 'company equity invest'},
-            {'desc': 'Owner draws cash', 'debit': 'Equity:Owner Draws', 'credit': 'Assets:Current:Chequing', 'command': 'company equity draw'},
-            {'desc': 'Contribute personal equipment', 'debit': 'Assets:Fixed:Equipment', 'credit': 'Equity:Owner Investment', 'command': 'company equity invest'},
+            {'desc': 'Owner invests cash', 'debit': 'Assets:Current:Chequing', 'credit': 'Equity:Owner Investment', 'command': 'pair equity invest'},
+            {'desc': 'Owner draws cash', 'debit': 'Equity:Owner Draws', 'credit': 'Assets:Current:Chequing', 'command': 'pair equity draw'},
+            {'desc': 'Contribute personal equipment', 'debit': 'Assets:Fixed:Equipment', 'credit': 'Equity:Owner Investment', 'command': 'pair equity invest'},
         ],
     },
     {
@@ -202,9 +202,9 @@ PAIRS = [
         'reversal_long': 'Converting a liability to equity. A creditor accepts shares instead of repayment, or a shareholder loan is forgiven and reclassified as equity.',
         'edge_long': 'Reclassifying a shareholder loan between liability and equity based on terms or CRA guidance.',
         'scenarios': [
-            {'desc': 'Declare dividend payable', 'debit': 'Equity:Retained Earnings', 'credit': 'Liabilities:Dividends Payable', 'command': 'company pair'},
-            {'desc': 'Convert debt to equity', 'debit': 'Liabilities:Shareholder Loan', 'credit': 'Equity:Owner Investment', 'command': 'company pair (reversal)'},
-            {'desc': 'Reclassify shareholder loan', 'debit': 'Equity:Shareholder Loan', 'credit': 'Liabilities:Shareholder Loan', 'command': 'company pair'},
+            {'desc': 'Declare dividend payable', 'debit': 'Equity:Retained Earnings', 'credit': 'Liabilities:Dividends Payable', 'command': 'pair entry'},
+            {'desc': 'Convert debt to equity', 'debit': 'Liabilities:Shareholder Loan', 'credit': 'Equity:Owner Investment', 'command': 'pair entry (reversal)'},
+            {'desc': 'Reclassify shareholder loan', 'debit': 'Equity:Shareholder Loan', 'credit': 'Liabilities:Shareholder Loan', 'command': 'pair entry'},
         ],
     },
     {
@@ -219,9 +219,9 @@ PAIRS = [
         'reversal_long': 'Reversing an internal asset transfer. Moving money back from savings, or correcting an erroneous inter-account transfer.',
         'edge_long': 'Purchasing a short-term investment from operating cash, or moving funds to a tax reserve account.',
         'scenarios': [
-            {'desc': 'Transfer to savings', 'debit': 'Assets:Current:Savings', 'credit': 'Assets:Current:Chequing', 'command': 'company pair'},
-            {'desc': 'Move to tax reserve', 'debit': 'Assets:Current:Tax Reserve', 'credit': 'Assets:Current:Chequing', 'command': 'company pair'},
-            {'desc': 'Cash purchase of equipment', 'debit': 'Assets:Fixed:Equipment', 'credit': 'Assets:Current:Chequing', 'command': 'company asset add'},
+            {'desc': 'Transfer to savings', 'debit': 'Assets:Current:Savings', 'credit': 'Assets:Current:Chequing', 'command': 'pair entry'},
+            {'desc': 'Move to tax reserve', 'debit': 'Assets:Current:Tax Reserve', 'credit': 'Assets:Current:Chequing', 'command': 'pair entry'},
+            {'desc': 'Cash purchase of equipment', 'debit': 'Assets:Fixed:Equipment', 'credit': 'Assets:Current:Chequing', 'command': 'pair asset add'},
         ],
     },
     {
@@ -236,9 +236,9 @@ PAIRS = [
         'reversal_long': 'Transferring a liability to a third party or reversing a prior liability consolidation.',
         'edge_long': 'Refinancing — paying off one loan by taking a new one. The cash doesn\'t actually move through assets if the lender handles it directly.',
         'scenarios': [
-            {'desc': 'Consolidate credit card to LOC', 'debit': 'Liabilities:Credit Card', 'credit': 'Liabilities:Line of Credit', 'command': 'company pair'},
-            {'desc': 'Refinance loan', 'debit': 'Liabilities:Old Loan', 'credit': 'Liabilities:New Loan', 'command': 'company pair'},
-            {'desc': 'Transfer payable between accounts', 'debit': 'Liabilities:Accounts Payable', 'credit': 'Liabilities:Notes Payable', 'command': 'company pair'},
+            {'desc': 'Consolidate credit card to LOC', 'debit': 'Liabilities:Credit Card', 'credit': 'Liabilities:Line of Credit', 'command': 'pair entry'},
+            {'desc': 'Refinance loan', 'debit': 'Liabilities:Old Loan', 'credit': 'Liabilities:New Loan', 'command': 'pair entry'},
+            {'desc': 'Transfer payable between accounts', 'debit': 'Liabilities:Accounts Payable', 'credit': 'Liabilities:Notes Payable', 'command': 'pair entry'},
         ],
     },
     {
@@ -253,9 +253,9 @@ PAIRS = [
         'reversal_long': 'Reversing an equity reallocation. Moving reserves back to retained earnings or correcting a prior-period equity reclassification.',
         'edge_long': 'Year-end closing entry moving net income to retained earnings. Formal appropriation of earnings to a specific reserve.',
         'scenarios': [
-            {'desc': 'Close income to retained earnings', 'debit': 'Equity:Current Year Earnings', 'credit': 'Equity:Retained Earnings', 'command': 'company pair'},
-            {'desc': 'Appropriate earnings to reserve', 'debit': 'Equity:Retained Earnings', 'credit': 'Equity:Reserve', 'command': 'company pair'},
-            {'desc': 'Reverse reserve appropriation', 'debit': 'Equity:Reserve', 'credit': 'Equity:Retained Earnings', 'command': 'company pair (reversal)'},
+            {'desc': 'Close income to retained earnings', 'debit': 'Equity:Current Year Earnings', 'credit': 'Equity:Retained Earnings', 'command': 'pair entry'},
+            {'desc': 'Appropriate earnings to reserve', 'debit': 'Equity:Retained Earnings', 'credit': 'Equity:Reserve', 'command': 'pair entry'},
+            {'desc': 'Reverse reserve appropriation', 'debit': 'Equity:Reserve', 'credit': 'Equity:Retained Earnings', 'command': 'pair entry (reversal)'},
         ],
     },
 ]
@@ -332,12 +332,12 @@ GROUPS = {
 # ─── Dispatch ────────────────────────────────────────────────────────────────
 
 def dispatch_pairs(args):
-    """Entry point for 'company pairs'."""
+    """Entry point for 'pair pairs'."""
     cmd_pairs(args)
 
 
 def dispatch_pair(args):
-    """Entry point for 'company pair'."""
+    """Entry point for 'pair entry'."""
     cmd_pair(args)
 
 
@@ -386,17 +386,17 @@ def cmd_pairs(args):
 
 
 def print_pairs_help():
-    print("""company pairs — account pair reference
+    print("""pair pairs — account pair reference
 
 Usage:
-  company pairs              Full reference table (all 14 pairs)
-  company pairs <N>          Drill-down on pair N (1-14)
-  company pairs --normal     Normal direction descriptions (long)
-  company pairs --reversals  Reversal descriptions (long)
-  company pairs --edge       Edge case descriptions (long)
+  pair pairs              Full reference table (all 14 pairs)
+  pair pairs <N>          Drill-down on pair N (1-14)
+  pair pairs --normal     Normal direction descriptions (long)
+  pair pairs --reversals  Reversal descriptions (long)
+  pair pairs --edge       Edge case descriptions (long)
 
 See also:
-  company pair               Interactive entry creation using any pair
+  pair entry               Interactive entry creation using any pair
 """)
 
 
@@ -451,11 +451,11 @@ def show_grouped_table():
 def show_help_lines():
     """Print help lines at the bottom."""
     print("  Usage:")
-    print("    company pairs <N>          Drill-down with scenarios for pair N")
-    print("    company pairs --normal     Full descriptions for normal direction")
-    print("    company pairs --reversals  Full descriptions for reversal direction")
-    print("    company pairs --edge       Full descriptions for edge cases")
-    print("    company pair               Interactive entry builder (any pair)")
+    print("    pair pairs <N>          Drill-down with scenarios for pair N")
+    print("    pair pairs --normal     Full descriptions for normal direction")
+    print("    pair pairs --reversals  Full descriptions for reversal direction")
+    print("    pair pairs --edge       Full descriptions for edge cases")
+    print("    pair entry               Interactive entry builder (any pair)")
     print()
 
 
@@ -531,9 +531,9 @@ def cmd_pair(args):
         return
 
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
-    division = config.get('company', {}).get('division', None)
+    division = config.get('pair', {}).get('division', None)
 
     # Step 1: Show numbered list and pick a pair
     print()
@@ -619,13 +619,13 @@ def cmd_pair(args):
 
 
 def print_pair_help():
-    print("""company pair — interactive entry creation
+    print("""pair entry — interactive entry creation
 
 Creates a journal entry by selecting an account pair and direction.
 Walks you through choosing accounts, amount, date, and description.
 
 Usage:
-  company pair               Start interactive entry builder
+  pair entry               Start interactive entry builder
 
 Flags:
   --yes, -y                  Skip confirmation

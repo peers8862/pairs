@@ -1,4 +1,4 @@
-"""company revenue — time logging, invoicing, and payment tracking."""
+"""pair revenue — time logging, invoicing, and payment tracking."""
 
 import sys
 import os
@@ -217,7 +217,7 @@ def dispatch(args):
         elif sub == 'list':
             cmd_project_list(flags, action_args[1:])
         else:
-            print("Usage: company revenue project [add|list]")
+            print("Usage: pair revenue project [add|list]")
     elif action == 'rate':
         slug = action_args[0] if action_args else None
         cmd_rate(flags, slug)
@@ -257,7 +257,7 @@ def dispatch(args):
 def print_help():
     """Print revenue module help."""
     print("""
-Usage: company revenue <command> [options]
+Usage: pair revenue <command> [options]
 
 Commands:
   project add       Create a new billing project
@@ -299,7 +299,7 @@ def cmd_project_add(flags, args):
     config = load_config()
     entities = config.get("entities", {})
     if not entities:
-        print("No entities. Run 'company init' first.")
+        print("No entities. Run 'pair init' first.")
         return
 
     print("Create a new project\n")
@@ -376,7 +376,7 @@ def cmd_project_list(flags, args):
     """List all projects."""
     slugs = _list_projects()
     if not slugs:
-        print("No projects. Run 'company revenue project add'.")
+        print("No projects. Run 'pair revenue project add'.")
         return
 
     print(f"{'Slug':<20} {'Client':<25} {'Project':<20} {'Entity':<12} {'Active'}")
@@ -393,7 +393,7 @@ def cmd_project_list(flags, args):
 def cmd_rate(flags, slug=None):
     """Update rate for a project."""
     if not slug:
-        print("Usage: company revenue rate <project-slug>")
+        print("Usage: pair revenue rate <project-slug>")
         return
 
     project = _load_project(slug)
@@ -440,7 +440,7 @@ def cmd_log(flags, args):
     slugs = _list_projects()
 
     if not slugs:
-        print("No projects. Run 'company revenue project add' first.")
+        print("No projects. Run 'pair revenue project add' first.")
         return
 
     print("Log time entry\n")
@@ -532,7 +532,7 @@ def cmd_log_batch(flags, args):
     slugs = _list_projects()
 
     if not slugs:
-        print("No projects. Run 'company revenue project add' first.")
+        print("No projects. Run 'pair revenue project add' first.")
         return
 
     print("Batch log entries\n")
@@ -1227,7 +1227,7 @@ def cmd_defer(flags, args):
     from lib.helpers import slugify, save_config, validate_slug
 
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank_account = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
 
     print("Record deferred revenue (prepayment received)\n")
@@ -1293,7 +1293,7 @@ def cmd_defer(flags, args):
 def cmd_recognize(flags, args):
     """Recognize a portion of deferred revenue."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
 
     # Get slug from args or prompt
     slug = args[0] if args else None
@@ -1301,7 +1301,7 @@ def cmd_recognize(flags, args):
         # List available deferred items
         slugs = _list_deferred()
         if not slugs:
-            print("No deferred revenue items found. Use 'company revenue defer' first.")
+            print("No deferred revenue items found. Use 'pair revenue defer' first.")
             return
         print("Deferred revenue items:")
         for s in slugs:
@@ -1383,7 +1383,7 @@ def cmd_deferred(flags, args):
 
     slugs = _list_deferred()
     if not slugs:
-        print("No deferred revenue items. Use 'company revenue defer' to create one.")
+        print("No deferred revenue items. Use 'pair revenue defer' to create one.")
         return
 
     print(f"\n{'Name':<30} {'Total':>12} {'Recognized':>12} {'Remaining':>12}")

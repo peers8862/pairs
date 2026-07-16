@@ -1,1 +1,1 @@
-# hledger-company modules
+# pair modules

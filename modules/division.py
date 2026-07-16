@@ -1,4 +1,4 @@
-"""company division — division management and reporting."""
+"""pair division — division management and reporting."""
 
 import sys
 import re
@@ -30,17 +30,17 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company division — division management
+    print("""pair division — division management
 
 Actions:
   list              Show divisions and entity counts
 
 Usage:
-  company division list
+  pair division list
 """)
 
 
-# ─── company division list ───────────────────────────────────────────────────
+# ─── pair division list ───────────────────────────────────────────────────
 
 def cmd_list(flags, args):
     """Scan all YAML entities and expense journals for division tags, display a table."""
@@ -80,7 +80,7 @@ def cmd_list(flags, args):
 
     if not division_counts:
         print("No divisions configured or found.")
-        print("Use 'company init' or edit config.yaml to add divisions.")
+        print("Use 'pair init' or edit config.yaml to add divisions.")
         return
 
     # Display table

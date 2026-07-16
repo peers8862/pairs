@@ -85,7 +85,7 @@ include ~/making/hledger-company/include/company.journal
 
 ```hledger
 ; hledger-company — managed by 'company' tool
-; Do not edit manually. Run 'company generate' to rebuild.
+; Do not edit manually. Run 'pair generate' to rebuild.
 
 include accounts.journal
 include 2025.journal
@@ -146,7 +146,7 @@ account Expenses:Non-Operating:Amortization        ; type:X
 ; ══════════════════════════════════════════════════════════
 ; GENERATED — do not edit manually
 ; Source: assets/*.yaml
-; Regenerate: company generate --module amortization
+; Regenerate: pair generate --module amortization
 ; Last generated: 2026-07-15T21:53:00
 ; ══════════════════════════════════════════════════════════
 ```
@@ -164,7 +164,7 @@ account Expenses:Non-Operating:Amortization        ; type:X
 
 ## Year Boundaries
 
-- `company year new 2027` scaffolds `journal/2027/`, `generated/2027/`, adds `include/2027.journal`
+- `pair year new 2027` scaffolds `journal/2027/`, `generated/2027/`, adds `include/2027.journal`
 - Updates `include/company.journal` to add the new year
 - `journal/<year>/closing.journal` holds year-end entries (retained earnings transfer)
 - `journal/<year+1>/opening.journal` carries forward opening balances
@@ -214,6 +214,6 @@ __pycache__/
 2. **User-editable vs generated is directory-level** — `journal/` is yours, `generated/` is the tool's
 3. **Single include point** — user's main journal needs one `include` line
 4. **Year as organizing boundary** — adding a year is additive (new dirs + new include)
-5. **Reproducibility** — `company generate` rebuilds all of `generated/` from YAML
+5. **Reproducibility** — `pair generate` rebuilds all of `generated/` from YAML
 6. **Auditability** — generated journals tracked in git for history
 7. **Privacy** — PII (contacts) gitignored; financial records tracked

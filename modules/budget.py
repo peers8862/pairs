@@ -1,4 +1,4 @@
-"""company budget — budget setting and comparison."""
+"""pair budget — budget setting and comparison."""
 
 import sys
 import subprocess
@@ -39,7 +39,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company budget — budget setting and variance reporting
+    print("""pair budget — budget setting and variance reporting
 
 Actions:
   set                 Set budget amounts for accounts
@@ -56,7 +56,7 @@ Flags for 'vs':
 """)
 
 
-# ─── company budget set ──────────────────────────────────────────────────────
+# ─── pair budget set ──────────────────────────────────────────────────────
 
 def cmd_set(flags, args):
     """Set budget amounts."""
@@ -97,14 +97,14 @@ def cmd_set(flags, args):
     print(f"\n  Budget set: {account} = ${float(amount):,.2f}/month for {year}")
 
 
-# ─── company budget vs ───────────────────────────────────────────────────────
+# ─── pair budget vs ───────────────────────────────────────────────────────
 
 def cmd_vs(flags, args):
     """Compare actual vs budget."""
     import yaml
 
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     journal_file = config.get('journal_file')
 
     # Parse args
@@ -121,7 +121,7 @@ def cmd_vs(flags, args):
 
     # Load budget
     if not BUDGET_FILE.exists():
-        print("No budget set. Use 'company budget set' first.")
+        print("No budget set. Use 'pair budget set' first.")
         return
 
     with open(BUDGET_FILE) as f:

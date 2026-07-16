@@ -1,4 +1,4 @@
-"""company payroll — pay run and contractor payment recording."""
+"""pair payroll — pay run and contractor payment recording."""
 
 import sys
 from datetime import date
@@ -37,7 +37,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company payroll — pay run and contractor payments
+    print("""pair payroll — pay run and contractor payments
 
 Actions:
   run                 Record a pay run or contractor payment
@@ -52,12 +52,12 @@ Flags for 'run':
 """)
 
 
-# ─── company payroll run ─────────────────────────────────────────────────────
+# ─── pair payroll run ─────────────────────────────────────────────────────
 
 def cmd_run(flags, args):
     """Record a pay run."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
 
     # Parse args
@@ -159,7 +159,7 @@ def cmd_run(flags, args):
         print(f"  Written to: generated/{year}/payroll.journal")
 
 
-# ─── company payroll list ────────────────────────────────────────────────────
+# ─── pair payroll list ────────────────────────────────────────────────────
 
 def cmd_list(flags, args):
     """List recent pay runs by reading payroll journals."""

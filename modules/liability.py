@@ -1,4 +1,4 @@
-"""company liability — loan and debt management with payment scheduling."""
+"""pair liability — loan and debt management with payment scheduling."""
 
 import sys
 from datetime import date, datetime
@@ -78,7 +78,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company liability — loan and debt management
+    print("""pair liability — loan and debt management
 
 Actions:
   add                 Record a new liability (loan, lease, credit line)
@@ -96,12 +96,12 @@ Flags:
 """)
 
 
-# ─── company liability add ───────────────────────────────────────────────────
+# ─── pair liability add ───────────────────────────────────────────────────
 
 def cmd_add(flags, args):
     """Add a new liability."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
 
     print("Record a liability\n")
 
@@ -190,7 +190,7 @@ def cmd_add(flags, args):
     _write_creation_entry(liab_data, config)
     print(f"  Creation entry written to generated/{year}/liabilities.journal")
 
-    print(f"\n  Run 'company liability payments' to generate payment schedule.")
+    print(f"\n  Run 'pair liability payments' to generate payment schedule.")
 
 
 def _write_creation_entry(liab, config):
@@ -224,7 +224,7 @@ def _write_creation_entry(liab, config):
     append_journal(journal_path, entry)
 
 
-# ─── company liability list ──────────────────────────────────────────────────
+# ─── pair liability list ──────────────────────────────────────────────────
 
 def cmd_list(flags, args):
     """List all liabilities."""
@@ -236,7 +236,7 @@ def cmd_list(flags, args):
 
     slugs = list_entities(MODULE)
     if not slugs:
-        print("No liabilities recorded. Use 'company liability add' to start.")
+        print("No liabilities recorded. Use 'pair liability add' to start.")
         return
 
     print(f"\n{'Name':<35} {'Type':<12} {'Principal':>12} {'Remaining':>12} {'Status':<10}")
@@ -266,12 +266,12 @@ def cmd_list(flags, args):
     print()
 
 
-# ─── company liability show ──────────────────────────────────────────────────
+# ─── pair liability show ──────────────────────────────────────────────────
 
 def cmd_show(flags, args):
     """Show details for a specific liability."""
     if not args:
-        print("Usage: company liability show <slug>")
+        print("Usage: pair liability show <slug>")
         sys.exit(1)
 
     slug = args[0]
@@ -308,12 +308,12 @@ def cmd_show(flags, args):
     print()
 
 
-# ─── company liability pay ───────────────────────────────────────────────────
+# ─── pair liability pay ───────────────────────────────────────────────────
 
 def cmd_pay(flags, args):
     """Record a single payment on a liability."""
     if not args:
-        print("Usage: company liability pay <slug>")
+        print("Usage: pair liability pay <slug>")
         sys.exit(1)
 
     slug = args[0]
@@ -410,7 +410,7 @@ def cmd_pay(flags, args):
     print(f"  Remaining balance: {currency} {new_balance:.2f}")
 
 
-# ─── company liability payments ──────────────────────────────────────────────
+# ─── pair liability payments ──────────────────────────────────────────────
 
 def cmd_payments(flags, args):
     """Generate scheduled payment entries."""
@@ -462,7 +462,7 @@ def cmd_payments(flags, args):
     for year_str, entries in sorted(entries_by_year.items()):
         ensure_year_structure(int(year_str))
         journal_path = GENERATED_DIR / year_str / "loan-payments.journal"
-        header = generated_header("liabilities/*.yaml", "company liability payments")
+        header = generated_header("liabilities/*.yaml", "pair liability payments")
         content = header + "".join(entries)
         write_journal_atomic(journal_path, content)
         total_entries += len(entries)
@@ -639,7 +639,7 @@ def _total_interest(liab):
     return sum(money(p.get('interest', 0)) for p in payments)
 
 
-# ─── company liability reclassify ────────────────────────────────────────────
+# ─── pair liability reclassify ────────────────────────────────────────────
 
 def cmd_reclassify(flags, args):
     """Reclassify a liability from one account to another.
@@ -647,7 +647,7 @@ def cmd_reclassify(flags, args):
     Writes: DR old liability account, CR new liability account. Pair 1100.
     """
     if not args:
-        print("Usage: company liability reclassify <slug>")
+        print("Usage: pair liability reclassify <slug>")
         sys.exit(1)
 
     slug = args[0]

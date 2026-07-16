@@ -1,4 +1,4 @@
-"""company journal — synthesized journal output for any period."""
+"""pair journal — synthesized journal output for any period."""
 
 import sys
 import subprocess
@@ -72,17 +72,17 @@ def cmd_journal(args):
 
 
 def print_help():
-    print("""company journal — synthesized journal output
+    print("""pair journal — synthesized journal output
 
 Produces a single, complete journal for any date range across all modules.
 
 Usage:
-  company journal                       Current year, all entries
-  company journal --year 2025           Full year
-  company journal --from 2025-07-01 --to 2026-09-30   Arbitrary span
-  company journal --module amortization               Filter to one module
-  company journal --output combined.journal           Write to file
-  company journal --with-accounts                     Include account declarations
+  pair journal                       Current year, all entries
+  pair journal --year 2025           Full year
+  pair journal --from 2025-07-01 --to 2026-09-30   Arbitrary span
+  pair journal --module amortization               Filter to one module
+  pair journal --output combined.journal           Write to file
+  pair journal --with-accounts                     Include account declarations
 
 Flags:
   --from DATE         Start date (inclusive)

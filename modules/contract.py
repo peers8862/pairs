@@ -1,4 +1,4 @@
-"""company contract — agreement and contract management."""
+"""pair contract — agreement and contract management."""
 
 import sys
 from datetime import date, datetime
@@ -47,7 +47,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company contract — agreement and contract management
+    print("""pair contract — agreement and contract management
 
 Actions:
   add                 Add a new contract
@@ -65,7 +65,7 @@ Statuses: active, expired, terminated, pending
 """)
 
 
-# ─── company contract add ────────────────────────────────────────────────────
+# ─── pair contract add ────────────────────────────────────────────────────
 
 def cmd_add(flags, args):
     """Add a new contract."""
@@ -153,14 +153,14 @@ def cmd_add(flags, args):
         contract_data['notes'] = notes
 
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     contract_data['currency'] = currency
 
     save_entity(MODULE, slug, contract_data)
     print(f"\n  Saved: contracts/{slug}.yaml")
 
 
-# ─── company contract list ───────────────────────────────────────────────────
+# ─── pair contract list ───────────────────────────────────────────────────
 
 def cmd_list(flags, args):
     """List contracts."""
@@ -178,7 +178,7 @@ def cmd_list(flags, args):
 
     slugs = list_entities(MODULE)
     if not slugs:
-        print("No contracts recorded. Use 'company contract add' to start.")
+        print("No contracts recorded. Use 'pair contract add' to start.")
         return
 
     print(f"\n{'Name':<30} {'Type':<14} {'Status':<12} {'End Date':<12} {'Value':>12}")
@@ -231,12 +231,12 @@ def cmd_list(flags, args):
     print()
 
 
-# ─── company contract show ───────────────────────────────────────────────────
+# ─── pair contract show ───────────────────────────────────────────────────
 
 def cmd_show(flags, args):
     """Show details for a specific contract."""
     if not args:
-        print("Usage: company contract show <slug>")
+        print("Usage: pair contract show <slug>")
         sys.exit(1)
 
     slug = args[0]
@@ -308,12 +308,12 @@ def cmd_show(flags, args):
     print()
 
 
-# ─── company contract edit ───────────────────────────────────────────────────
+# ─── pair contract edit ───────────────────────────────────────────────────
 
 def cmd_edit(flags, args):
     """Edit a contract interactively."""
     if not args:
-        print("Usage: company contract edit <slug>")
+        print("Usage: pair contract edit <slug>")
         sys.exit(1)
 
     slug = args[0]

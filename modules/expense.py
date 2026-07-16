@@ -1,4 +1,4 @@
-"""company expense — operating expense recording."""
+"""pair expense — operating expense recording."""
 
 import sys
 import re
@@ -61,7 +61,7 @@ def dispatch(args):
 
 
 def print_help():
-    print("""company expense — operating expense recording
+    print("""pair expense — operating expense recording
 
 Actions:
   add                 Record an expense
@@ -86,12 +86,12 @@ Categories:
 """)
 
 
-# ─── company expense add ─────────────────────────────────────────────────────
+# ─── pair expense add ─────────────────────────────────────────────────────
 
 def cmd_add(flags, args):
     """Record an expense."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     bank_account = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
 
     # Parse inline args (these survive after parse_global_flags strips --date etc.)
@@ -190,7 +190,7 @@ def cmd_add(flags, args):
         print(f"  Written to: generated/{year}/expenses.journal")
 
 
-# ─── company expense list ────────────────────────────────────────────────────
+# ─── pair expense list ────────────────────────────────────────────────────
 
 def cmd_list(flags, args):
     """List recorded expenses."""
