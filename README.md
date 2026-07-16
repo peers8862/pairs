@@ -2,6 +2,8 @@
 
 A command-line business accounting tool built on [hledger](https://hledger.org). Track assets, liabilities, net worth, revenue, expenses, payroll, and more — all in plain text.
 
+Supports multiple companies and holding structures from a single installation.
+
 ## What it does
 
 - Capital asset tracking with automatic amortization (straight-line and declining balance)
@@ -13,8 +15,10 @@ A command-line business accounting tool built on [hledger](https://hledger.org).
 - Tax remittance summaries
 - Recurring entry automation
 - Synthesized journal output for any date range
+- Multi-company with per-company journals and instant switching
+- All 14 BitLedger accounting pairs covered by dedicated commands
 
-All financial data lives in hledger journals. Metadata lives in YAML. One `include` line connects everything to your main ledger.
+All financial data lives in hledger journals. Metadata lives in YAML. One `include` line per company connects to your main ledger.
 
 ## Requirements
 
@@ -38,7 +42,7 @@ ln -s "$(pwd)/pairs" ~/.local/bin/pairs
 ## Quick start
 
 ```bash
-pair init                  # first-time setup
+pair init                  # first-time setup (creates first company)
 pair asset add             # record a capital asset
 pair asset amort           # generate amortization entries
 pair liability add         # record a loan or debt
@@ -57,6 +61,11 @@ pair worth                   Net worth report
 pair journal                 Synthesized journal for any period
 pair pairs                   BitLedger pair reference table
 pair entry                    Interactive entry from any pair
+
+pair company list            List all companies
+pair company add             Add a new company
+pair company use <slug>      Switch active company
+pair switch <slug>           Switch active company (shortcut)
 
 pair asset add|list|show|edit|dispose|amort|writedown|summary
 pair liability add|list|show|pay|payments|reclassify
@@ -86,9 +95,9 @@ YAML metadata ──→ pair generate ──→ .journal files ──→ hledger
    (you edit)         (tool runs)        (tool writes)      (you query)
 ```
 
-Your main hledger journal includes one file:
+Your main hledger journal includes one file per company:
 ```
-include ~/path/to/pair/include/company.journal
+include ~/path/to/pair/companies/clairlea/include/company.journal
 ```
 
 That single include pulls in everything — account declarations, all years, all modules.
@@ -97,21 +106,39 @@ That single include pulls in everything — account declarations, all years, all
 
 ```
 pair/
-├── company                  # CLI
-├── config.yaml              # settings
-├── assets/                  # one YAML per capital asset
-├── liabilities/             # one YAML per loan/debt
-├── contacts/                # one YAML per person/company
-├── contracts/               # one YAML per agreement
-├── journal/                 # your manual entries (opening balances, adjustments)
-│   └── 2026/
-├── generated/               # tool-written journals (amortization, payments, etc.)
-│   └── 2026/
-├── include/                 # aggregation (include chain for hledger)
-├── invoices/                # per-invoice journals + PDFs
+├── pair                     # CLI
+├── pairs                    # symlink (reference tables)
+├── global.yaml              # active company, company list
+├── lib/                     # shared library code
+├── modules/                 # shared module code
 ├── templates/               # Typst templates
+├── companies/
+│   └── clairlea/            # one directory per company
+│       ├── config.yaml      # company settings
+│       ├── assets/          # one YAML per capital asset
+│       ├── liabilities/     # one YAML per loan/debt
+│       ├── contacts/        # one YAML per person/company
+│       ├── contracts/       # one YAML per agreement
+│       ├── journal/         # your manual entries (opening balances, adjustments)
+│       │   └── 2026/
+│       ├── generated/       # tool-written journals (amortization, payments, etc.)
+│       │   └── 2026/
+│       ├── include/         # aggregation (include chain for hledger)
+│       └── invoices/        # per-invoice journals + PDFs
 └── docs/                    # design documentation
 ```
+
+## Multiple companies
+
+```bash
+pair init                    # creates your first company
+pair company add             # add another
+pair company list            # see all companies
+pair switch acme-holdings    # change active company
+pair worth                   # operates on active company
+```
+
+Each company is fully isolated — own config, data, and journal file. Switching is instant.
 
 ## Net worth
 
@@ -120,9 +147,10 @@ The headline command:
 ```bash
 $ pair worth
 
+  [clairlea]
 ══════════════════════════════════════════════════════════════
   Company Net Worth — Clairlea Consulting
-  As of 2026-07-15
+  As of 2026-07-16
 ══════════════════════════════════════════════════════════════
 
   ASSETS
@@ -136,9 +164,11 @@ $ pair worth
 ══════════════════════════════════════════════════════════════
 ```
 
-## Design
+## Accounting pairs
 
-This tool maps to the [BitLedger](https://bitpads.org) account pair matrix — 14 binary codes covering every possible double-entry relationship. See `company-tool-design-ref.md` for the mapping and `docs/` for full design documentation.
+The tool is organized around the [BitLedger](https://bitpads.org) account pair matrix — 14 binary codes covering every possible double-entry relationship. Type `pairs` to see the reference table, or `pair` with no args to create an entry from any pair interactively.
+
+See `company-tool-design-ref.md` for the full mapping and `docs/` for design documentation.
 
 ## License
 
