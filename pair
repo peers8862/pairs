@@ -95,6 +95,12 @@ def main():
     elif command == 'switch':
         from modules.company import cmd_use
         cmd_use(sys.argv[2:])
+    # Prompt helper for shell PS1 integration
+    elif command == 'prompt':
+        from lib.helpers import get_active_company
+        co = get_active_company()
+        if co:
+            print(f"[{co}]", end='')
     # Module dispatch
     elif command in MODULE_MAP:
         module = __import__(MODULE_MAP[command], fromlist=['dispatch'])
