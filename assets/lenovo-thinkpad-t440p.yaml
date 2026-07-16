@@ -1,0 +1,15 @@
+name: Lenovo Thinkpad T440P
+slug: lenovo-thinkpad-t440p
+category: equipment
+purchase_date: '2025-06-15'
+cost: 100.0
+useful_life_months: 36
+amortization_method: declining-balance
+salvage_value: 50.0
+currency: CAD
+accounts:
+  asset: Assets:Fixed:Equipment
+  amortization_expense: Expenses:Non-Operating:Amortization
+  accumulated: Assets:Accumulated Amortization:Equipment
+declining_balance_rate: 0.4
+payment_method: cash

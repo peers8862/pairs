@@ -1,0 +1,6 @@
+; hledger-company — managed by 'company' tool
+; Do not edit manually. Run 'company generate' to rebuild.
+
+include accounts.journal
+include 2025.journal
+include 2026.journal

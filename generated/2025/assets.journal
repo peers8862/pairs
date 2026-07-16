@@ -1,0 +1,4 @@
+2025-06-15 * Acquire asset: Lenovo Thinkpad T440P  ; pair:1011, source:assets/lenovo-thinkpad-t440p.yaml, category:equipment
+    Assets:Fixed:Equipment                              CAD 100.00
+    Assets:Current:Chequing                             CAD -100.00
+

@@ -1,0 +1,35 @@
+; ══════════════════════════════════════════════════════════════
+; GENERATED — do not edit manually
+; Source: assets/*.yaml
+; Regenerate: company generate --module assets
+; Last generated: 2026-07-16T06:37:11
+; ══════════════════════════════════════════════════════════════
+
+2026-01-01 * Amortization: Lenovo Thinkpad T440P (8/36)  ; pair:0010, source:assets/lenovo-thinkpad-t440p.yaml, period:2026-01, seq:8/36
+    Expenses:Non-Operating:Amortization                 CAD 2.67
+    Assets:Accumulated Amortization:Equipment           CAD -2.67
+
+2026-02-01 * Amortization: Lenovo Thinkpad T440P (9/36)  ; pair:0010, source:assets/lenovo-thinkpad-t440p.yaml, period:2026-02, seq:9/36
+    Expenses:Non-Operating:Amortization                 CAD 2.58
+    Assets:Accumulated Amortization:Equipment           CAD -2.58
+
+2026-03-01 * Amortization: Lenovo Thinkpad T440P (10/36)  ; pair:0010, source:assets/lenovo-thinkpad-t440p.yaml, period:2026-03, seq:10/36
+    Expenses:Non-Operating:Amortization                 CAD 2.50
+    Assets:Accumulated Amortization:Equipment           CAD -2.50
+
+2026-04-01 * Amortization: Lenovo Thinkpad T440P (11/36)  ; pair:0010, source:assets/lenovo-thinkpad-t440p.yaml, period:2026-04, seq:11/36
+    Expenses:Non-Operating:Amortization                 CAD 2.41
+    Assets:Accumulated Amortization:Equipment           CAD -2.41
+
+2026-05-01 * Amortization: Lenovo Thinkpad T440P (12/36)  ; pair:0010, source:assets/lenovo-thinkpad-t440p.yaml, period:2026-05, seq:12/36
+    Expenses:Non-Operating:Amortization                 CAD 2.33
+    Assets:Accumulated Amortization:Equipment           CAD -2.33
+
+2026-06-01 * Amortization: Lenovo Thinkpad T440P (13/36)  ; pair:0010, source:assets/lenovo-thinkpad-t440p.yaml, period:2026-06, seq:13/36
+    Expenses:Non-Operating:Amortization                 CAD 2.26
+    Assets:Accumulated Amortization:Equipment           CAD -2.26
+
+2026-07-01 * Amortization: Lenovo Thinkpad T440P (14/36)  ; pair:0010, source:assets/lenovo-thinkpad-t440p.yaml, period:2026-07, seq:14/36
+    Expenses:Non-Operating:Amortization                 CAD 2.18
+    Assets:Accumulated Amortization:Equipment           CAD -2.18
+

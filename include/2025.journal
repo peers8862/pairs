@@ -1,0 +1,16 @@
+; Year 2025 — managed by 'company' tool
+
+; User-editable journals
+include ../journal/2025/opening.journal
+include ../journal/2025/adjustments.journal
+
+; Generated journals (do not edit)
+include ../generated/2025/amortization.journal
+include ../generated/2025/loan-payments.journal
+include ../generated/2025/expenses.journal
+include ../generated/2025/assets.journal
+include ../generated/2025/payroll.journal
+include ../generated/2025/revenue.journal
+
+; Invoices
+include ../invoices/2025-*.journal

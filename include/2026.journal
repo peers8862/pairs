@@ -1,0 +1,16 @@
+; Year 2026 — managed by 'company' tool
+
+; User-editable journals
+include ../journal/2026/opening.journal
+include ../journal/2026/adjustments.journal
+
+; Generated journals (do not edit)
+include ../generated/2026/amortization.journal
+include ../generated/2026/loan-payments.journal
+include ../generated/2026/expenses.journal
+include ../generated/2026/assets.journal
+include ../generated/2026/payroll.journal
+include ../generated/2026/revenue.journal
+
+; Invoices
+include ../invoices/2026-*.journal
