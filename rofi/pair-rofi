@@ -28,16 +28,7 @@ rofi_menu() {
     shift 2
     local items="$*"
 
-    local rofi_args=(-dmenu -theme "$THEME" -p "$prompt_text"
-        -kb-custom-1 "Control+Return"
-        -kb-custom-2 "Shift+Return"
-        -kb-custom-3 "Control+e"
-        -kb-custom-4 "Control+d"
-        -kb-custom-5 "Control+n"
-        -kb-custom-6 "Control+r"
-        -kb-custom-7 "Control+s"
-        -kb-custom-8 "Control+x"
-    )
+    local rofi_args=(-dmenu -theme "$THEME" -p "$prompt_text")
 
     if [[ -n "$mesg" ]]; then
         rofi_args+=(-mesg "$mesg")
@@ -126,8 +117,8 @@ screen_root() {
     choice=$(echo "$items" | rofi -dmenu -theme "$THEME" \
         -p "PAIRS ─── $COMPANY" \
         -mesg "Enter: select | Ctrl+X: quick expense | ?: help" \
-        -kb-custom-1 "Control+Return" \
-        -kb-custom-8 "Control+x" \
+        
+        
     ) || return
 
     # Strip leading whitespace
@@ -172,7 +163,7 @@ screen_worth() {
     choice=$(echo -e "Back\nWorth --detail\nWorth --monthly\nOpen in terminal\nExport to file" | \
         rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Worth" \
         -mesg "$output" \
-        -kb-custom-1 "Control+Return" \
+        
     ) || screen_root
 
     case "$choice" in
@@ -204,8 +195,8 @@ screen_assets() {
         rofi -dmenu -theme "$THEME" \
         -p "PAIRS ─── $COMPANY ─── Assets" \
         -mesg "$count active assets" \
-        -kb-custom-1 "Control+Return" \
-        -kb-custom-5 "Control+n" \
+        
+        
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -513,7 +504,7 @@ EOF
     choice=$(echo "$items" | rofi -dmenu -theme "$THEME" \
         -p "PAIRS ─── Reference" \
         -mesg "14 accounting relationships. Select for details. Ctrl+Enter: create entry." \
-        -kb-custom-1 "Control+Return" \
+        
     )
     local exit_code=$?
 
