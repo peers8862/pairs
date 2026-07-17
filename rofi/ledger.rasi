@@ -1,0 +1,102 @@
+/* pair-rofi — ledger terminal theme */
+/* Near-fullscreen, monospace, mid-80s mainframe aesthetic */
+
+* {
+    font: "monospace 11";
+    background-color: #0a0a0a;
+    text-color: #b0b0b0;
+    border-color: #333333;
+    selected-normal-background: #1a1a1a;
+    selected-normal-foreground: #ffffff;
+}
+
+window {
+    fullscreen: false;
+    width: 95%;
+    height: 90%;
+    anchor: center;
+    location: center;
+    border: 2px solid;
+    border-color: #333333;
+    padding: 20px;
+    background-color: #0a0a0a;
+}
+
+mainbox {
+    padding: 0;
+    spacing: 8px;
+    children: [inputbar, message, listview];
+}
+
+inputbar {
+    padding: 8px 12px;
+    background-color: #111111;
+    text-color: #888888;
+    border: 0 0 1px 0;
+    border-color: #333333;
+    children: [prompt, entry];
+    spacing: 8px;
+}
+
+prompt {
+    text-color: #666666;
+}
+
+entry {
+    text-color: #cccccc;
+    placeholder: "Type to filter...";
+    placeholder-color: #444444;
+}
+
+message {
+    padding: 12px 16px;
+    background-color: #0d0d0d;
+    text-color: #a0a0a0;
+    border: 0 0 1px 0;
+    border-color: #222222;
+}
+
+textbox {
+    text-color: #a0a0a0;
+}
+
+listview {
+    lines: 12;
+    spacing: 0;
+    padding: 8px 12px;
+    dynamic: true;
+    scrollbar: false;
+    fixed-height: false;
+}
+
+element {
+    padding: 4px 12px;
+    text-color: #999999;
+    border: 0;
+}
+
+element selected.normal {
+    background-color: #1a1a1a;
+    text-color: #ffffff;
+    border: 0 0 0 2px;
+    border-color: #555555;
+}
+
+element alternate.normal {
+    background-color: #0a0a0a;
+    text-color: #999999;
+}
+
+element normal.active {
+    text-color: #cccccc;
+}
+
+element selected.active {
+    background-color: #1a1a1a;
+    text-color: #ffffff;
+}
+
+scrollbar {
+    handle-color: #333333;
+    handle-width: 4px;
+}
