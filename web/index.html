@@ -127,9 +127,9 @@
     <nav>
         <span class="brand" onclick="openInfo()" title="About Pairs — guide" style="border:2px solid var(--accent);padding:0.2rem 0.5rem;border-radius:3px;font-size:0.9rem;cursor:pointer;">&gt;&lt;</span>
         <div class="tabs">
+            <span class="tab" onclick="switchView('entry')">Pairs</span>
             <span class="tab active" onclick="switchView('dashboard')">Dash</span>
             <span class="tab" onclick="switchView('records')">Records</span>
-            <span class="tab" onclick="switchView('entry')">Pairs</span>
             <span class="tab" onclick="switchView('accounts')">Accounts</span>
             <span class="tab" onclick="switchView('contacts')">Contacts</span>
             <span class="tab" onclick="switchView('commodities')">Commodities</span>
@@ -1223,7 +1223,7 @@
                     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
                     document.getElementById('view-entry').classList.add('active');
                     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                    document.querySelectorAll('.tab')[1].classList.add('active');
+                    document.querySelector('.tab[onclick*="entry"]').classList.add('active');
                     currentView = 'entry';
                     document.getElementById('expr-field').value = val;
                     parseAndSelectExpr(val);
