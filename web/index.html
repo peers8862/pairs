@@ -7,6 +7,8 @@
     <title>Pairs</title>
     <link rel="manifest" href="/manifest.json">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.14.0/dist/chartjs-chart-sankey.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@3.1.0/dist/chartjs-chart-treemap.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -109,6 +111,7 @@
         .actions { margin-top: auto; display: flex; gap: 0.5rem; padding-top: 1rem; }
         .btn { padding: 0.5rem 1.2rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font-family: inherit; font-size: 0.85rem; cursor: pointer; }
         .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
         .btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
         .btn.primary:hover { opacity: 0.85; }
         .btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -122,10 +125,12 @@
 
     <!-- Nav -->
     <nav>
-        <span class="brand" style="border:2px solid var(--accent);padding:0.2rem 0.5rem;border-radius:3px;font-size:0.9rem;">&gt;&lt;</span>
+        <span class="brand" onclick="openInfo()" title="About Pairs — guide" style="border:2px solid var(--accent);padding:0.2rem 0.5rem;border-radius:3px;font-size:0.9rem;cursor:pointer;">&gt;&lt;</span>
         <div class="tabs">
-            <span class="tab active" onclick="switchView('dashboard')">Dashboard</span>
+            <span class="tab active" onclick="switchView('dashboard')">Dash</span>
+            <span class="tab" onclick="switchView('records')">Records</span>
             <span class="tab" onclick="switchView('entry')">Pairs</span>
+            <span class="tab" onclick="switchView('accounts')">Accounts</span>
             <span class="tab" onclick="switchView('contacts')">Contacts</span>
             <span class="tab" onclick="switchView('commodities')">Commodities</span>
             <span class="tab" onclick="switchView('charts')">Charts</span>
@@ -138,18 +143,39 @@
         </div>
     </nav>
 
+    <!-- Info / Guide subsite -->
+    <div id="info-site" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:100;overflow-y:auto;">
+        <div style="max-width:900px;margin:0 auto;padding:1.5rem 1.5rem 3rem;">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;">
+                <span class="brand" style="border:2px solid var(--accent);padding:0.2rem 0.5rem;border-radius:3px;font-size:0.9rem;">&gt;&lt;</span>
+                <span style="color:var(--accent);font-weight:bold;font-size:1.1rem;">Pairs — Guide</span>
+                <button onclick="closeInfo()" title="Close" style="margin-left:auto;background:none;border:none;color:var(--fg-dim);font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+            </div>
+            <div id="info-tabs" style="display:flex;gap:0.4rem;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:0.75rem;margin-bottom:1.25rem;"></div>
+            <div id="info-content" style="font-size:0.9rem;line-height:1.6;color:var(--fg);"></div>
+        </div>
+    </div>
+
     <!-- Dashboard View -->
     <div class="view active" id="view-dashboard">
         <!-- Manage shortcuts -->
-        <div id="dash-manage-btns" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;">
-            <button class="btn" onclick="dashLoadManage('assets')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Assets</button>
-            <button class="btn" onclick="dashLoadManage('liabilities')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Liabilities</button>
-            <button class="btn" onclick="dashLoadManage('equity')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Equity</button>
-            <button class="btn" onclick="dashLoadManage('income')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Income</button>
-            <button class="btn" onclick="dashLoadManage('expenses')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Expenses</button>
-            <button class="btn" onclick="dashLoadManage('payroll')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Payroll</button>
-            <button class="btn" onclick="dashLoadManage('recurring')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Recurring</button>
-            <button class="btn" onclick="dashLoadManage('contracts')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Contracts</button>
+        <div id="dash-manage-btns" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;justify-content:space-between;align-items:center;">
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                <button class="btn" onclick="dashLoadManage('assets')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Assets</button>
+                <button class="btn" onclick="dashLoadManage('liabilities')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Liabilities</button>
+                <button class="btn" onclick="dashLoadManage('equity')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Equity</button>
+                <button class="btn" onclick="dashLoadManage('income')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Income</button>
+                <button class="btn" onclick="dashLoadManage('expenses')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Expenses</button>
+                <button class="btn" onclick="dashLoadManage('payroll')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Payroll</button>
+                <button class="btn" onclick="dashLoadManage('recurring')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Recurring</button>
+                <button class="btn" onclick="dashLoadManage('contracts')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Contracts</button>
+            </div>
+            <div id="dash-time-btns" style="display:flex;gap:0.3rem;">
+                <button class="btn active" onclick="setDashPeriod('ytd')" style="font-size:0.7rem;padding:0.25rem 0.5rem;">YTD</button>
+                <button class="btn" onclick="setDashPeriod('1m')" style="font-size:0.7rem;padding:0.25rem 0.5rem;">&lt;1</button>
+                <button class="btn" onclick="setDashPeriod('2m')" style="font-size:0.7rem;padding:0.25rem 0.5rem;">&lt;2</button>
+                <button class="btn" onclick="setDashPeriod('3m')" style="font-size:0.7rem;padding:0.25rem 0.5rem;">&lt;3</button>
+            </div>
         </div>
         <!-- Dashboard main content (replaceable) -->
         <div id="dash-main-content">
@@ -181,6 +207,7 @@
             </div>
         </div>
         <!-- Quick Entry -->
+        <div id="dash-entry-slot">
         <div id="quick-entry-box" style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1.5rem;">
             <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
                 <span style="color:var(--accent);font-size:0.9rem;">⊹</span>
@@ -198,14 +225,24 @@
                 <button class="btn" id="quick-clear-btn" onclick="quickClear()">Clear</button>
             </div>
         </div>
+        </div><!-- /dash-entry-slot -->
 
-        <div class="section-title">Recent Entries</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;gap:1rem;">
+            <div class="section-title" style="margin:0;white-space:nowrap;">Register</div>
+            <div style="display:flex;gap:0.5rem;align-items:center;flex:1;">
+                <input type="text" id="register-search" placeholder="filter by account, description, amount..." oninput="debounceRegister()" style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
+                <span id="register-count" style="color:var(--fg-dim);font-size:0.75rem;white-space:nowrap;"></span>
+            </div>
+        </div>
         <table id="recent-table"><thead><tr><th>Date</th><th>Description</th><th>Postings</th></tr></thead><tbody id="recent-body"></tbody></table>
+        <div id="register-load-more" style="text-align:center;padding:0.75rem;display:none;">
+            <button class="btn" onclick="loadMoreRegister()" style="font-size:0.8rem;padding:0.4rem 1rem;">Load more</button>
+        </div>
         </div><!-- /dash-main-content -->
         <!-- Manage content (shown when a manage button is clicked) -->
         <div id="dash-manage-content" style="display:none;">
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
-                <button class="btn" onclick="dashShowMain()" style="font-size:0.8rem;padding:0.3rem 0.6rem;">← Dashboard</button>
+                <button class="btn" onclick="dashShowMain()" style="font-size:0.8rem;padding:0.3rem 0.6rem;">← Dash</button>
                 <span id="dash-manage-title" style="color:var(--accent);font-size:0.9rem;font-weight:bold;"></span>
             </div>
             <div id="dash-manage-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
@@ -261,7 +298,28 @@
             <button class="btn" onclick="loadChart('revenue')">Revenue</button>
             <button class="btn" onclick="loadChart('expenses')">Expenses</button>
             <button class="btn" onclick="loadChart('cashflow')">Cash Flow</button>
+            <button class="btn" onclick="loadChart('assets')">Assets</button>
             <button class="btn" onclick="loadChart('prices')">Prices</button>
+            <button class="btn" onclick="loadChart('sankey')">Sankey</button>
+            <button class="btn" onclick="loadChart('treemap')">Treemap</button>
+            <label style="display:inline-flex;align-items:center;gap:0.35rem;color:var(--fg-dim);font-size:0.8rem;margin-left:0.5rem;">
+                <input type="checkbox" id="chart-market" onchange="if(currentChart)loadChart(currentChart)"> @ market (-V)
+            </label>
+        </div>
+        <div class="report-controls" style="margin-top:0.5rem;">
+            <input type="text" id="chart-query" placeholder="custom hledger query — e.g. expenses:travel  (covers bar/plot/vega)"
+                   onkeydown="if(event.key==='Enter')runQueryChart()"
+                   style="flex:1;min-width:220px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
+            <select id="chart-query-mode" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
+                <option value="line">Line</option>
+                <option value="bar">Bar</option>
+            </select>
+            <button class="btn" onclick="runQueryChart()">Plot</button>
+            <button class="btn" onclick="toggleQueryHelp()" title="Query examples" style="min-width:2rem;font-style:italic;font-weight:700;">i</button>
+        </div>
+        <div id="chart-query-help" style="display:none;margin-top:0.5rem;padding:0.75rem 1rem;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);font-size:0.8rem;">
+            <div style="color:var(--fg-dim);margin-bottom:0.5rem;">Runs <code style="color:var(--accent);">hledger balance &lt;query&gt; -M</code> on the active entity. Click an example to run it:</div>
+            <div id="chart-query-examples" style="display:grid;grid-template-columns:auto 1fr;gap:0.3rem 0.9rem;align-items:baseline;"></div>
         </div>
         <div style="position:relative;height:400px;margin-top:1rem;">
             <canvas id="main-chart"></canvas>
@@ -296,6 +354,53 @@
         </div>
         <div id="data-add-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin:0.75rem 0;"></div>
         <div id="data-content"></div>
+    </div>
+
+    <!-- Accounts View -->
+    <div class="view" id="view-accounts">
+        <div class="section-title">Chart of Accounts</div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.6rem 0.85rem;margin-bottom:0.75rem;">
+            <span style="color:var(--accent);font-size:0.8rem;">+ Sub-account under</span>
+            <select id="acct-parent" style="flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.85rem;"></select>
+            <span style="color:var(--fg-dim);">:</span>
+            <input type="text" id="acct-name" placeholder="new sub-account name" onkeydown="if(event.key==='Enter')addAccount()" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
+            <button class="btn" onclick="addAccount()" style="font-size:0.85rem;padding:0.4rem 0.85rem;">Add</button>
+        </div>
+        <div style="margin-bottom:0.5rem;display:flex;gap:0.5rem;">
+            <button class="btn" onclick="acctExpandAll(true)" style="font-size:0.75rem;padding:0.25rem 0.6rem;">Expand all</button>
+            <button class="btn" onclick="acctExpandAll(false)" style="font-size:0.75rem;padding:0.25rem 0.6rem;">Collapse all</button>
+        </div>
+        <div id="accounts-tree" style="font-size:0.85rem;"></div>
+    </div>
+
+    <!-- Records View -->
+    <div class="view" id="view-records">
+        <div id="records-entry-slot"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;gap:1rem;flex-wrap:wrap;">
+            <div class="section-title" style="margin:0;white-space:nowrap;">Records</div>
+            <div style="display:flex;gap:0.5rem;align-items:center;flex:1;min-width:200px;">
+                <input type="text" id="rec-search" placeholder="filter by account, description, amount..." oninput="debounceRecords()" style="flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
+                <span id="rec-count" style="color:var(--fg-dim);font-size:0.75rem;white-space:nowrap;"></span>
+            </div>
+        </div>
+        <div id="rec-filters" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+            <button class="btn" data-type="Assets" onclick="toggleRecFilter('Assets',this)" style="font-size:0.78rem;padding:0.3rem 0.7rem;">Assets</button>
+            <button class="btn" data-type="Liabilities" onclick="toggleRecFilter('Liabilities',this)" style="font-size:0.78rem;padding:0.3rem 0.7rem;">Liabilities</button>
+            <button class="btn" data-type="Equity" onclick="toggleRecFilter('Equity',this)" style="font-size:0.78rem;padding:0.3rem 0.7rem;">Equity</button>
+            <button class="btn" data-type="Income" onclick="toggleRecFilter('Income',this)" style="font-size:0.78rem;padding:0.3rem 0.7rem;">Income</button>
+            <button class="btn" data-type="Expenses" onclick="toggleRecFilter('Expenses',this)" style="font-size:0.78rem;padding:0.3rem 0.7rem;">Expenses</button>
+            <button class="btn" onclick="clearRecFilters()" style="font-size:0.78rem;padding:0.3rem 0.7rem;color:var(--fg-dim);">Clear</button>
+            <div style="margin-left:auto;display:flex;gap:0.4rem;align-items:center;">
+                <span style="color:var(--fg-dim);font-size:0.75rem;">from</span>
+                <input type="date" id="rec-from" onchange="filterRecords()" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.28rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.78rem;">
+                <span style="color:var(--fg-dim);font-size:0.75rem;">to</span>
+                <input type="date" id="rec-to" onchange="filterRecords()" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.28rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.78rem;">
+            </div>
+        </div>
+        <table id="rec-table"><thead><tr><th>Date</th><th>Description</th><th>Postings</th></tr></thead><tbody id="rec-body"></tbody></table>
+        <div id="rec-load-more" style="text-align:center;padding:0.75rem;display:none;">
+            <button class="btn" onclick="loadMoreRecords()" style="font-size:0.8rem;padding:0.4rem 1rem;">Load more</button>
+        </div>
     </div>
 
     <!-- Contacts View -->
@@ -426,6 +531,93 @@
                 <div style="display:flex;gap:0.5rem;margin-left:auto;">
                     <button class="btn" onclick="closeAssetModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
                     <button class="btn" onclick="saveAsset()" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Liability Modal -->
+    <div id="liability-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:60;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:92%;max-width:540px;max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="color:var(--accent);font-weight:bold;" id="liability-modal-title">Add Liability</span>
+                <button onclick="closeLiabilityModal()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div style="display:grid;gap:0.75rem;font-size:0.85rem;">
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Name</label>
+                    <input type="text" id="liab-name" placeholder="e.g. Vehicle Loan - Honda CR-V" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Type</label>
+                        <select id="liab-type" oninput="updateLiabPmt()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="loan">Loan</option>
+                            <option value="lease">Lease</option>
+                            <option value="credit-line">Credit Line</option>
+                            <option value="payable">Payable</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Start Date</label>
+                        <input type="date" id="liab-date" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Principal</label>
+                        <input type="number" id="liab-principal" step="0.01" min="0" placeholder="0.00" oninput="updateLiabPmt()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Interest Rate (% annual)</label>
+                        <input type="number" id="liab-rate" step="0.01" min="0" value="0" placeholder="0.00" oninput="updateLiabPmt()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Term (months)</label>
+                        <input type="number" id="liab-term" min="1" value="60" oninput="updateLiabPmt()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Payment Schedule</label>
+                        <select id="liab-schedule" oninput="updateLiabPmt()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="monthly">Monthly</option>
+                            <option value="biweekly">Biweekly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="annual">Annual</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;align-items:center;">
+                    <div id="liab-term-presets" style="display:flex;gap:0.35rem;flex-wrap:wrap;">
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLiabTerm(12)">1yr</button>
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLiabTerm(24)">2yr</button>
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLiabTerm(36)">3yr</button>
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLiabTerm(60)">5yr</button>
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLiabTerm(120)">10yr</button>
+                    </div>
+                    <div id="liab-pmt-hint" style="color:var(--green);font-size:0.8rem;text-align:right;"></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Payment Amount <span style="color:var(--fg-dim);">(auto — edit to override)</span></label>
+                        <input type="number" id="liab-payment" step="0.01" min="0" placeholder="auto" oninput="liabPmtManual=true" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Lender (contact slug)</label>
+                        <input type="text" id="liab-lender" placeholder="optional, e.g. maple-leaf-bank" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Notes</label>
+                    <input type="text" id="liab-desc" placeholder="Optional notes" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+            </div>
+            <div style="margin-top:1.25rem;display:flex;gap:0.5rem;justify-content:space-between;align-items:center;">
+                <button class="btn" id="liab-delete-btn" onclick="deleteLiability()" style="font-size:0.8rem;padding:0.4rem 0.75rem;color:var(--red);border-color:var(--red);display:none;">Delete</button>
+                <div style="display:flex;gap:0.5rem;margin-left:auto;">
+                    <button class="btn" onclick="closeLiabilityModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                    <button class="btn" onclick="saveLiability()" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Save</button>
                 </div>
             </div>
         </div>
@@ -616,12 +808,14 @@
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         if (event && event.target) event.target.classList.add('active');
         if (view === 'entry') document.getElementById('expr-field').focus();
-        if (view === 'dashboard') { quickClear(); dashShowMain(); loadDashboard(); }
+        if (view === 'dashboard') { mountQuickEntry('dash-entry-slot'); quickClear(); dashShowMain(); loadDashboard(); }
+        if (view === 'records') { mountQuickEntry('records-entry-slot'); quickClear(); loadRecords(); }
         if (view === 'data') loadData('assets');
         if (view === 'contacts') loadContactsView();
         if (view === 'commodities') loadCommoditiesView();
         if (view === 'charts') loadChart('networth');
         if (view === 'pairs') loadPairsRef();
+        if (view === 'accounts') loadAccounts();
     }
 
     // ─── Entity Switcher ────────────────────────────────────────────────────
@@ -659,6 +853,30 @@
     });
 
     // ─── Dashboard ──────────────────────────────────────────────────────────
+    let dashPeriod = 'ytd';  // 'ytd', '1m', '2m', '3m'
+
+    function setDashPeriod(period) {
+        dashPeriod = period;
+        document.querySelectorAll('#dash-time-btns .btn').forEach(b => b.classList.remove('active'));
+        if (event && event.target) event.target.classList.add('active');
+        loadSparklines();
+    }
+
+    function getDashPeriodStr() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth(); // 0-indexed
+        if (dashPeriod === 'ytd') return 'thisyear';
+        // Trailing window: from N months back through now, as an open-ended range
+        // so the monthly report yields several buckets (a visible sparkline).
+        const months = { '1m': 1, '2m': 2, '3m': 3 }[dashPeriod];
+        if (months) {
+            const d = new Date(year, month - months, 1);
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '..';
+        }
+        return '';
+    }
+
     async function loadDashboard() {
       try {
         // Net worth
@@ -671,16 +889,51 @@
         // Sparklines
         loadSparklines();
 
-        // Recent
-        const recent = await fetch('/api/recent?limit=15').then(r => r.json());
+        // Register
+        registerOffset = 0;
+        loadRegister(false);
+      } catch(e) { console.error('loadDashboard error:', e); }
+    }
+
+    // ─── Register ────────────────────────────────────────────────────────────
+    let registerOffset = 0;
+    let registerDebounceTimer = null;
+    let registerAllEntries = [];  // cached full set
+    let registerTotal = 0;
+
+    function debounceRegister() {
+        clearTimeout(registerDebounceTimer);
+        registerDebounceTimer = setTimeout(() => {
+            filterRegister();
+        }, 150);
+    }
+
+    function filterRegister() {
+        const query = (document.getElementById('register-search')?.value || '').toLowerCase().trim();
         const tbody = document.getElementById('recent-body');
+        const countEl = document.getElementById('register-count');
+        const loadMoreBtn = document.getElementById('register-load-more');
+
         tbody.innerHTML = '';
-        for (const txn of (recent.entries || []).reverse()) {
+        let filtered = registerAllEntries;
+        if (query) {
+            filtered = registerAllEntries.filter(txn => {
+                if (txn.description.toLowerCase().includes(query)) return true;
+                if (txn.date.includes(query)) return true;
+                for (const p of txn.postings) {
+                    if (p.account.toLowerCase().includes(query)) return true;
+                    if (p.amount.toLowerCase().includes(query)) return true;
+                }
+                return false;
+            });
+        }
+
+        const showing = filtered.slice(0, 100);
+        for (const txn of showing) {
             const tr = document.createElement('tr');
             tr.style.cursor = 'pointer';
             tr.onclick = () => openEntryModal(txn);
 
-            // Build postings display
             let postingsHtml = '';
             for (const p of txn.postings) {
                 const leaf = p.account.split(':').pop();
@@ -691,7 +944,135 @@
             tr.innerHTML = `<td style="vertical-align:top;white-space:nowrap;">${esc(txn.date)}</td><td style="vertical-align:top;">${esc(txn.description)}</td><td style="min-width:250px;">${postingsHtml}</td>`;
             tbody.appendChild(tr);
         }
-      } catch(e) { console.error('loadDashboard error:', e); }
+
+        countEl.textContent = query ? filtered.length + ' matching' : filtered.length + ' entries';
+        loadMoreBtn.style.display = filtered.length > 100 ? 'block' : 'none';
+    }
+
+    async function loadRegister(append) {
+        const limit = 500;
+        const url = '/api/recent?limit=' + limit + '&offset=' + registerOffset;
+
+        try {
+            const data = await fetch(url).then(r => r.json());
+            if (!append) registerAllEntries = [];
+            registerAllEntries = registerAllEntries.concat(data.entries || []);
+            registerTotal = data.total || registerAllEntries.length;
+            filterRegister();
+
+            const loadMoreBtn = document.getElementById('register-load-more');
+            loadMoreBtn.style.display = registerAllEntries.length < registerTotal ? 'block' : 'none';
+        } catch(e) {
+            console.error('loadRegister error:', e);
+        }
+    }
+
+    function loadMoreRegister() {
+        registerOffset += 500;
+        loadRegister(true);
+    }
+
+    // ─── Records (register + type filters + shared entry box) ────────────────
+    function mountQuickEntry(slotId) {
+        const box = document.getElementById('quick-entry-box');
+        const slot = document.getElementById(slotId);
+        if (box && slot && box.parentElement !== slot) slot.appendChild(box);
+    }
+
+    let recEntries = [];
+    let recOffset = 0;
+    let recTotal = 0;
+    let recFilters = new Set();
+    let recDebounceTimer = null;
+
+    function debounceRecords() {
+        clearTimeout(recDebounceTimer);
+        recDebounceTimer = setTimeout(filterRecords, 150);
+    }
+
+    function toggleRecFilter(type, btn) {
+        if (recFilters.has(type)) { recFilters.delete(type); btn.classList.remove('active'); }
+        else { recFilters.add(type); btn.classList.add('active'); }
+        filterRecords();
+    }
+
+    function clearRecFilters() {
+        recFilters.clear();
+        document.querySelectorAll('#rec-filters .btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('rec-search').value = '';
+        document.getElementById('rec-from').value = '';
+        document.getElementById('rec-to').value = '';
+        filterRecords();
+    }
+
+    function recMatchesTypes(txn) {
+        if (!recFilters.size) return true;
+        for (const p of txn.postings) {
+            const root = p.account.split(':')[0];
+            if (recFilters.has(root)) return true;
+            if (recFilters.has('Income') && root === 'Revenue') return true;  // treat Revenue as Income
+        }
+        return false;
+    }
+
+    function filterRecords() {
+        const query = (document.getElementById('rec-search')?.value || '').toLowerCase().trim();
+        const tbody = document.getElementById('rec-body');
+        const countEl = document.getElementById('rec-count');
+        const loadMoreBtn = document.getElementById('rec-load-more');
+        tbody.innerHTML = '';
+
+        let filtered = recEntries.filter(recMatchesTypes);
+        const from = document.getElementById('rec-from')?.value || '';
+        const to = document.getElementById('rec-to')?.value || '';
+        if (from || to) {
+            filtered = filtered.filter(txn => (!from || txn.date >= from) && (!to || txn.date <= to));
+        }
+        if (query) {
+            filtered = filtered.filter(txn => {
+                if (txn.description.toLowerCase().includes(query)) return true;
+                if (txn.date.includes(query)) return true;
+                for (const p of txn.postings) {
+                    if (p.account.toLowerCase().includes(query)) return true;
+                    if (p.amount.toLowerCase().includes(query)) return true;
+                }
+                return false;
+            });
+        }
+
+        for (const txn of filtered.slice(0, 100)) {
+            const tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            tr.onclick = () => openEntryModal(txn);
+            let postingsHtml = '';
+            for (const p of txn.postings) {
+                const leaf = p.account.split(':').pop();
+                const amtClass = p.amount && p.amount.includes('-') ? 'amt-neg' : 'amt-pos';
+                postingsHtml += `<div style="display:flex;justify-content:space-between;gap:1rem;"><span style="color:var(--fg-dim)">${esc(leaf)}</span><span class="${amtClass}" style="white-space:nowrap;">${esc(p.amount)}</span></div>`;
+            }
+            tr.innerHTML = `<td style="vertical-align:top;white-space:nowrap;">${esc(txn.date)}</td><td style="vertical-align:top;">${esc(txn.description)}</td><td style="min-width:250px;">${postingsHtml}</td>`;
+            tbody.appendChild(tr);
+        }
+
+        const label = (recFilters.size || query || from || to) ? filtered.length + ' matching' : filtered.length + ' entries';
+        countEl.textContent = label;
+        loadMoreBtn.style.display = filtered.length > 100 ? 'block' : 'none';
+    }
+
+    async function loadRecords(append) {
+        if (!append) recOffset = 0;
+        try {
+            const data = await fetch('/api/recent?limit=500&offset=' + recOffset).then(r => r.json());
+            if (!append) recEntries = [];
+            recEntries = recEntries.concat(data.entries || []);
+            recTotal = data.total || recEntries.length;
+            filterRecords();
+        } catch (e) { console.error('loadRecords error:', e); }
+    }
+
+    function loadMoreRecords() {
+        recOffset += 500;
+        loadRecords(true);
     }
 
     // ─── Reports ────────────────────────────────────────────────────────────
@@ -1364,7 +1745,7 @@
         } else if (type === 'liabilities') {
             let html = '<table><thead><tr><th>Name</th><th>Principal</th><th>Rate</th><th>Payment</th><th>Term</th></tr></thead><tbody>';
             for (const item of items) {
-                html += `<tr><td>${esc(item.name||'')}</td><td>${item.currency||'CAD'} ${(item.principal||0).toLocaleString()}</td><td>${item.interest_rate||0}%</td><td>${item.currency||'CAD'} ${(item.payment_amount||0).toFixed(2)}/mo</td><td>${item.term_months||'—'}mo</td></tr>`;
+                html += `<tr style="cursor:pointer;" onclick='openLiabilityModal(${JSON.stringify(item).replace(/'/g,"&#39;")})'><td>${esc(item.name||'')}</td><td>${item.currency||'CAD'} ${(item.principal||0).toLocaleString()}</td><td>${item.interest_rate||0}%</td><td>${item.currency||'CAD'} ${(item.payment_amount||0).toFixed(2)}/mo</td><td>${item.term_months||'—'}mo</td></tr>`;
             }
             content.innerHTML = html + '</tbody></table>';
         } else if (type === 'contacts') {
@@ -1417,13 +1798,28 @@
                     <button class="btn" onclick="quickAddAsset()" style="font-size:0.8rem;padding:0.35rem 0.75rem;" tabindex="12">Add</button>
                 </div>
             </div>`,
-            liabilities: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                <span style="color:var(--accent);font-size:0.8rem;">+ Liability</span>
-                <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <input type="text" id="add-principal" placeholder="principal" style="width:90px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
-                <input type="text" id="add-rate" placeholder="rate %" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <input type="text" id="add-term" placeholder="term (mo)" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <button class="btn" onclick="addItem('liabilities')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            liabilities: `<div style="display:grid;grid-template-columns:auto 1fr;gap:0.4rem 0.5rem;align-items:center;">
+                <button class="btn" onclick="openLiabilityModal()" style="font-size:0.8rem;padding:0.35rem 0.6rem;color:var(--accent);border-color:var(--accent);" title="Full form">+ Liability</button>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="ql-name" placeholder="name" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="1">
+                    <select id="ql-type" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="2">
+                        <option value="loan">loan</option><option value="lease">lease</option><option value="credit-line">credit-line</option><option value="payable">payable</option>
+                    </select>
+                    <input type="text" id="ql-principal" placeholder="principal" style="width:90px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="3">
+                    <input type="text" id="ql-rate" placeholder="rate %" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="4" value="0">
+                    <input type="text" id="ql-term" placeholder="term (mo)" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="5">
+                </div>
+                <div></div>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <input type="date" id="ql-date" style="width:130px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="6">
+                    <select id="ql-schedule" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="7">
+                        <option value="monthly">monthly</option><option value="biweekly">biweekly</option><option value="quarterly">quarterly</option><option value="annual">annual</option>
+                    </select>
+                    <input type="text" id="ql-payment" placeholder="payment (auto)" style="width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="8">
+                    <input type="text" id="ql-lender" placeholder="lender slug" style="width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="9">
+                    <input type="text" id="ql-desc" placeholder="notes" style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="10">
+                    <button class="btn" onclick="quickAddLiability()" style="font-size:0.8rem;padding:0.35rem 0.75rem;" tabindex="11">Add</button>
+                </div>
             </div>`,
             equity: `<div style="display:flex;gap:0.5rem;align-items:center;">
                 <span style="color:var(--accent);font-size:0.8rem;">+ Equity account</span>
@@ -1709,7 +2105,7 @@
         } else if (type === 'liabilities') {
             let html = '<table><thead><tr><th>Name</th><th>Principal</th><th>Rate</th><th>Payment</th><th>Term</th></tr></thead><tbody>';
             for (const item of items) {
-                html += '<tr><td>' + esc(item.name||'') + '</td><td>' + (item.currency||'CAD') + ' ' + (item.principal||0).toLocaleString() + '</td><td>' + (item.interest_rate||0) + '%</td><td>' + (item.currency||'CAD') + ' ' + (item.payment_amount||0).toFixed(2) + '/mo</td><td>' + (item.term_months||'—') + 'mo</td></tr>';
+                html += '<tr style="cursor:pointer;" onclick=\'openLiabilityModal(' + JSON.stringify(item).replace(/'/g,"&#39;") + ')\'><td>' + esc(item.name||'') + '</td><td>' + (item.currency||'CAD') + ' ' + (item.principal||0).toLocaleString() + '</td><td>' + (item.interest_rate||0) + '%</td><td>' + (item.currency||'CAD') + ' ' + (item.payment_amount||0).toFixed(2) + '/mo</td><td>' + (item.term_months||'—') + 'mo</td></tr>';
             }
             container.innerHTML = html + '</tbody></table>';
         } else if (type === 'contacts') {
@@ -1966,6 +2362,8 @@
 
     // ─── Asset Modal ────────────────────────────────────────────────────────
     let editingAssetSlug = null;
+    let editingLiabilitySlug = null;
+    let liabPmtManual = false;
 
     async function quickAddAsset() {
         const name = document.getElementById('add-name')?.value.trim();
@@ -2039,10 +2437,21 @@
             'pay-ei-er': 'pay-benefits',
             'pay-benefits': 'pay-date',
             'pay-date': 'pay-period',
+            // Liabilities (inline quick-entry)
+            'ql-name': 'ql-type',
+            'ql-type': 'ql-principal',
+            'ql-principal': 'ql-rate',
+            'ql-rate': 'ql-term',
+            'ql-term': 'ql-date',
+            'ql-date': 'ql-schedule',
+            'ql-schedule': 'ql-payment',
+            'ql-payment': 'ql-lender',
+            'ql-lender': 'ql-desc',
         };
         if (advance[id]) { e.preventDefault(); document.getElementById(advance[id]).focus(); }
         else if (id === 'add-desc') { e.preventDefault(); quickAddAsset(); }
         else if (id === 'pay-period') { e.preventDefault(); runPayroll(); }
+        else if (id === 'ql-desc') { e.preventDefault(); quickAddLiability(); }
     });
 
     function openAssetModal(item) {
@@ -2207,6 +2616,192 @@
     // Close asset modal on backdrop click
     document.getElementById('asset-modal')?.addEventListener('click', function(e) {
         if (e.target === this) closeAssetModal();
+    });
+
+    // ─── Liability Modal ────────────────────────────────────────────────────
+    // Payment maths mirror modules/liability.py (_periods_count / _calculate_payment)
+    function liabPeriods(term, schedule) {
+        if (schedule === 'biweekly') return Math.floor(term * 26 / 12);
+        if (schedule === 'quarterly') return Math.floor(term / 3);
+        if (schedule === 'annual') return Math.floor(term / 12);
+        return term; // monthly
+    }
+    function liabPayment(principal, annualRate, term, schedule) {
+        const periods = liabPeriods(term, schedule);
+        if (!principal || periods <= 0) return 0;
+        if (!annualRate || annualRate <= 0) return principal / periods;
+        const divisor = { monthly: 1200, biweekly: 2600, quarterly: 400, annual: 100 }[schedule] || 1200;
+        const r = annualRate / divisor;
+        const factor = Math.pow(1 + r, periods);
+        return principal * r * factor / (factor - 1);
+    }
+    const liabPeriodSuffix = { monthly: '/mo', biweekly: '/2wk', quarterly: '/qtr', annual: '/yr' };
+
+    function updateLiabPmt() {
+        const principal = parseFloat(document.getElementById('liab-principal').value) || 0;
+        const rate = parseFloat(document.getElementById('liab-rate').value) || 0;
+        const term = parseInt(document.getElementById('liab-term').value) || 0;
+        const schedule = document.getElementById('liab-schedule').value;
+        const hint = document.getElementById('liab-pmt-hint');
+        if (principal > 0 && term > 0) {
+            const pmt = liabPayment(principal, rate, term, schedule);
+            hint.textContent = `= ${state.currency} ${pmt.toFixed(2)} ${liabPeriodSuffix[schedule] || ''}`;
+            if (!liabPmtManual) document.getElementById('liab-payment').value = pmt.toFixed(2);
+        } else {
+            hint.textContent = '';
+        }
+    }
+
+    function setLiabTerm(months) {
+        document.getElementById('liab-term').value = months;
+        updateLiabPmt();
+    }
+
+    function openLiabilityModal(item) {
+        const modal = document.getElementById('liability-modal');
+        const title = document.getElementById('liability-modal-title');
+        const deleteBtn = document.getElementById('liab-delete-btn');
+
+        if (item) {
+            title.textContent = 'Edit Liability';
+            editingLiabilitySlug = item.slug || '';
+            document.getElementById('liab-name').value = item.name || '';
+            document.getElementById('liab-type').value = item.type || 'loan';
+            document.getElementById('liab-date').value = item.start_date || '';
+            document.getElementById('liab-principal').value = item.principal || '';
+            document.getElementById('liab-rate').value = item.interest_rate || 0;
+            document.getElementById('liab-term').value = item.term_months || 60;
+            document.getElementById('liab-schedule').value = item.payment_schedule || 'monthly';
+            document.getElementById('liab-payment').value = item.payment_amount || '';
+            document.getElementById('liab-lender').value = item.lender || '';
+            document.getElementById('liab-desc').value = item.notes || '';
+            // Keep the stored payment unless the user changes an input
+            liabPmtManual = !!item.payment_amount;
+            deleteBtn.style.display = 'inline-block';
+        } else {
+            title.textContent = 'Add Liability';
+            editingLiabilitySlug = null;
+            document.getElementById('liab-name').value = '';
+            document.getElementById('liab-type').value = 'loan';
+            document.getElementById('liab-date').value = state.today;
+            document.getElementById('liab-principal').value = '';
+            document.getElementById('liab-rate').value = '0';
+            document.getElementById('liab-term').value = '60';
+            document.getElementById('liab-schedule').value = 'monthly';
+            document.getElementById('liab-payment').value = '';
+            document.getElementById('liab-lender').value = '';
+            document.getElementById('liab-desc').value = '';
+            liabPmtManual = false;
+            deleteBtn.style.display = 'none';
+        }
+        updateLiabPmt();
+        modal.style.display = 'flex';
+    }
+
+    function closeLiabilityModal() {
+        document.getElementById('liability-modal').style.display = 'none';
+        editingLiabilitySlug = null;
+    }
+
+    // Refresh whichever liabilities view is currently visible
+    function refreshLiabilities() {
+        const dashManage = document.getElementById('dash-manage-content');
+        if (dashManage && dashManage.style.display !== 'none') dashLoadManageByName('liabilities');
+        else loadData('liabilities');
+    }
+
+    async function saveLiability() {
+        const name = document.getElementById('liab-name').value.trim();
+        if (!name) { showToast('Name is required', true); return; }
+        const principal = parseFloat(document.getElementById('liab-principal').value);
+        if (!principal || principal <= 0) { showToast('Principal must be greater than zero', true); return; }
+
+        const payload = {
+            name: name,
+            slug: editingLiabilitySlug || '',
+            type: document.getElementById('liab-type').value,
+            principal: principal,
+            interest_rate: parseFloat(document.getElementById('liab-rate').value) || 0,
+            term_months: parseInt(document.getElementById('liab-term').value) || 12,
+            start_date: document.getElementById('liab-date').value || state.today,
+            payment_schedule: document.getElementById('liab-schedule').value,
+            payment_amount: parseFloat(document.getElementById('liab-payment').value) || 0,
+            lender: document.getElementById('liab-lender').value.trim(),
+            description: document.getElementById('liab-desc').value.trim(),
+        };
+
+        try {
+            const res = await fetch('/api/liability', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Liability saved');
+                closeLiabilityModal();
+                refreshLiabilities();
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed to save'), true);
+            }
+        } catch (e) { showToast('Network error: ' + e.message, true); }
+    }
+
+    async function deleteLiability() {
+        if (!editingLiabilitySlug) return;
+        if (!confirm(`Delete liability "${editingLiabilitySlug}"? This removes its record (journal entries remain).`)) return;
+        try {
+            const res = await fetch(`/api/liability/${encodeURIComponent(editingLiabilitySlug)}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Liability deleted');
+                closeLiabilityModal();
+                refreshLiabilities();
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed to delete'), true);
+            }
+        } catch (e) { showToast('Network error: ' + e.message, true); }
+    }
+
+    async function quickAddLiability() {
+        const name = document.getElementById('ql-name')?.value.trim();
+        if (!name) { showToast('Name is required', true); return; }
+        const principal = parseFloat(document.getElementById('ql-principal')?.value);
+        if (!principal || principal <= 0) { showToast('Principal must be > 0', true); return; }
+
+        const payload = {
+            name: name,
+            type: document.getElementById('ql-type')?.value || 'loan',
+            principal: principal,
+            interest_rate: parseFloat(document.getElementById('ql-rate')?.value) || 0,
+            term_months: parseInt(document.getElementById('ql-term')?.value) || 12,
+            start_date: document.getElementById('ql-date')?.value || state.today,
+            payment_schedule: document.getElementById('ql-schedule')?.value || 'monthly',
+            payment_amount: parseFloat(document.getElementById('ql-payment')?.value) || 0,
+            lender: document.getElementById('ql-lender')?.value.trim() || '',
+            description: document.getElementById('ql-desc')?.value.trim() || '',
+        };
+
+        try {
+            const res = await fetch('/api/liability', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Liability added');
+                ['ql-name','ql-principal','ql-term','ql-payment','ql-lender','ql-desc'].forEach(id => {
+                    const el = document.getElementById(id); if (el) el.value = '';
+                });
+                refreshLiabilities();
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed'), true);
+            }
+        } catch (e) { showToast('Network error: ' + e.message, true); }
+    }
+
+    // Close liability modal on backdrop click
+    document.getElementById('liability-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeLiabilityModal();
     });
 
     // ─── Pairs Reference ────────────────────────────────────────────────────
@@ -2446,6 +3041,7 @@
     // ─── Charts ─────────────────────────────────────────────────────────────
     const chartColors = ['#61afef','#98c379','#e06c75','#e5c07b','#c678dd','#56b6c2','#d19a66','#abb2bf'];
     let mainChart = null;
+    let currentChart = 'networth';
 
     Chart.defaults.color = '#abb2bf';
     Chart.defaults.borderColor = '#3e4452';
@@ -2453,11 +3049,67 @@
     Chart.defaults.font.size = 11;
 
     async function loadChart(type) {
+        currentChart = type;
         document.querySelectorAll('#view-charts .report-controls .btn').forEach(b => b.classList.remove('active'));
-        if (event && event.target) event.target.classList.add('active');
+        if (typeof event !== 'undefined' && event && event.target && event.target.tagName === 'BUTTON') event.target.classList.add('active');
 
         if (mainChart) { mainChart.destroy(); mainChart = null; }
         const ctx = document.getElementById('main-chart').getContext('2d');
+        // Market valuation (-V) applies to balance-based charts
+        const mv = document.getElementById('chart-market')?.checked ? '?value=market' : '';
+
+        if (type === 'sankey') {
+            const data = await fetch('/api/chart/sankey').then(r => r.json());
+            if (!data.flows || !data.flows.length) return;
+            const cur = data.currency || '';
+            mainChart = new Chart(ctx, {
+                type: 'sankey',
+                data: { datasets: [{
+                    data: data.flows,
+                    colorFrom: (c) => chartColors[(c.dataIndex) % chartColors.length],
+                    colorTo: (c) => chartColors[(c.dataIndex + 3) % chartColors.length],
+                    colorMode: 'gradient',
+                    labels: data.labels || {},
+                    borderWidth: 0,
+                }] },
+                options: { responsive: true, maintainAspectRatio: false,
+                    plugins: { tooltip: { callbacks: { label: (c) => `${c.raw.from} → ${c.raw.to}: ${cur} ${c.raw.flow.toLocaleString()}` } } } }
+            });
+            return;
+        }
+
+        if (type === 'treemap') {
+            const data = await fetch('/api/chart/treemap').then(r => r.json());
+            if (!data.tree || !data.tree.length) return;
+            const cur = data.currency || '';
+            // Colour tiles by batch: OP = green shades, NO = orange shades (subtle per-tile variation)
+            const opBase = '152,195,121', noBase = '209,154,102';
+            let opi = 0, noi = 0;
+            const tileColors = data.tree.map(t => {
+                if (t.group === 'NO') { const a = 0.55 + (noi++ % 4) * 0.13; return `rgba(${noBase},${a})`; }
+                if (t.group === 'OP') { const a = 0.55 + (opi++ % 4) * 0.13; return `rgba(${opBase},${a})`; }
+                return chartColors[0] + 'cc';
+            });
+            mainChart = new Chart(ctx, {
+                type: 'treemap',
+                data: { datasets: [{
+                    tree: data.tree,
+                    key: 'value',
+                    labels: { display: true, color: '#fff', font: { size: 11 },
+                        formatter: (c) => { const o = c.raw?._data || {}; const v = c.raw?.v ?? o.value ?? 0; return [o.name || '', cur + ' ' + v.toLocaleString()]; } },
+                    backgroundColor: (c) => c.type === 'data' ? tileColors[c.dataIndex] : 'transparent',
+                    borderColor: '#282c34', borderWidth: 1, spacing: 1,
+                }] },
+                options: { responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false },
+                        subtitle: { display: true, color: '#abb2bf', font: { size: 12 },
+                            text: 'Green = OP (Operating)   ·   Orange = NO (Non-Operating)' },
+                        tooltip: { callbacks: {
+                            title: (i) => i[0].raw?._data?.name || '',
+                            label: (c) => cur + ' ' + (c.raw?.v ?? c.raw?._data?.value ?? 0).toLocaleString() } } } }
+            });
+            return;
+        }
 
         if (type === 'prices') {
             const data = await fetch('/api/chart/prices').then(r => r.json());
@@ -2504,10 +3156,13 @@
             return;
         }
 
-        const data = await fetch('/api/chart/' + type).then(r => r.json());
+        const data = await fetch('/api/chart/' + type + mv).then(r => r.json());
         if (!data.labels || !data.labels.length) return;
 
-        if (type === 'networth') {
+        if (type === 'assets') {
+            const datasets = data.datasets.slice(0,8).map((ds, i) => ({ label: ds.name, data: ds.data, borderColor: chartColors[i%chartColors.length], backgroundColor: chartColors[i%chartColors.length]+'55', fill: true, tension: 0.3, pointRadius: 0 }));
+            mainChart = new Chart(ctx, { type: 'line', data: { labels: data.labels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { y: { stacked: true } } } });
+        } else if (type === 'networth') {
             mainChart = new Chart(ctx, { type: 'line', data: { labels: data.labels, datasets: [
                 { label: 'Net Worth', data: data.datasets[0]?.data, borderColor: '#61afef', backgroundColor: 'rgba(97,175,239,0.1)', fill: true, tension: 0.3 },
                 { label: 'Assets', data: data.datasets[1]?.data, borderColor: '#98c379', backgroundColor: 'transparent', tension: 0.3, borderDash: [5,3] },
@@ -2531,6 +3186,65 @@
         }
     }
 
+    // Custom query chart — covers pair chart's bar/plot/vega (arbitrary hledger query, monthly)
+    async function runQueryChart() {
+        currentChart = null;  // custom render; market checkbox re-runs nothing
+        const q = document.getElementById('chart-query').value.trim();
+        const mode = document.getElementById('chart-query-mode').value;
+        document.querySelectorAll('#view-charts .report-controls .btn').forEach(b => b.classList.remove('active'));
+        if (mainChart) { mainChart.destroy(); mainChart = null; }
+        const ctx = document.getElementById('main-chart').getContext('2d');
+        const mv = document.getElementById('chart-market')?.checked ? '&value=market' : '';
+        const data = await fetch('/api/chart/query?q=' + encodeURIComponent(q) + '&mode=' + mode + mv).then(r => r.json());
+        if (data.error) { alert(data.error); return; }
+        if (!data.labels || !data.labels.length) return;
+        const stacked = mode === 'bar';
+        const datasets = data.datasets.slice(0,12).map((ds, i) => (mode === 'bar'
+            ? { label: ds.name, data: ds.data, backgroundColor: chartColors[i%chartColors.length]+'99', borderColor: chartColors[i%chartColors.length], borderWidth: 1 }
+            : { label: ds.name, data: ds.data, borderColor: chartColors[i%chartColors.length], backgroundColor: 'transparent', tension: 0.3, pointRadius: 0 }));
+        mainChart = new Chart(ctx, { type: mode, data: { labels: data.labels, datasets },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } },
+                scales: stacked ? { x: { stacked: true }, y: { stacked: true } } : {} } });
+    }
+
+    // Example hledger queries for the custom-query box (the "i" panel)
+    const chartQueryExamples = [
+        ['expenses',              'All expenses, month by month'],
+        ['expenses:travel',       'A single category over time'],
+        ['type:r',                'Revenue streams (by type)'],
+        ['type:a',                'Assets by account'],
+        ['assets:current',        'Cash & current assets'],
+        ['liabilities',           'What you owe'],
+        ['Payroll',               'Any account matching "Payroll"'],
+        ['not:Payroll expenses',  'Expenses excluding payroll'],
+        ['tag:pair=1000',         'Entries tagged BitLedger pair 1000 (Asset/Liability)'],
+        ['tag:division=saas',     'Filter to one division'],
+        ['date:2026-04..2026-07', 'Restrict to a date range'],
+        ['cur:CAD',               'A single commodity/currency'],
+    ];
+
+    function renderQueryExamples() {
+        const grid = document.getElementById('chart-query-examples');
+        if (!grid || grid.childElementCount) return;
+        grid.innerHTML = chartQueryExamples.map(([q, desc]) =>
+            `<code onclick="fillQuery('${q.replace(/'/g, "\\'")}')" title="Run this"
+                   style="color:var(--accent);cursor:pointer;white-space:nowrap;">${esc(q)}</code>`
+            + `<span style="color:var(--fg-dim);">${esc(desc)}</span>`
+        ).join('');
+    }
+
+    function toggleQueryHelp() {
+        const el = document.getElementById('chart-query-help');
+        const show = el.style.display === 'none';
+        if (show) renderQueryExamples();
+        el.style.display = show ? 'block' : 'none';
+    }
+
+    function fillQuery(q) {
+        document.getElementById('chart-query').value = q;
+        runQueryChart();
+    }
+
     // ─── Sparklines ─────────────────────────────────────────────────────────
     let sparkCharts = {};
 
@@ -2547,18 +3261,195 @@
     }
 
     async function loadSparklines() {
-        const nw = await fetch('/api/chart/networth').then(r => r.json());
+        const periodParam = dashPeriod !== 'ytd' ? '?period=' + encodeURIComponent(getDashPeriodStr()) : '';
+        const nw = await fetch('/api/chart/networth' + periodParam).then(r => r.json());
         if (nw.datasets && nw.datasets[0]) createSparkline('spark-networth', nw.datasets[0].data, '#98c379');
         if (nw.datasets && nw.datasets[1]) createSparkline('spark-assets', nw.datasets[1].data, '#61afef');
         if (nw.datasets && nw.datasets[2]) createSparkline('spark-liabilities', nw.datasets[2].data, '#e06c75');
 
-        const pl = await fetch('/api/chart/profitloss').then(r => r.json());
+        const pl = await fetch('/api/chart/profitloss' + periodParam).then(r => r.json());
         if (pl.datasets && pl.datasets[0]) createSparkline('spark-revenue', pl.datasets[0].data, '#98c379');
         if (pl.datasets && pl.datasets[2]) {
             const profitData = pl.datasets[2].data;
             const color = profitData[profitData.length-1] >= 0 ? '#98c379' : '#e06c75';
             createSparkline('spark-profit', profitData, color);
         }
+    }
+
+    // ─── Chart of Accounts ──────────────────────────────────────────────────
+    let acctTree = {};
+    let acctExpanded = {};  // path -> bool
+
+    async function loadAccounts() {
+        const data = await fetch('/api/accounts').then(r => r.json()).catch(() => ({all: []}));
+        const accounts = (data.all || []).map(a => a.full);
+        // Build nested tree from colon-separated paths
+        acctTree = {};
+        const parents = new Set();
+        for (const full of accounts) {
+            const parts = full.split(':');
+            let node = acctTree, path = '';
+            for (let i = 0; i < parts.length; i++) {
+                path = path ? path + ':' + parts[i] : parts[i];
+                if (!node[parts[i]]) node[parts[i]] = { _path: path, _children: {} };
+                if (i < parts.length - 1) parents.add(path);
+                node = node[parts[i]]._children;
+            }
+        }
+        // Populate parent selector (roots + every intermediate path), sorted
+        const sel = document.getElementById('acct-parent');
+        const prev = sel.value;
+        const roots = new Set(accounts.map(a => a.split(':')[0]));
+        const options = [...new Set([...roots, ...parents])].sort();
+        sel.innerHTML = options.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+        if (options.includes(prev)) sel.value = prev;
+        renderAccountsTree();
+    }
+
+    function renderAccountsTree() {
+        const container = document.getElementById('accounts-tree');
+        if (!Object.keys(acctTree).length) { container.innerHTML = '<div class="empty">No accounts found</div>'; return; }
+        container.innerHTML = renderAcctNodes(acctTree, 0);
+    }
+
+    function renderAcctNodes(node, depth) {
+        // Sort keys alphabetically
+        const keys = Object.keys(node).sort();
+        let html = '';
+        for (const key of keys) {
+            const item = node[key];
+            const path = item._path;
+            const kids = item._children || {};
+            const hasKids = Object.keys(kids).length > 0;
+            const open = acctExpanded[path] !== false && (acctExpanded[path] === true || depth < 1);
+            const pad = 0.4 + depth * 1.1;
+            const caret = hasKids ? (open ? '▾' : '▸') : '·';
+            const color = hasKids ? 'var(--fg)' : 'var(--fg-dim)';
+            html += `<div onclick="toggleAcct('${path.replace(/'/g,"\\'")}',event)" style="padding:0.2rem 0.4rem;padding-left:${pad}rem;cursor:${hasKids?'pointer':'default'};color:${color};border-radius:3px;">`
+                 + `<span style="color:var(--fg-dim);display:inline-block;width:1rem;">${caret}</span>${esc(key)}</div>`;
+            if (hasKids && open) html += renderAcctNodes(kids, depth + 1);
+        }
+        return html;
+    }
+
+    function toggleAcct(path, ev) {
+        if (ev) ev.stopPropagation();
+        // Default-open state depends on depth; flip explicitly
+        const depth = path.split(':').length - 1;
+        const currentlyOpen = acctExpanded[path] !== false && (acctExpanded[path] === true || depth < 1);
+        acctExpanded[path] = !currentlyOpen;
+        renderAccountsTree();
+    }
+
+    function acctExpandAll(open) {
+        acctExpanded = {};
+        const walk = (node) => {
+            for (const k of Object.keys(node)) {
+                acctExpanded[node[k]._path] = open;
+                walk(node[k]._children || {});
+            }
+        };
+        walk(acctTree);
+        renderAccountsTree();
+    }
+
+    async function addAccount() {
+        const parent = document.getElementById('acct-parent').value;
+        const name = document.getElementById('acct-name').value.trim();
+        if (!parent || !name) { showToast('Pick a parent and enter a name', true); return; }
+        try {
+            const res = await fetch('/api/account/add', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ parent, name }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Added');
+                document.getElementById('acct-name').value = '';
+                acctExpanded[parent] = true;  // reveal the new child
+                await loadAccounts();
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed'), true);
+            }
+        } catch (e) { showToast('Network error: ' + e.message, true); }
+    }
+
+    // ─── Info / Guide subsite ───────────────────────────────────────────────
+    const INFO_SECTIONS = {
+        'Overview': `
+            <p style="font-size:1rem;"><strong>Pairs</strong> is a business accounting workspace built on <a href="https://hledger.org" target="_blank" style="color:var(--accent);">hledger</a> plain-text ledgers. You describe things once; Pairs generates the journal entries and hledger produces the reports.</p>
+            <p>Every transaction is one of <strong>14 BitLedger account pairs</strong> — a complete map of how value moves between Assets, Liabilities, Equity, Income and Expenses. That structure runs through the whole app: quick entry, the reference codes, and the tags on every posting.</p>
+            <ul style="margin:0.5rem 0 0 1.1rem;">
+                <li><strong>One source of truth</strong> — hledger journals. Metadata (assets, loans, contacts) lives in YAML.</li>
+                <li><strong>Multi-entity</strong> — switch companies/projects from the header; each is fully isolated.</li>
+                <li><strong>Installable PWA</strong> — works offline, on any device.</li>
+            </ul>
+            <p style="color:var(--fg-dim);margin-top:0.75rem;">Use the tabs above to see what each part of the app does.</p>`,
+        'Dashboard': `
+            <p>Your at-a-glance home. <strong>Net worth</strong>, assets and liabilities with live sparklines, and period toggles (<code>YTD</code>, <code>&lt;1/&lt;2/&lt;3</code> trailing months).</p>
+            <ul style="margin:0.5rem 0 0 1.1rem;">
+                <li><strong>Quick-entry box</strong> — type a description, pairs shorthand (<code>&lt;. &lt; &gt;</code>…), or a tab name to jump.</li>
+                <li><strong>Manage shortcuts</strong> — inline Assets, Liabilities, Equity, Income, Expenses, Payroll, Recurring, Contracts without leaving the page.</li>
+                <li><strong>Register</strong> — recent transactions; click any row to edit.</li>
+            </ul>`,
+        'Records': `
+            <p>The full transaction register with the same quick-entry box on top.</p>
+            <ul style="margin:0.5rem 0 0 1.1rem;">
+                <li><strong>Search</strong> — filter by account, description, or amount.</li>
+                <li><strong>Type filters</strong> — Assets / Liabilities / Equity / Income / Expenses buttons; select several to combine (OR).</li>
+                <li><strong>Date range</strong> — From / To boxes; use either or both.</li>
+                <li>Click a row to open and correct an entry.</li>
+            </ul>`,
+        'Pairs & Codes': `
+            <p>The <strong>Pairs</strong> tab is progressive entry assembly. Pick one of 14 expressions and Pairs walks you through the two sides with fuzzy account search.</p>
+            <p style="margin-top:0.5rem;">Shorthand: <code>&lt;</code> pay expense from asset · <code>&gt;</code> expense on credit · <code>&lt;.</code> income received · <code>&lt;.&gt;</code> received a loan · <code>&lt;..</code> owner invested. Append <code>/</code> to reverse.</p>
+            <p style="margin-top:0.5rem;">The <strong>Codes</strong> tab is the full 14-pair reference table — the accounting relationship, normal/reversal/edge cases, and example transactions for each.</p>`,
+        'Accounts': `
+            <p>Your <strong>chart of accounts</strong> as a collapsible tree. Expand/collapse branches or use Expand-all / Collapse-all.</p>
+            <ul style="margin:0.5rem 0 0 1.1rem;">
+                <li><strong>Add a sub-account</strong> — pick any branch (e.g. <code>Assets:Current</code>, <code>Expenses:Operating</code>) and name the new child.</li>
+                <li>The account type (Asset/Liability/Equity/Revenue/Expense) is inferred from the root and declared to hledger automatically.</li>
+            </ul>`,
+        'Manage': `
+            <p>Structured records that generate their own journal entries — reached from the Dashboard shortcuts.</p>
+            <ul style="margin:0.5rem 0 0 1.1rem;">
+                <li><strong>Assets</strong> — capital assets with straight-line or declining-balance amortization; full modal + quick add.</li>
+                <li><strong>Liabilities</strong> — loans, leases, credit lines, payables; automatic payment (PMT) calculation and a creation entry.</li>
+                <li><strong>Payroll</strong> — employee (CPP/EI/tax) or contractor pay runs with configurable rates and pay periods.</li>
+                <li><strong>Equity, Income, Expenses, Recurring, Contracts</strong> — round out the picture; each maps to a BitLedger pair.</li>
+            </ul>`,
+        'Charts': `
+            <p>Visualizations rendered with Chart.js — all on the active entity.</p>
+            <ul style="margin:0.5rem 0 0 1.1rem;">
+                <li>Net Worth, Profit/Loss, Revenue, Expenses, Cash Flow, Assets over time, and commodity Prices.</li>
+                <li><strong>Sankey</strong> — revenue → cash → expense flow. <strong>Treemap</strong> — expense breakdown by Operating / Non-Operating.</li>
+                <li><strong>Custom</strong> — chart any hledger query as a line or bar (the "i" button lists examples).</li>
+                <li><strong>@ market (-V)</strong> — value balances at market prices.</li>
+            </ul>`,
+        'Reports': `
+            <p>Direct passthrough to hledger's reports for the active entity, with a period filter:</p>
+            <ul style="margin:0.5rem 0 0 1.1rem;">
+                <li><strong>Balance Sheet</strong>, <strong>Income Statement</strong>, <strong>Cash Flow</strong>, and the <strong>Register</strong>.</li>
+            </ul>
+            <p style="color:var(--fg-dim);margin-top:0.5rem;">For deeper analysis, the CLI (<code>pair report …</code>) and dashboards (<code>pair dash</code>: puffin, fava, hledger-ui) go further.</p>`,
+        'Contacts & Commodities': `
+            <p><strong>Contacts</strong> — clients, vendors, employees, lenders. Referenced by assets, liabilities, contracts and payroll.</p>
+            <p style="margin-top:0.5rem;"><strong>Commodities</strong> — track stocks, crypto and currencies with metadata and tags. Prices fetch via <code>pair market fetch</code> and feed the Prices chart and market-value reports.</p>`,
+    };
+    let infoActive = 'Overview';
+
+    function openInfo() { renderInfo(); document.getElementById('info-site').style.display = 'block'; }
+    function closeInfo() { document.getElementById('info-site').style.display = 'none'; }
+    function infoTab(name) { infoActive = name; renderInfo(); }
+
+    function renderInfo() {
+        const tabs = document.getElementById('info-tabs');
+        tabs.innerHTML = Object.keys(INFO_SECTIONS).map(name => {
+            const on = name === infoActive;
+            const st = on ? 'background:var(--border);color:var(--accent);' : 'color:var(--fg-dim);';
+            return `<span onclick="infoTab('${name.replace(/'/g,"\\'")}')" style="cursor:pointer;padding:0.35rem 0.75rem;border-radius:4px;font-size:0.82rem;${st}">${esc(name)}</span>`;
+        }).join('');
+        document.getElementById('info-content').innerHTML = INFO_SECTIONS[infoActive] || '';
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────
