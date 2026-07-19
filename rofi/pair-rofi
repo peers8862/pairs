@@ -20,7 +20,7 @@ touch "$RECENT_FILE" "$BOOKMARKS_FILE"
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
-COMPANY=$(python3 "$PAIR_CMD" prompt 2>/dev/null | tr -d '[]' | tr -d ' ')
+ENTITY=$(python3 "$PAIR_CMD" prompt 2>/dev/null | tr -d '[]' | tr -d ' ')
 
 rofi_menu() {
     local prompt_text="$1"
@@ -51,6 +51,21 @@ rofi_prompt() {
 rofi_message() {
     local mesg="$1"
     echo "" | rofi -dmenu -theme "$THEME" -p "" -mesg "$mesg" -lines 1 <<< "OK"
+}
+
+# Max lines for message area (keeps window on screen at 768px height)
+MAX_MESG_LINES=14
+
+truncate_output() {
+    local input="$1"
+    local lines
+    lines=$(echo "$input" | wc -l)
+    if [[ $lines -gt $MAX_MESG_LINES ]]; then
+        echo "$input" | head -n $MAX_MESG_LINES
+        echo "... ($((lines - MAX_MESG_LINES)) more lines — open in terminal for full view)"
+    else
+        echo "$input"
+    fi
 }
 
 run_pair() {
@@ -109,13 +124,13 @@ screen_root() {
     items+="  Recurring"$'\n'
     items+="── SYSTEM ──────────────────────────────"$'\n'
     items+="  Pairs Reference"$'\n'
-    items+="  Switch Company [$COMPANY]"$'\n'
+    items+="  Switch Entity [$ENTITY]"$'\n'
     items+="  Status"$'\n'
     items+="  Config"
 
     local choice
     choice=$(echo "$items" | rofi -dmenu -theme "$THEME" \
-        -p "PAIRS ─── $COMPANY" \
+        -p "PAIRS ─── $ENTITY" \
         -mesg "Enter: select | Ctrl+X: quick expense | ?: help" \
         
         
@@ -141,7 +156,7 @@ screen_root() {
         "Tax")               screen_tax ;;
         "Recurring")          screen_recurring ;;
         "Pairs Reference")    screen_pairs ;;
-        "Switch Company"*)    screen_switch ;;
+        "Switch Entity"*)    screen_switch ;;
         "Status")             screen_status ;;
         "Config")             open_terminal config ;;
         ──*)                  screen_root ;;  # separator selected, re-show
@@ -161,8 +176,8 @@ screen_worth() {
 
     local choice
     choice=$(echo -e "Back\nWorth --detail\nWorth --monthly\nOpen in terminal\nExport to file" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Worth" \
-        -mesg "$output" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Worth" \
+        -mesg "$(truncate_output "$output")" \
         
     ) || screen_root
 
@@ -179,8 +194,8 @@ screen_worth() {
 screen_worth_view() {
     local output="$1"
     echo -e "Back\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Worth" \
-        -mesg "$output" || true
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Worth" \
+        -mesg "$(truncate_output "$output")" || true
     screen_root
 }
 
@@ -193,7 +208,7 @@ screen_assets() {
     local choice
     choice=$(echo -e "Back\nAdd asset\nList all\nSummary\n──────────────\nShow asset...\nAmortize all\nDispose...\nWrite down..." | \
         rofi -dmenu -theme "$THEME" \
-        -p "PAIRS ─── $COMPANY ─── Assets" \
+        -p "PAIRS ─── $ENTITY ─── Assets" \
         -mesg "$count active assets" \
         
         
@@ -217,8 +232,8 @@ screen_asset_list() {
     output=$(run_pair asset list --detail 2>/dev/null)
     local choice
     choice=$(echo -e "Back\nSort by NBV\nSort by cost\nCSV export\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Assets ─── List" \
-        -mesg "$output" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Assets ─── List" \
+        -mesg "$(truncate_output "$output")" \
     ) || screen_assets
 
     case "$choice" in
@@ -235,14 +250,14 @@ screen_asset_list() {
 
 screen_asset_list_view() {
     local output="$1"
-    echo "Back" | rofi -dmenu -theme "$THEME" -p "Assets" -mesg "$output" || true
+    echo "Back" | rofi -dmenu -theme "$THEME" -p "Assets" -mesg "$(truncate_output "$output")" || true
     screen_assets
 }
 
 screen_asset_summary() {
     local output
     output=$(run_pair asset summary 2>/dev/null)
-    echo "Back" | rofi -dmenu -theme "$THEME" -p "PAIRS ─── Assets ─── Summary" -mesg "$output" || true
+    echo "Back" | rofi -dmenu -theme "$THEME" -p "PAIRS ─── Assets ─── Summary" -mesg "$(truncate_output "$output")" || true
     screen_assets
 }
 
@@ -279,11 +294,11 @@ screen_asset_pick() {
         log_recent "Asset: $slug"
         local next
         next=$(echo -e "Back\nShow schedule\nEdit\nDispose\nOpen in terminal" | \
-            rofi -dmenu -theme "$THEME" -p "$slug" -mesg "$output") || screen_assets
+            rofi -dmenu -theme "$THEME" -p "$slug" -mesg "$(truncate_output "$output")") || screen_assets
         case "$next" in
             "Back")             screen_assets ;;
             "Show schedule")    output=$(run_pair asset show "$slug" --schedule)
-                                echo "Back" | rofi -dmenu -theme "$THEME" -p "$slug schedule" -mesg "$output" || true
+                                echo "Back" | rofi -dmenu -theme "$THEME" -p "$slug schedule" -mesg "$(truncate_output "$output")" || true
                                 screen_assets ;;
             "Edit")             open_terminal asset edit "$slug" ;;
             "Dispose")          open_terminal asset dispose "$slug" ;;
@@ -297,7 +312,7 @@ screen_asset_pick() {
 screen_liabilities() {
     local choice
     choice=$(echo -e "Back\nAdd liability\nList all\nRecord payment...\nGenerate payments\nReclassify...\nShow..." | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Liabilities" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Liabilities" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -305,7 +320,7 @@ screen_liabilities() {
         "Back")               screen_root ;;
         "Add liability")      open_terminal liability add ;;
         "List all")           local output; output=$(run_pair liability list); 
-                              echo "Back" | rofi -dmenu -theme "$THEME" -p "Liabilities" -mesg "$output" || true; screen_liabilities ;;
+                              echo "Back" | rofi -dmenu -theme "$THEME" -p "Liabilities" -mesg "$(truncate_output "$output")" || true; screen_liabilities ;;
         "Record payment...")   open_terminal liability pay ;;
         "Generate payments")  run_pair liability payments --quiet; rofi_message "Payment entries generated." ;;
         "Reclassify...")      open_terminal liability reclassify ;;
@@ -316,7 +331,7 @@ screen_liabilities() {
 screen_expenses() {
     local choice
     choice=$(echo -e "Back\nAdd expense\nQuick Expense\nList (this month)\nList (YTD)\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Expenses" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Expenses" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -325,9 +340,9 @@ screen_expenses() {
         "Add expense")      open_terminal expense add ;;
         "Quick Expense")    flow_quick_expense ;;
         "List (this month)") local output; output=$(run_pair expense list)
-                             echo "Back" | rofi -dmenu -theme "$THEME" -p "Expenses" -mesg "$output" || true; screen_expenses ;;
+                             echo "Back" | rofi -dmenu -theme "$THEME" -p "Expenses" -mesg "$(truncate_output "$output")" || true; screen_expenses ;;
         "List (YTD)")       local output; output=$(run_pair expense list --period "$(date +%Y)")
-                             echo "Back" | rofi -dmenu -theme "$THEME" -p "Expenses YTD" -mesg "$output" || true; screen_expenses ;;
+                             echo "Back" | rofi -dmenu -theme "$THEME" -p "Expenses YTD" -mesg "$(truncate_output "$output")" || true; screen_expenses ;;
         "Open in terminal") open_terminal expense list ;;
     esac
 }
@@ -335,7 +350,7 @@ screen_expenses() {
 screen_income() {
     local choice
     choice=$(echo -e "Back\nAdd income\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Income" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Income" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -349,7 +364,7 @@ screen_income() {
 screen_revenue() {
     local choice
     choice=$(echo -e "Back\nLog time\nInvoice\nRecord payment\nOutstanding\nStatus\nDefer revenue\nRecognize revenue\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Revenue" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Revenue" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -359,9 +374,9 @@ screen_revenue() {
         "Invoice")            open_terminal revenue invoice ;;
         "Record payment")     open_terminal revenue paid ;;
         "Outstanding")        local output; output=$(run_pair revenue outstanding)
-                              echo "Back" | rofi -dmenu -theme "$THEME" -p "Outstanding" -mesg "$output" || true; screen_revenue ;;
+                              echo "Back" | rofi -dmenu -theme "$THEME" -p "Outstanding" -mesg "$(truncate_output "$output")" || true; screen_revenue ;;
         "Status")             local output; output=$(run_pair revenue status)
-                              echo "Back" | rofi -dmenu -theme "$THEME" -p "Revenue Status" -mesg "$output" || true; screen_revenue ;;
+                              echo "Back" | rofi -dmenu -theme "$THEME" -p "Revenue Status" -mesg "$(truncate_output "$output")" || true; screen_revenue ;;
         "Defer revenue")      open_terminal revenue defer ;;
         "Recognize revenue")  open_terminal revenue recognize ;;
         "Open in terminal")   open_terminal revenue ;;
@@ -371,7 +386,7 @@ screen_revenue() {
 screen_budget() {
     local choice
     choice=$(echo -e "Back\nCreate budget\nList budgets\nShow budget...\nBudget vs Actual\nBudget vs Actual (YTD)\nForecast\nCompare budgets\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Budget" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Budget" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -379,14 +394,14 @@ screen_budget() {
         "Back")                   screen_root ;;
         "Create budget")          open_terminal budget create ;;
         "List budgets")           local output; output=$(run_pair budget list)
-                                  echo "Back" | rofi -dmenu -theme "$THEME" -p "Budgets" -mesg "$output" || true; screen_budget ;;
+                                  echo "Back" | rofi -dmenu -theme "$THEME" -p "Budgets" -mesg "$(truncate_output "$output")" || true; screen_budget ;;
         "Show budget...")          open_terminal budget show ;;
         "Budget vs Actual")       local output; output=$(run_pair budget vs)
-                                  echo "Back" | rofi -dmenu -theme "$THEME" -p "Budget vs Actual" -mesg "$output" || true; screen_budget ;;
+                                  echo "Back" | rofi -dmenu -theme "$THEME" -p "Budget vs Actual" -mesg "$(truncate_output "$output")" || true; screen_budget ;;
         "Budget vs Actual (YTD)") local output; output=$(run_pair budget vs --ytd)
-                                  echo "Back" | rofi -dmenu -theme "$THEME" -p "Budget vs Actual YTD" -mesg "$output" || true; screen_budget ;;
+                                  echo "Back" | rofi -dmenu -theme "$THEME" -p "Budget vs Actual YTD" -mesg "$(truncate_output "$output")" || true; screen_budget ;;
         "Forecast")               local output; output=$(run_pair budget forecast)
-                                  echo "Back" | rofi -dmenu -theme "$THEME" -p "Forecast" -mesg "$output" || true; screen_budget ;;
+                                  echo "Back" | rofi -dmenu -theme "$THEME" -p "Forecast" -mesg "$(truncate_output "$output")" || true; screen_budget ;;
         "Compare budgets")        open_terminal budget compare ;;
         "Open in terminal")       open_terminal budget ;;
     esac
@@ -395,7 +410,7 @@ screen_budget() {
 screen_contacts() {
     local choice
     choice=$(echo -e "Back\nAdd contact\nList all\nShow...\nEdit...\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Contacts" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Contacts" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -403,7 +418,7 @@ screen_contacts() {
         "Back")             screen_root ;;
         "Add contact")      open_terminal contact add ;;
         "List all")         local output; output=$(run_pair contact list)
-                            echo "Back" | rofi -dmenu -theme "$THEME" -p "Contacts" -mesg "$output" || true; screen_contacts ;;
+                            echo "Back" | rofi -dmenu -theme "$THEME" -p "Contacts" -mesg "$(truncate_output "$output")" || true; screen_contacts ;;
         "Show...")          open_terminal contact show ;;
         "Edit...")          open_terminal contact edit ;;
         "Open in terminal") open_terminal contact list ;;
@@ -413,7 +428,7 @@ screen_contacts() {
 screen_contracts() {
     local choice
     choice=$(echo -e "Back\nAdd contract\nList all\nShow...\nExpiring soon\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Contracts" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Contracts" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -421,10 +436,10 @@ screen_contracts() {
         "Back")             screen_root ;;
         "Add contract")     open_terminal contract add ;;
         "List all")         local output; output=$(run_pair contract list)
-                            echo "Back" | rofi -dmenu -theme "$THEME" -p "Contracts" -mesg "$output" || true; screen_contracts ;;
+                            echo "Back" | rofi -dmenu -theme "$THEME" -p "Contracts" -mesg "$(truncate_output "$output")" || true; screen_contracts ;;
         "Show...")          open_terminal contract show ;;
         "Expiring soon")    local output; output=$(run_pair contract list --expiring 30)
-                            echo "Back" | rofi -dmenu -theme "$THEME" -p "Expiring" -mesg "$output" || true; screen_contracts ;;
+                            echo "Back" | rofi -dmenu -theme "$THEME" -p "Expiring" -mesg "$(truncate_output "$output")" || true; screen_contracts ;;
         "Open in terminal") open_terminal contract list ;;
     esac
 }
@@ -432,7 +447,7 @@ screen_contracts() {
 screen_payroll() {
     local choice
     choice=$(echo -e "Back\nRun payroll\nList runs\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Payroll" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Payroll" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -440,7 +455,7 @@ screen_payroll() {
         "Back")             screen_root ;;
         "Run payroll")      open_terminal payroll run ;;
         "List runs")        local output; output=$(run_pair payroll list)
-                            echo "Back" | rofi -dmenu -theme "$THEME" -p "Payroll" -mesg "$output" || true; screen_payroll ;;
+                            echo "Back" | rofi -dmenu -theme "$THEME" -p "Payroll" -mesg "$(truncate_output "$output")" || true; screen_payroll ;;
         "Open in terminal") open_terminal payroll list ;;
     esac
 }
@@ -448,14 +463,14 @@ screen_payroll() {
 screen_tax() {
     local choice
     choice=$(echo -e "Back\nTax summary\nRecord remittance\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Tax" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Tax" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
     case "$choice" in
         "Back")                screen_root ;;
         "Tax summary")         local output; output=$(run_pair tax summary)
-                               echo "Back" | rofi -dmenu -theme "$THEME" -p "Tax" -mesg "$output" || true; screen_tax ;;
+                               echo "Back" | rofi -dmenu -theme "$THEME" -p "Tax" -mesg "$(truncate_output "$output")" || true; screen_tax ;;
         "Record remittance")   open_terminal tax remit ;;
         "Open in terminal")    open_terminal tax summary ;;
     esac
@@ -464,7 +479,7 @@ screen_tax() {
 screen_recurring() {
     local choice
     choice=$(echo -e "Back\nAdd recurring\nList all\nGenerate pending\nOpen in terminal" | \
-        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $COMPANY ─── Recurring" \
+        rofi -dmenu -theme "$THEME" -p "PAIRS ─── $ENTITY ─── Recurring" \
     ) || screen_root
 
     choice=$(echo "$choice" | sed 's/^[[:space:]]*//')
@@ -472,7 +487,7 @@ screen_recurring() {
         "Back")              screen_root ;;
         "Add recurring")     open_terminal recurring add ;;
         "List all")          local output; output=$(run_pair recurring list)
-                             echo "Back" | rofi -dmenu -theme "$THEME" -p "Recurring" -mesg "$output" || true; screen_recurring ;;
+                             echo "Back" | rofi -dmenu -theme "$THEME" -p "Recurring" -mesg "$(truncate_output "$output")" || true; screen_recurring ;;
         "Generate pending")  run_pair recurring generate; rofi_message "Recurring entries generated." ;;
         "Open in terminal")  open_terminal recurring list ;;
     esac
@@ -541,15 +556,15 @@ import yaml
 with open('$PAIR_DIR/global.yaml') as f:
     data = yaml.safe_load(f)
 active = data.get('active','')
-for c in data.get('companies',[]):
+for c in data.get('entities',[]):
     mark = ' ✓' if c['slug'] == active else ''
     print(f\"{c['slug']}    {c['name']}{mark}\")
 " 2>/dev/null)
 
     local choice
     choice=$(echo -e "$global\nBack" | rofi -dmenu -theme "$THEME" \
-        -p "Switch Company" \
-        -mesg "Select company to switch to" \
+        -p "Switch Entity" \
+        -mesg "Select entity to switch to" \
     ) || screen_root
 
     if [[ "$choice" == "Back" ]]; then
@@ -560,7 +575,7 @@ for c in data.get('companies',[]):
     local slug
     slug=$(echo "$choice" | awk '{print $1}')
     run_pair switch "$slug" 2>/dev/null
-    COMPANY="$slug"
+    ENTITY="$slug"
     rofi_message "Switched to: $slug"
     screen_root
 }
@@ -568,7 +583,7 @@ for c in data.get('companies',[]):
 screen_status() {
     local output
     output=$(run_pair status 2>/dev/null)
-    echo "Back" | rofi -dmenu -theme "$THEME" -p "PAIRS ─── Status" -mesg "$output" || true
+    echo "Back" | rofi -dmenu -theme "$THEME" -p "PAIRS ─── Status" -mesg "$(truncate_output "$output")" || true
     screen_root
 }
 

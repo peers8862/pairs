@@ -12,7 +12,7 @@ import yaml
 from lib.helpers import (
     load_config, money, prompt, prompt_choice, confirm,
     validate_slug, validate_date, validate_positive_number,
-    parse_global_flags, get_company_dir, get_active_company, slugify
+    parse_global_flags, get_entity_dir, get_active_entity, slugify
 )
 
 
@@ -33,7 +33,7 @@ SCENARIOS = ['baseline', 'conservative', 'aggressive', 'custom']
 
 
 def _budget_dir():
-    return get_company_dir() / BUDGET_DIR_NAME
+    return get_entity_dir() / BUDGET_DIR_NAME
 
 
 def _load_budget(slug):
@@ -130,7 +130,7 @@ Flags:
 
 def cmd_menu(flags):
     """Interactive budget management menu."""
-    co = get_active_company() or "company"
+    co = get_active_entity() or "entity"
     print(f"\n  [{co}] Budget Management\n")
     print("  1. Create a new budget")
     print("  2. List budgets")
@@ -210,7 +210,7 @@ def _pick_filter():
 
 def cmd_create(flags, args):
     """Create a new budget."""
-    co = get_active_company() or "company"
+    co = get_active_entity() or "entity"
 
     # Parse flags
     copy_from = None
@@ -239,7 +239,7 @@ def cmd_create(flags, args):
         config = load_config()
         divisions = config.get('divisions', [])
         if divisions:
-            div_choice = prompt("Division (blank for company-wide)", required=False)
+            div_choice = prompt("Division (blank for entity-wide)", required=False)
             if div_choice:
                 division = div_choice
 
@@ -499,7 +499,7 @@ def _step_through_entry(period_count, labels):
 
 def cmd_list(flags, args):
     """List all budgets."""
-    co = get_active_company() or "company"
+    co = get_active_entity() or "entity"
     slugs = _list_budgets()
     if not slugs:
         print("No budgets found. Use 'pair budget create' to start.")
@@ -548,7 +548,7 @@ def cmd_show(flags, args):
         print(f"Budget '{slug}' not found.")
         return
 
-    co = get_active_company() or "company"
+    co = get_active_entity() or "entity"
     periods = budget.get('periods', [])
     lines = budget.get('lines', [])
     labels = [p['label'] for p in periods]
@@ -722,9 +722,9 @@ def cmd_compare_interactive(flags):
 
 def _render_comparison(b1, b2, show_filter):
     """Render side-by-side budget comparison."""
-    co = get_active_company() or "company"
+    co = get_active_entity() or "entity"
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
 
     lines1 = _filter_lines(b1.get('lines', []), show_filter)
     lines2 = _filter_lines(b2.get('lines', []), show_filter)
@@ -764,7 +764,7 @@ def _render_comparison(b1, b2, show_filter):
 def cmd_vs(flags, args):
     """Compare active budget vs actual."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     journal_file = config.get('journal_file')
 
     # Parse flags
@@ -816,7 +816,7 @@ def cmd_vs(flags, args):
     period_indices = [periods.index(p) for p in compare_periods]
     period_label = f"{compare_periods[0]['label']}" if len(compare_periods) == 1 else f"{compare_periods[0]['label']}-{compare_periods[-1]['label']}"
 
-    co = get_active_company() or "company"
+    co = get_active_entity() or "entity"
     title = "YTD" if ytd else period_label
     print(f"\n  [{co}] Budget vs Actual — {title} {year}\n")
     print(f"  {'Account':<35} {'Budget':>12} {'Actual':>12} {'Variance':>12} {'%':>6}")
@@ -879,7 +879,7 @@ def cmd_vs_interactive(flags):
 def cmd_forecast(flags, args):
     """Project year-end based on actuals so far."""
     config = load_config()
-    currency = config.get('company', {}).get('currency', 'CAD')
+    currency = config.get('pair', {}).get('currency', 'CAD')
     year = str(date.today().year)
 
     for i, a in enumerate(args):
@@ -904,7 +904,7 @@ def cmd_forecast(flags, args):
         print("No completed periods yet — can't forecast.")
         return
 
-    co = get_active_company() or "company"
+    co = get_active_entity() or "entity"
     print(f"\n  [{co}] Forecast — {year} ({elapsed_count} of {len(periods)} periods elapsed)\n")
     print(f"  {'Account':<35} {'Budget(yr)':>11} {'Actual(ytd)':>12} {'Projected':>11} {'vs Budget':>11}")
     print(f"  {'─' * 83}")

@@ -1,4 +1,4 @@
-# hledger-company Default Account Chart
+# pair Default Account Chart
 
 ## Complete Account Hierarchy
 

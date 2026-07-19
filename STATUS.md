@@ -1,8 +1,8 @@
-# hledger-company — Feature Status
+# pair — Feature Status
 
 ## Core Infrastructure
 
-- [BUILT] CLI entry point (`company`) with module-based dispatch
+- [BUILT] CLI entry point (`pair`) with module-based dispatch
 - [BUILT] lib/helpers.py — prompts, validators, money, config, slugify, global flag parsing
 - [BUILT] lib/journal.py — format_entry, build_tags, atomic writes, include chain management, year scaffolding
 - [BUILT] lib/yaml_store.py — generic YAML CRUD (load, save, list, delete, exists)
@@ -138,7 +138,7 @@
 
 ## Configuration
 
-- [BUILT] `config.yaml` — company name/slug/currency, journal file, accounts, fiscal year start
+- [BUILT] `config.yaml` — entity name/slug/currency, journal file, accounts, fiscal year start
 - [BUILT] `divisions: []` — optional list of division names
 - [BUILT] `tags: {}` — per-tag enable/disable (pair, source, division, category, seq, period)
 - [BUILT] `style: {}` — operational preferences (revenue: invoice|simple)
@@ -154,8 +154,46 @@
 - [BUILT] docs/journal-rules.md — exact hledger entries for all modules
 - [BUILT] docs/worth-command.md — net worth report design with mocked output
 - [BUILT] docs/commands.md — full command surface with syntax and flags
-- [BUILT] docs/migration.md — consult → company migration table and build order
-- [BUILT] company-tool-design-ref.md — BitLedger pair table + module mapping
+- [BUILT] docs/migration.md — consult → pair migration table and build order
+- [BUILT] entity-tool-design-ref.md — BitLedger pair table + module mapping
+
+### Report (`pair report`)
+- [BUILT] Passthrough to hledger with auto-resolved entity journal
+- [BUILT] Supports all hledger commands: bs, is, register, cashflow, bal, accounts, stats
+- [BUILT] Fallback from entity.journal to company.journal for older entities
+
+### Link Mode (`pair link`)
+- [BUILT] CLI progressive entry assembly via gum
+- [BUILT] All 14 pair expressions: `< > << >> <. >. <<. >>. <.> <.. >.. ..< ..> ..`
+- [BUILT] `/` suffix for reversals
+- [BUILT] Inline amount: `< 3650`, `<. 4500`
+- [BUILT] Leaf-name display with category hints
+- [BUILT] Fuzzy account matching with priority ordering
+- [BUILT] Auto-resolve when only one counterpart option
+
+### Popup Mode (`pair .`)
+- [BUILT] Rofi-based floating popup with two-column layout
+- [BUILT] Same 14 expressions as link mode
+- [BUILT] Progressive entry assembly in right panel
+- [BUILT] Dark One Dark themed, pango-escaped
+
+### PWA (`pair web`)
+- [BUILT] FastAPI + vanilla JS progressive web app
+- [BUILT] Dashboard: net worth sparklines, revenue/P&L sparklines, quick entry box, recent transactions
+- [BUILT] Quick entry: description → account (autocomplete) → amount → tags → date → write
+- [BUILT] Universal launcher: pairs shorthand, tab names, or description from one input
+- [BUILT] Pair identity badge: auto-infers which of 14 pairs from account types
+- [BUILT] Counterpart priority ordering based on accounting relationships
+- [BUILT] Pairs tab: all 14 expressions with fuzzy account search
+- [BUILT] Manage tab: assets, liabilities, equity, income, expenses, payroll, recurring, contracts, contacts, commodities
+- [BUILT] Payroll: YTD summary, employee list, recent runs, run new payroll from web
+- [BUILT] Charts tab (Chart.js): net worth, P&L, revenue, expenses, cash flow, commodity prices
+- [BUILT] Reports tab: BS, IS, cashflow, register with period filter
+- [BUILT] Codes tab: full 14-pair reference with expression column
+- [BUILT] Entity switcher in header
+- [BUILT] PWA manifest + service worker for installability
+- [BUILT] Auto-include links.journal in year file on first write
+- [BUILT] Commodity directive (CAD 1,000.00) for 2-decimal display
 
 ## Pending
 
@@ -170,7 +208,7 @@
 - [PLANNING] Division-level P&L reporting — income statement per division
 - [PLANNING] `pair revenue receive` — quick cash receipt without full invoice (for style: simple)
 - [PLANNING] Multi-currency worth report with conversion flags (--cost, --value=now)
-- [PLANNING] `company report` — customizable report builder wrapping hledger queries
+- [PLANNING] `entity report` — customizable report builder wrapping hledger queries
 - [PLANNING] Migration script for existing consult users (automate entity → contact conversion)
 - [PLANNING] Refactor all existing modules to call `build_tags()` instead of inline tag dicts
 - [PLANNING] Receipt file linking — `receipt:path/to/file.pdf` tag on expense entries

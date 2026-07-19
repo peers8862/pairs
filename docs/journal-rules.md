@@ -1,4 +1,4 @@
-# hledger-company — Journal Generation Rules
+# pair — Journal Generation Rules
 
 ## Conventions
 

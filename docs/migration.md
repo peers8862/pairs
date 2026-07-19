@@ -1,8 +1,8 @@
-# hledger-company — Migration from consult
+# pair — Migration from consult
 
 ## Command Migration Table
 
-| consult command | hledger-company command | Status | Changes |
+| consult command | pair command | Status | Changes |
 |---|---|---|---|
 | `consult init` | `pair init` | Rework | Broader scope: sets up all module dirs, account chart, include chain |
 | `consult entity add` | `pair contact add --role entity` | Rename + Rework | Entities become contacts with `role: entity` + `billing:` section |
@@ -45,7 +45,7 @@
 The monolithic `consult` file becomes:
 
 ```
-company                     # entry point + dispatch
+pair                        # entry point + dispatch
 lib/
   helpers.py               # prompt, validators, money, expand_path
   journal.py               # ensure_include, journal writing, header generation

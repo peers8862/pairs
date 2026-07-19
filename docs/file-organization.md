@@ -1,10 +1,10 @@
-# hledger-company — File Organization
+# pair — File Organization
 
 ## Directory Tree
 
 ```
-hledger-company/
-├── company                          # CLI entry point (executable)
+pair/
+├── pair                             # CLI entry point (executable)
 ├── config.yaml                      # tool settings, defaults
 ├── config.example.yaml              # reference schema (committed)
 │
@@ -78,13 +78,13 @@ hledger-company/
 User's main hledger journal (`~/.hledger.journal`) includes ONE line:
 
 ```hledger
-include ~/making/hledger-company/include/company.journal
+include ~/making/pair/include/company.journal
 ```
 
 ### `include/company.journal` — top-level aggregator
 
 ```hledger
-; hledger-company — managed by 'company' tool
+; pair — managed by 'pair' tool
 ; Do not edit manually. Run 'pair generate' to rebuild.
 
 include accounts.journal
@@ -95,7 +95,7 @@ include 2026.journal
 ### `include/2026.journal` — per-year aggregator
 
 ```hledger
-; Year 2026 — managed by 'company' tool
+; Year 2026 — managed by 'pair' tool
 
 ; User-editable journals
 include ../journal/2026/opening.journal

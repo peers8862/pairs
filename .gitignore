@@ -5,6 +5,8 @@ timesheets/
 invoices/
 output/
 build/
+entities/
+global.yaml
 
 # Keep directory structure
 !projects/.gitkeep
@@ -18,3 +20,4 @@ build/
 __pycache__/
 *.pyc
 *.pyo
+.venv/

@@ -1,4 +1,4 @@
-# hledger-company — Design
+# pair — Design
 
 ## Core principle
 
@@ -26,7 +26,7 @@ hledger is the single source of truth for all financial state. The tool generate
 
 ## Net worth view
 
-- `pair worth` runs `hledger bs` filtered to the company's accounts
+- `pair worth` runs `hledger bs` filtered to the entity's accounts
 - Shows: total assets (fixed + current), total liabilities, equity/net worth
 - Optionally shows breakdown by category and change over time
 
@@ -41,8 +41,8 @@ hledger is the single source of truth for all financial state. The tool generate
 ## File structure
 
 ```
-hledger-company/
-├── company                  # CLI entry point (renamed from consult)
+pair/
+├── pair                     # CLI entry point
 ├── config.yaml
 ├── config.example.yaml
 ├── assets/                  # per-asset YAML (metadata + amortization schedule)

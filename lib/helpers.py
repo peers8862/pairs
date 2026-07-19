@@ -1,4 +1,4 @@
-"""Shared helpers for hledger-company."""
+"""Shared helpers for pair."""
 
 import os
 import re
@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 GLOBAL_CONFIG_FILE = BASE_DIR / 'global.yaml'
 
 
-# ─── Global config (multi-company) ──────────────────────────────────────────
+# ─── Global config (multi-entity) ────────────────────────────────────────────
 
 def load_global_config():
     """Load global.yaml. Returns dict or empty dict if missing."""
@@ -30,17 +30,21 @@ def save_global_config(data):
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
-def get_active_company():
-    """Return the active company slug from global.yaml, or None."""
+def get_active_entity():
+    """Return the active entity slug from global.yaml, or None."""
     config = load_global_config()
     return config.get('active')
 
 
-def get_company_dir():
-    """Return Path to active company directory.
+# Backward compat alias
+get_active_company = get_active_entity
 
-    Reads global.yaml to find the active company slug, then returns
-    BASE_DIR / 'companies' / slug. Falls back to BASE_DIR if global.yaml
+
+def get_entity_dir():
+    """Return Path to active entity directory.
+
+    Reads global.yaml to find the active entity slug, then returns
+    BASE_DIR / 'entities' / slug. Falls back to BASE_DIR if global.yaml
     doesn't exist (backward compat during init).
     """
     if not GLOBAL_CONFIG_FILE.exists():
@@ -49,14 +53,18 @@ def get_company_dir():
     active = config.get('active')
     if not active:
         return BASE_DIR
-    return BASE_DIR / 'companies' / active
+    return BASE_DIR / 'entities' / active
 
 
-# ─── Company config ──────────────────────────────────────────────────────────
+# Backward compat alias
+get_company_dir = get_entity_dir
+
+
+# ─── Entity config ───────────────────────────────────────────────────────────
 
 def get_config_file():
-    """Return path to active company's config.yaml."""
-    return get_company_dir() / 'config.yaml'
+    """Return path to active entity's config.yaml."""
+    return get_entity_dir() / 'config.yaml'
 
 
 # Keep CONFIG_FILE for backward compat in modules that import it directly.
@@ -86,7 +94,7 @@ def ensure_dir(path):
 # ─── Config ──────────────────────────────────────────────────────────────────
 
 def load_config():
-    """Load company config.yaml or exit with message."""
+    """Load entity config.yaml or exit with message."""
     config_file = get_config_file()
     if not config_file.exists():
         print("No config.yaml found. Run 'pair init' first.")
@@ -96,7 +104,7 @@ def load_config():
 
 
 def save_config(config):
-    """Write company config.yaml."""
+    """Write entity config.yaml."""
     config_file = get_config_file()
     ensure_dir(config_file.parent)
     with open(config_file, "w") as f:

@@ -1,4 +1,4 @@
-# hledger-company — YAML Schemas
+# pair — YAML Schemas
 
 ## Cross-reference convention
 
