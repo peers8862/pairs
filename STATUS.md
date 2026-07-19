@@ -180,20 +180,33 @@
 ### PWA (`pair web`)
 - [BUILT] FastAPI + vanilla JS progressive web app
 - [BUILT] Dashboard: net worth sparklines, revenue/P&L sparklines, quick entry box, recent transactions
+- [BUILT] Dashboard manage buttons: Assets, Liabilities, Equity, Income, Expenses, Payroll, Recurring, Contracts — inline on dashboard
 - [BUILT] Quick entry: description → account (autocomplete) → amount → tags → date → write
 - [BUILT] Universal launcher: pairs shorthand, tab names, or description from one input
 - [BUILT] Pair identity badge: auto-infers which of 14 pairs from account types
 - [BUILT] Counterpart priority ordering based on accounting relationships
-- [BUILT] Pairs tab: all 14 expressions with fuzzy account search
-- [BUILT] Manage tab: assets, liabilities, equity, income, expenses, payroll, recurring, contracts, contacts, commodities
-- [BUILT] Payroll: YTD summary, employee list, recent runs, run new payroll from web
+- [BUILT] Pairs tab: vertical compact listing of 14 expressions, clickable to enter entry mode
+- [BUILT] Assets: full modal (add/edit/delete) + inline quick-entry (2-line, all fields, tabbable, Enter-advances)
+- [BUILT] Assets: category dropdown, method selector (SL/DB), life presets + monthly amort calculator
+- [BUILT] Payroll: full modal + inline quick-entry (2-line) with CPP/EI employee + employer fields
+- [BUILT] Payroll: Settings modal for deduction rates (CPP/EI ee/er, annual max, CPP exemption)
+- [BUILT] Payroll: Pay period settings (length days, closing day, pay-by offset), auto-generated period dropdown
+- [BUILT] Payroll: Calc button auto-fills deductions from gross, net pay live display
+- [BUILT] Payroll: contractor mode hides employee deduction fields
+- [BUILT] Contacts tab: top-level nav with add form + data table
+- [BUILT] Commodities tab: top-level nav with add form + data table
 - [BUILT] Charts tab (Chart.js): net worth, P&L, revenue, expenses, cash flow, commodity prices
 - [BUILT] Reports tab: BS, IS, cashflow, register with period filter
-- [BUILT] Codes tab: full 14-pair reference with expression column
+- [BUILT] Codes tab: vertical compact card listing of all 14 pairs, clickable → jumps to Pairs entry with expression selected
 - [BUILT] Entity switcher in header
 - [BUILT] PWA manifest + service worker for installability
 - [BUILT] Auto-include links.journal in year file on first write
 - [BUILT] Commodity directive (CAD 1,000.00) for 2-decimal display
+- [BUILT] POST /api/asset — create/update asset YAML + acquisition journal entry
+- [BUILT] DELETE /api/asset/{slug} — remove asset
+- [BUILT] POST /api/payroll/run — with CPP/EI employee/employer fields
+- [BUILT] GET/POST /api/payroll/settings — deduction rates + period config
+- [BUILT] GET /api/payroll/periods — auto-generated recent pay periods from settings
 
 ## Pending
 
