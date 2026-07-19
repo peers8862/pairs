@@ -181,6 +181,20 @@ def create_app():
         reversal: bool = False
         entry_date: str = ''
 
+    class AssetRequest(BaseModel):
+        name: str
+        slug: str = ''
+        category: str = 'equipment'
+        purchase_date: str = ''
+        cost: float = 0
+        useful_life_months: int = 12
+        amortization_method: str = 'straight-line'
+        rate: float = 0.30
+        salvage_value: float = 0
+        description: str = ''
+        payment_method: str = 'cash'
+        linked_liability: str = ''
+
     # ─── Routes ──────────────────────────────────────────────────────────
 
     @app.get("/")
@@ -466,6 +480,99 @@ def create_app():
         """List all assets from YAML."""
         return {'items': _load_yaml_dir('assets')}
 
+    @app.post("/api/asset")
+    async def create_or_update_asset(req: AssetRequest):
+        """Create or update an asset YAML file."""
+        import yaml
+        import re
+        from lib.yaml_store import save_entity, entity_exists
+
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+
+        # Slugify
+        slug = req.slug.strip() if req.slug else ''
+        if not slug:
+            slug = re.sub(r'[^a-z0-9]+', '-', req.name.lower().strip()).strip('-') or 'untitled'
+
+        # Category → accounts mapping
+        DEFAULT_ACCOUNTS = {
+            'equipment': {
+                'asset': 'Assets:Fixed:Equipment',
+                'amortization_expense': 'Expenses:Non-Operating:Amortization',
+                'accumulated': 'Assets:Accumulated Amortization:Equipment',
+            },
+            'vehicle': {
+                'asset': 'Assets:Fixed:Vehicles',
+                'amortization_expense': 'Expenses:Non-Operating:Amortization',
+                'accumulated': 'Assets:Accumulated Amortization:Vehicles',
+            },
+            'furniture': {
+                'asset': 'Assets:Fixed:Furniture',
+                'amortization_expense': 'Expenses:Non-Operating:Amortization',
+                'accumulated': 'Assets:Accumulated Amortization:Furniture',
+            },
+            'software': {
+                'asset': 'Assets:Fixed:Intellectual Property',
+                'amortization_expense': 'Expenses:Non-Operating:Amortization',
+                'accumulated': 'Assets:Accumulated Amortization:Intellectual Property',
+            },
+            'other': {
+                'asset': 'Assets:Fixed:Other',
+                'amortization_expense': 'Expenses:Non-Operating:Amortization',
+                'accumulated': 'Assets:Accumulated Amortization:Other',
+            },
+        }
+
+        category = req.category if req.category in DEFAULT_ACCOUNTS else 'other'
+        accounts = DEFAULT_ACCOUNTS[category]
+        purchase_date = req.purchase_date or date.today().isoformat()
+
+        asset_data = {
+            'name': req.name,
+            'slug': slug,
+            'category': category,
+            'purchase_date': purchase_date,
+            'cost': req.cost,
+            'useful_life_months': req.useful_life_months,
+            'amortization_method': req.amortization_method,
+            'salvage_value': req.salvage_value,
+            'currency': currency,
+            'accounts': accounts.copy(),
+        }
+
+        if req.description:
+            asset_data['description'] = req.description
+        if req.amortization_method == 'declining-balance' and req.rate > 0:
+            asset_data['rate'] = req.rate
+            asset_data['declining_balance_rate'] = req.rate
+        if req.payment_method == 'financed':
+            asset_data['payment_method'] = 'financed'
+            if req.linked_liability:
+                asset_data['linked_liability'] = req.linked_liability
+        else:
+            asset_data['payment_method'] = 'cash'
+
+        # Save
+        save_entity('assets', slug, asset_data)
+
+        # Write acquisition entry
+        year = purchase_date[:4]
+        ensure_year_structure(int(year))
+        from modules.asset import _write_acquisition_entry
+        _write_acquisition_entry(asset_data, config)
+
+        return {'status': 'ok', 'slug': slug, 'message': f"Asset '{req.name}' saved"}
+
+    @app.delete("/api/asset/{slug}")
+    async def delete_asset(slug: str):
+        """Delete an asset."""
+        from lib.yaml_store import delete_entity, entity_exists
+        if not entity_exists('assets', slug):
+            raise HTTPException(status_code=404, detail=f"Asset '{slug}' not found")
+        delete_entity('assets', slug)
+        return {'status': 'ok', 'message': f"Asset '{slug}' deleted'"}
+
     @app.get("/api/liabilities")
     async def liabilities():
         """List all liabilities from YAML."""
@@ -717,9 +824,13 @@ def create_app():
         employee_name: str = ''
         contact_slug: str = ''
         gross_amount: float = 0
+        cpp_employee: float = 0
+        ei_employee: float = 0
+        tax_withheld: float = 0
+        cpp_employer: float = 0
+        ei_employer: float = 0
         benefits: float = 0
         employer_contributions: float = 0
-        tax_withheld: float = 0
         pay_date: str = ''
         period: str = ''
 
@@ -733,8 +844,12 @@ def create_app():
 
         gross = money(req.gross_amount)
         benefits = money(req.benefits)
-        employer_contrib = money(req.employer_contributions)
+        cpp_ee = money(req.cpp_employee)
+        ei_ee = money(req.ei_employee)
+        cpp_er = money(req.cpp_employer)
+        ei_er = money(req.ei_employer)
         tax = money(req.tax_withheld)
+        employer_contrib = money(req.employer_contributions) + cpp_er + ei_er
 
         if req.pay_type == 'contractor':
             postings = [
@@ -743,8 +858,7 @@ def create_app():
             ]
             description = f"Contractor payment: {req.employee_name}"
         else:
-            net_pay = gross - tax
-            total_out = net_pay  # immediate disbursement
+            net_pay = gross - cpp_ee - ei_ee - tax
             postings = [
                 ('Expenses:Operating:Payroll:Salaries', currency, float(gross)),
             ]
@@ -754,10 +868,12 @@ def create_app():
                 postings.append(('Expenses:Operating:Payroll:Employer Contributions', currency, float(employer_contrib)))
             if tax > 0:
                 postings.append(('Liabilities:Current:Income Tax Payable', currency, float(-tax)))
+            if cpp_ee > 0:
+                postings.append(('Liabilities:Current:CPP Payable', currency, float(-(cpp_ee + cpp_er))))
+            if ei_ee > 0:
+                postings.append(('Liabilities:Current:EI Payable', currency, float(-(ei_ee + ei_er))))
 
-            # Net to payable then disburse
-            payable_amount = float(gross + benefits + employer_contrib - tax)
-            postings.append(('Liabilities:Current:Payroll Payable', currency, -payable_amount))
+            postings.append(('Liabilities:Current:Payroll Payable', currency, float(-net_pay)))
             postings.append((bank, currency, float(-(float(benefits) + float(employer_contrib)))))
 
             description = f"Payroll: {req.employee_name}"
@@ -776,6 +892,119 @@ def create_app():
         append_journal(journal_path, entry)
 
         return {'ok': True, 'entry': entry.strip(), 'path': f"generated/{year}/payroll.journal"}
+
+    @app.get("/api/payroll/settings")
+    async def payroll_settings_get():
+        """Get payroll deduction rate settings."""
+        import yaml
+        entity_dir = get_entity_dir()
+        config_path = entity_dir / 'config.yaml'
+        config = {}
+        if config_path.exists():
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+        payroll_cfg = config.get('payroll', {})
+        return {
+            'cpp_employee_rate': payroll_cfg.get('cpp_employee_rate', 0.0595),
+            'cpp_employer_rate': payroll_cfg.get('cpp_employer_rate', 0.0595),
+            'ei_employee_rate': payroll_cfg.get('ei_employee_rate', 0.0163),
+            'ei_employer_rate': payroll_cfg.get('ei_employer_rate', 0.0228),
+            'cpp_annual_max': payroll_cfg.get('cpp_annual_max', 3867.50),
+            'ei_annual_max': payroll_cfg.get('ei_annual_max', 1049.12),
+            'cpp_exemption': payroll_cfg.get('cpp_exemption', 3500),
+            'period_length_days': payroll_cfg.get('period_length_days', 14),
+            'period_closing_day': payroll_cfg.get('period_closing_day', 'friday'),
+            'pay_by_days_after': payroll_cfg.get('pay_by_days_after', 5),
+        }
+
+    class PayrollSettingsRequest(BaseModel):
+        cpp_employee_rate: float = 0.0595
+        cpp_employer_rate: float = 0.0595
+        ei_employee_rate: float = 0.0163
+        ei_employer_rate: float = 0.0228
+        cpp_annual_max: float = 3867.50
+        ei_annual_max: float = 1049.12
+        cpp_exemption: float = 3500
+        period_length_days: int = 14
+        period_closing_day: str = 'friday'
+        pay_by_days_after: int = 5
+
+    @app.post("/api/payroll/settings")
+    async def payroll_settings_save(req: PayrollSettingsRequest):
+        """Save payroll deduction rate settings to entity config."""
+        import yaml
+        entity_dir = get_entity_dir()
+        config_path = entity_dir / 'config.yaml'
+        config = {}
+        if config_path.exists():
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+
+        config['payroll'] = {
+            'cpp_employee_rate': req.cpp_employee_rate,
+            'cpp_employer_rate': req.cpp_employer_rate,
+            'ei_employee_rate': req.ei_employee_rate,
+            'ei_employer_rate': req.ei_employer_rate,
+            'cpp_annual_max': req.cpp_annual_max,
+            'ei_annual_max': req.ei_annual_max,
+            'cpp_exemption': req.cpp_exemption,
+            'period_length_days': req.period_length_days,
+            'period_closing_day': req.period_closing_day,
+            'pay_by_days_after': req.pay_by_days_after,
+        }
+
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+        return {'ok': True, 'message': 'Payroll settings saved'}
+
+    @app.get("/api/payroll/periods")
+    async def payroll_periods():
+        """Generate the 4 most recent pay periods based on settings."""
+        import yaml
+        from datetime import timedelta
+
+        entity_dir = get_entity_dir()
+        config_path = entity_dir / 'config.yaml'
+        config = {}
+        if config_path.exists():
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+        payroll_cfg = config.get('payroll', {})
+
+        length_days = payroll_cfg.get('period_length_days', 14)
+        closing_day_name = payroll_cfg.get('period_closing_day', 'friday').lower()
+        pay_by_offset = payroll_cfg.get('pay_by_days_after', 5)
+
+        # Map day name to weekday number (0=Monday)
+        day_map = {'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+                   'friday': 4, 'saturday': 5, 'sunday': 6}
+        closing_weekday = day_map.get(closing_day_name, 4)
+
+        today = date.today()
+
+        # Find the most recent closing day on or before today
+        days_since_closing = (today.weekday() - closing_weekday) % 7
+        if days_since_closing == 0 and today.weekday() == closing_weekday:
+            most_recent_close = today
+        else:
+            most_recent_close = today - timedelta(days=days_since_closing)
+
+        # Generate 4 recent periods working backwards
+        periods = []
+        close = most_recent_close
+        for i in range(4):
+            start = close - timedelta(days=length_days - 1)
+            pay_by = close + timedelta(days=pay_by_offset)
+            periods.append({
+                'label': f"{start.strftime('%b %d')} – {close.strftime('%b %d, %Y')}",
+                'start': start.isoformat(),
+                'end': close.isoformat(),
+                'pay_by': pay_by.isoformat(),
+            })
+            close = close - timedelta(days=length_days)
+
+        return {'periods': periods}
 
     @app.get("/api/tax")
     async def tax():

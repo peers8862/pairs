@@ -1,10 +1,18 @@
-active: babb
-companies:
+active: deskone
+entities:
 - name: Clairlea
   slug: clairlea
   currency: CAD
-  journal_file: ~/accounting/companies/clairlea/clairlea-main.journal
+  journal_file: ~/accounting/entities/clairlea/clairlea-main.journal
 - name: Babb
   slug: babb
   currency: CAD
-  journal_file: ~/accounting/companies/babb/babb-main.journal
+  journal_file: ~/accounting/entities/babb/babb-main.journal
+- name: DeskOne
+  slug: deskone
+  currency: CAD
+  journal_file: ~/accounting/entities/deskone/deskone-main.journal
+- name: Peers Family
+  slug: peers
+  currency: CAD
+  journal_file: ~/accounting/family/family-main-ledger.journal

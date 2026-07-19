@@ -82,11 +82,11 @@
         .expr-input label { color: var(--accent); margin-right: 0.5rem; }
         .expr-input input { flex: 1; background: transparent; border: none; color: var(--fg); font-family: inherit; font-size: 1rem; outline: none; }
         .expr-input input::placeholder { color: var(--fg-dim); }
-        .expr-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.4rem; padding: 0.75rem; }
-        .expr-item { padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
-        .expr-item:hover { border-color: var(--accent); color: var(--accent); }
-        .expr-item .expr-key { font-weight: bold; color: var(--accent); }
-        .expr-item .expr-desc { color: var(--fg-dim); font-size: 0.7rem; }
+        .expr-grid { display: grid; grid-template-columns: 1fr; gap: 0.4rem; padding: 0.75rem 0; }
+        .expr-item { display: grid; grid-template-columns: 3.5rem 1fr; gap: 0.25rem 0.75rem; align-items: baseline; padding: 0.5rem 1rem; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; transition: border-color 0.15s; }
+        .expr-item:hover { border-color: var(--accent); }
+        .expr-item .expr-key { font-size: 1.2rem; font-weight: bold; color: var(--green); font-family: monospace; }
+        .expr-item .expr-desc { font-size: 0.9rem; color: var(--fg); }
         .filter-bar { padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); display: none; }
         .filter-bar input { width: 100%; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.75rem; color: var(--fg); font-family: inherit; font-size: 0.85rem; outline: none; }
         .filter-bar input:focus { border-color: var(--accent); }
@@ -126,7 +126,8 @@
         <div class="tabs">
             <span class="tab active" onclick="switchView('dashboard')">Dashboard</span>
             <span class="tab" onclick="switchView('entry')">Pairs</span>
-            <span class="tab" onclick="switchView('data')">Manage</span>
+            <span class="tab" onclick="switchView('contacts')">Contacts</span>
+            <span class="tab" onclick="switchView('commodities')">Commodities</span>
             <span class="tab" onclick="switchView('charts')">Charts</span>
             <span class="tab" onclick="switchView('reports')">Reports</span>
             <span class="tab" onclick="switchView('pairs')">Codes</span>
@@ -139,6 +140,19 @@
 
     <!-- Dashboard View -->
     <div class="view active" id="view-dashboard">
+        <!-- Manage shortcuts -->
+        <div id="dash-manage-btns" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+            <button class="btn" onclick="dashLoadManage('assets')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Assets</button>
+            <button class="btn" onclick="dashLoadManage('liabilities')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Liabilities</button>
+            <button class="btn" onclick="dashLoadManage('equity')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Equity</button>
+            <button class="btn" onclick="dashLoadManage('income')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Income</button>
+            <button class="btn" onclick="dashLoadManage('expenses')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Expenses</button>
+            <button class="btn" onclick="dashLoadManage('payroll')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Payroll</button>
+            <button class="btn" onclick="dashLoadManage('recurring')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Recurring</button>
+            <button class="btn" onclick="dashLoadManage('contracts')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Contracts</button>
+        </div>
+        <!-- Dashboard main content (replaceable) -->
+        <div id="dash-main-content">
         <!-- Net worth: full width -->
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
             <div><div style="font-size:1.5rem;color:var(--green);font-weight:bold;" id="net-worth">—</div><div style="color:var(--fg-dim);font-size:0.7rem;">Net Worth</div></div>
@@ -187,6 +201,16 @@
 
         <div class="section-title">Recent Entries</div>
         <table id="recent-table"><thead><tr><th>Date</th><th>Description</th><th>Postings</th></tr></thead><tbody id="recent-body"></tbody></table>
+        </div><!-- /dash-main-content -->
+        <!-- Manage content (shown when a manage button is clicked) -->
+        <div id="dash-manage-content" style="display:none;">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
+                <button class="btn" onclick="dashShowMain()" style="font-size:0.8rem;padding:0.3rem 0.6rem;">← Dashboard</button>
+                <span id="dash-manage-title" style="color:var(--accent);font-size:0.9rem;font-weight:bold;"></span>
+            </div>
+            <div id="dash-manage-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
+            <div id="dash-manage-data"></div>
+        </div>
     </div>
 
     <!-- Entry View -->
@@ -256,7 +280,7 @@
         <pre class="report-output" id="report-output">Select a report above...</pre>
     </div>
 
-    <!-- Data View -->
+    <!-- Data View (hidden from nav, used internally by dashboard manage) -->
     <div class="view" id="view-data">
         <div class="report-controls">
             <button class="btn active" onclick="loadData('assets')">Assets</button>
@@ -274,13 +298,24 @@
         <div id="data-content"></div>
     </div>
 
+    <!-- Contacts View -->
+    <div class="view" id="view-contacts">
+        <div class="section-title">Contacts</div>
+        <div id="contacts-add-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
+        <div id="contacts-content"></div>
+    </div>
+
+    <!-- Commodities View -->
+    <div class="view" id="view-commodities">
+        <div class="section-title">Commodities</div>
+        <div id="commodities-add-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
+        <div id="commodities-content"></div>
+    </div>
+
     <!-- Pairs Reference View -->
     <div class="view" id="view-pairs">
         <div class="section-title">Account Pair Matrix — 14 Double-Entry Relationships</div>
-        <table id="pairs-table">
-            <thead><tr><th>#</th><th>Expr</th><th>Code</th><th>Pair</th><th>Normal</th><th>Reversal</th><th>Edge</th></tr></thead>
-            <tbody id="pairs-body"></tbody>
-        </table>
+        <div id="pairs-list" style="display:grid;gap:0.5rem;"></div>
     </div>
 
     <!-- Edit Modal -->
@@ -298,6 +333,259 @@
     </div>
 
     <div class="toast" id="toast"></div>
+
+    <!-- Asset Modal -->
+    <div id="asset-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:60;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:92%;max-width:540px;max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="color:var(--accent);font-weight:bold;" id="asset-modal-title">Add Asset</span>
+                <button onclick="closeAssetModal()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div style="display:grid;gap:0.75rem;font-size:0.85rem;">
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Name</label>
+                    <input type="text" id="asset-name" placeholder="e.g. Dell Monitor 4K" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Category</label>
+                        <select id="asset-category" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="equipment">Equipment</option>
+                            <option value="vehicle">Vehicle</option>
+                            <option value="furniture">Furniture</option>
+                            <option value="software">Software</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Purchase Date</label>
+                        <input type="date" id="asset-date" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Cost</label>
+                        <input type="number" id="asset-cost" step="0.01" min="0" placeholder="0.00" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Salvage Value</label>
+                        <input type="number" id="asset-salvage" step="0.01" min="0" value="0" placeholder="0.00" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Amortization Method</label>
+                        <select id="asset-method" onchange="toggleDecliningRate()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="straight-line">Straight-Line</option>
+                            <option value="declining-balance">Declining Balance</option>
+                        </select>
+                    </div>
+                    <div id="asset-rate-group" style="display:none;">
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Rate (e.g. 0.30 = 30%)</label>
+                        <input type="number" id="asset-rate" step="0.01" min="0" max="1" value="0.30" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:2fr 1fr;gap:0.75rem;align-items:end;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Useful Life (months)</label>
+                        <input type="number" id="asset-life" min="1" value="12" oninput="updateLifeCalc()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <div id="asset-life-calc" style="color:var(--fg-dim);font-size:0.75rem;padding:0.5rem 0;text-align:right;">= 1 year</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div id="asset-life-presets" style="display:flex;gap:0.35rem;flex-wrap:wrap;">
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLife(12)">1yr</button>
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLife(24)">2yr</button>
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLife(36)">3yr</button>
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLife(48)">4yr</button>
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLife(60)">5yr</button>
+                        <button type="button" class="btn" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="setLife(120)">10yr</button>
+                    </div>
+                    <div id="asset-monthly-amort" style="color:var(--green);font-size:0.8rem;text-align:right;padding:0.3rem 0;"></div>
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Payment Method</label>
+                    <select id="asset-payment" onchange="toggleLinkedLiability()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        <option value="cash">Cash</option>
+                        <option value="financed">Financed</option>
+                    </select>
+                </div>
+                <div id="asset-liability-group" style="display:none;">
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Linked Liability (slug)</label>
+                    <input type="text" id="asset-liability" placeholder="e.g. vehicle-loan" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Description</label>
+                    <input type="text" id="asset-desc" placeholder="Optional description" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+            </div>
+            <div style="margin-top:1.25rem;display:flex;gap:0.5rem;justify-content:space-between;align-items:center;">
+                <button class="btn" id="asset-delete-btn" onclick="deleteAsset()" style="font-size:0.8rem;padding:0.4rem 0.75rem;color:var(--red);border-color:var(--red);display:none;">Delete</button>
+                <div style="display:flex;gap:0.5rem;margin-left:auto;">
+                    <button class="btn" onclick="closeAssetModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                    <button class="btn" onclick="saveAsset()" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payroll Settings Modal -->
+    <div id="payroll-settings-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:65;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:90%;max-width:440px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="color:var(--accent);font-weight:bold;">Payroll Deduction Settings</span>
+                <button onclick="closePayrollSettings()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div style="display:grid;gap:0.75rem;font-size:0.85rem;">
+                <div style="color:var(--fg-dim);font-size:0.75rem;text-transform:uppercase;">Employee Rates</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">CPP Rate</label>
+                        <input type="number" id="cfg-cpp-ee-rate" step="0.001" value="0.0595" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">EI Rate</label>
+                        <input type="number" id="cfg-ei-ee-rate" step="0.001" value="0.0163" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="color:var(--fg-dim);font-size:0.75rem;text-transform:uppercase;margin-top:0.5rem;">Employer Rates</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">CPP Rate</label>
+                        <input type="number" id="cfg-cpp-er-rate" step="0.001" value="0.0595" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">EI Rate (1.4×)</label>
+                        <input type="number" id="cfg-ei-er-rate" step="0.001" value="0.0228" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="color:var(--fg-dim);font-size:0.75rem;text-transform:uppercase;margin-top:0.5rem;">Annual Maximums</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">CPP Max</label>
+                        <input type="number" id="cfg-cpp-max" step="0.01" value="3867.50" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">EI Max</label>
+                        <input type="number" id="cfg-ei-max" step="0.01" value="1049.12" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">CPP Exempt</label>
+                        <input type="number" id="cfg-cpp-exempt" step="1" value="3500" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="color:var(--fg-dim);font-size:0.75rem;text-transform:uppercase;margin-top:0.5rem;">Pay Period</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Length (days)</label>
+                        <input type="number" id="cfg-period-length" step="1" min="1" value="14" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Closes on</label>
+                        <select id="cfg-period-closing" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="monday">Monday</option><option value="tuesday">Tuesday</option><option value="wednesday">Wednesday</option><option value="thursday">Thursday</option><option value="friday" selected>Friday</option><option value="saturday">Saturday</option><option value="sunday">Sunday</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Pay by (days after)</label>
+                        <input type="number" id="cfg-pay-by-days" step="1" min="0" value="5" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top:1.25rem;display:flex;gap:0.5rem;justify-content:flex-end;">
+                <button class="btn" onclick="closePayrollSettings()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                <button class="btn" onclick="savePayrollSettings()" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payroll Modal (full form) -->
+    <div id="payroll-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:60;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:92%;max-width:540px;max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="color:var(--accent);font-weight:bold;">Record Pay Run</span>
+                <button onclick="closePayrollModal()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div style="display:grid;gap:0.75rem;font-size:0.85rem;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Type</label>
+                        <select id="pm-type" onchange="togglePayrollModalFields()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="employee">Employee</option><option value="contractor">Contractor</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Pay Date</label>
+                        <input type="date" id="pm-date" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:2fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Employee / Payee Name</label>
+                        <input type="text" id="pm-name" placeholder="e.g. Jane Smith" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Gross Pay</label>
+                        <input type="number" id="pm-gross" step="0.01" min="0" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div id="pm-employee-section">
+                    <div style="color:var(--fg-dim);font-size:0.75rem;text-transform:uppercase;margin-bottom:0.5rem;">Employee Deductions</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
+                        <div>
+                            <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">CPP</label>
+                            <input type="number" id="pm-cpp-ee" step="0.01" min="0" value="0" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">EI</label>
+                            <input type="number" id="pm-ei-ee" step="0.01" min="0" value="0" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Income Tax</label>
+                            <input type="number" id="pm-tax" step="0.01" min="0" value="0" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        </div>
+                    </div>
+                    <div style="color:var(--fg-dim);font-size:0.75rem;text-transform:uppercase;margin:0.75rem 0 0.5rem;">Employer Costs</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
+                        <div>
+                            <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">CPP (employer)</label>
+                            <input type="number" id="pm-cpp-er" step="0.01" min="0" value="0" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">EI (employer)</label>
+                            <input type="number" id="pm-ei-er" step="0.01" min="0" value="0" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Benefits</label>
+                            <input type="number" id="pm-benefits" step="0.01" min="0" value="0" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        </div>
+                    </div>
+                    <div style="margin-top:0.75rem;padding:0.5rem 0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:4px;">
+                        <span style="color:var(--fg-dim);font-size:0.75rem;">Net Pay: </span>
+                        <span id="pm-net-pay" style="color:var(--green);font-size:0.85rem;font-weight:bold;">—</span>
+                        <button type="button" class="btn" onclick="calcPayrollFromGross()" style="font-size:0.7rem;padding:0.2rem 0.5rem;margin-left:0.75rem;" title="Auto-calculate deductions from gross using saved rates">Calc</button>
+                    </div>
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Pay Period</label>
+                    <select id="pm-period-select" onchange="togglePmPeriodOther()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        <option value="">— select period —</option>
+                        <option value="__other">Other (custom)…</option>
+                    </select>
+                </div>
+                <div id="pm-period-other-group" style="display:none;">
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Custom Period (for corrections, past periods, etc.)</label>
+                    <input type="text" id="pm-period" placeholder="e.g. Jun 16–30, 2026" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+            </div>
+            <div style="margin-top:1.25rem;display:flex;gap:0.5rem;justify-content:flex-end;">
+                <button class="btn" onclick="closePayrollModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                <button class="btn" onclick="submitPayrollModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Run</button>
+            </div>
+        </div>
+    </div>
 
     <script>
     // ─── State ──────────────────────────────────────────────────────────────
@@ -326,10 +614,12 @@
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
         document.getElementById('view-' + view).classList.add('active');
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        event.target.classList.add('active');
+        if (event && event.target) event.target.classList.add('active');
         if (view === 'entry') document.getElementById('expr-field').focus();
-        if (view === 'dashboard') { quickClear(); loadDashboard(); }
+        if (view === 'dashboard') { quickClear(); dashShowMain(); loadDashboard(); }
         if (view === 'data') loadData('assets');
+        if (view === 'contacts') loadContactsView();
+        if (view === 'commodities') loadCommoditiesView();
         if (view === 'charts') loadChart('networth');
         if (view === 'pairs') loadPairsRef();
     }
@@ -519,16 +809,23 @@
                 if (!val) return; // required
 
                 // Check if it's a Data tab keyword — jump to that tab
-                const dataKeywords = { assets:'assets', liabilities:'liabilities', equity:'equity', income:'income', expenses:'expenses', payroll:'payroll', recurring:'recurring', contracts:'contracts', contacts:'contacts', commodities:'commodities' };
+                const dataKeywords = { assets:'assets', liabilities:'liabilities', equity:'equity', income:'income', expenses:'expenses', payroll:'payroll', recurring:'recurring', contracts:'contracts' };
+                const topViewKeywords = { contacts:'contacts', commodities:'commodities' };
                 const lowerVal = val.toLowerCase();
-                if (dataKeywords[lowerVal]) {
-                    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-                    document.getElementById('view-data').classList.add('active');
-                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                    document.querySelectorAll('.tab')[2].classList.add('active');
-                    currentView = 'data';
+                if (topViewKeywords[lowerVal]) {
                     quickInput.value = '';
-                    loadData(dataKeywords[lowerVal]);
+                    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+                    document.getElementById('view-' + lowerVal).classList.add('active');
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelector('.tab[onclick*="' + lowerVal + '"]').classList.add('active');
+                    currentView = lowerVal;
+                    if (lowerVal === 'contacts') loadContactsView();
+                    if (lowerVal === 'commodities') loadCommoditiesView();
+                    return;
+                }
+                if (dataKeywords[lowerVal]) {
+                    quickInput.value = '';
+                    dashLoadManageByName(lowerVal);
                     return;
                 }
 
@@ -1061,7 +1358,7 @@
         if (type === 'assets') {
             let html = '<table><thead><tr><th>Name</th><th>Category</th><th>Cost</th><th>Method</th><th>Life</th></tr></thead><tbody>';
             for (const item of items) {
-                html += `<tr><td>${esc(item.name||'')}</td><td>${esc(item.category||'')}</td><td>${item.currency||'CAD'} ${(item.cost||0).toLocaleString()}</td><td>${esc(item.amortization_method||'')}</td><td>${item.useful_life_months||'—'}mo</td></tr>`;
+                html += `<tr style="cursor:pointer;" onclick='openAssetModal(${JSON.stringify(item).replace(/'/g,"&#39;")})'><td>${esc(item.name||'')}</td><td>${esc(item.category||'')}</td><td>${item.currency||'CAD'} ${(item.cost||0).toLocaleString()}</td><td>${esc(item.amortization_method||'')}</td><td>${item.useful_life_months||'—'}mo</td></tr>`;
             }
             content.innerHTML = html + '</tbody></table>';
         } else if (type === 'liabilities') {
@@ -1094,13 +1391,31 @@
     // Tailored add-forms per data type
     function showAddForm(type, container) {
         const forms = {
-            assets: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                <span style="color:var(--accent);font-size:0.8rem;">+ Asset</span>
-                <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <input type="text" id="add-category" placeholder="category" style="flex:1;min-width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <input type="text" id="add-cost" placeholder="cost" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
-                <input type="text" id="add-life" placeholder="life (mo)" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <button class="btn" onclick="addItem('assets')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            assets: `<div style="display:grid;grid-template-columns:auto 1fr;gap:0.4rem 0.5rem;align-items:center;">
+                <button class="btn" onclick="openAssetModal()" style="font-size:0.8rem;padding:0.35rem 0.6rem;color:var(--accent);border-color:var(--accent);" title="Full form">+ Asset</button>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="1">
+                    <select id="add-category" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="2">
+                        <option value="equipment">equipment</option><option value="vehicle">vehicle</option><option value="furniture">furniture</option><option value="software">software</option><option value="other">other</option>
+                    </select>
+                    <input type="text" id="add-cost" placeholder="cost" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="3">
+                    <select id="add-method" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="4">
+                        <option value="straight-line">SL</option><option value="declining-balance">DB</option>
+                    </select>
+                    <input type="text" id="add-life" placeholder="life (mo)" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="5">
+                </div>
+                <div></div>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <input type="date" id="add-date" style="width:130px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="6">
+                    <input type="text" id="add-salvage" placeholder="salvage" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="7" value="0">
+                    <input type="text" id="add-rate" placeholder="rate" style="width:55px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="8" value="0.30">
+                    <select id="add-payment" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="9">
+                        <option value="cash">cash</option><option value="financed">financed</option>
+                    </select>
+                    <input type="text" id="add-liability" placeholder="liability slug" style="width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="10">
+                    <input type="text" id="add-desc" placeholder="description" style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="11">
+                    <button class="btn" onclick="quickAddAsset()" style="font-size:0.8rem;padding:0.35rem 0.75rem;" tabindex="12">Add</button>
+                </div>
             </div>`,
             liabilities: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
                 <span style="color:var(--accent);font-size:0.8rem;">+ Liability</span>
@@ -1125,15 +1440,30 @@
                 <input type="text" id="add-account" placeholder="e.g. Expenses:Operating:Fuel" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
                 <button class="btn" onclick="addItem('expenses')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
             </div>`,
-            payroll: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                <span style="color:var(--accent);font-size:0.8rem;">+ Pay Run</span>
-                <select id="add-paytype" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;"><option value="employee">Employee</option><option value="contractor">Contractor</option></select>
-                <input type="text" id="add-payee" placeholder="name" style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <input type="text" id="add-gross" placeholder="gross" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
-                <input type="text" id="add-benefits" placeholder="benefits" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
-                <input type="text" id="add-tax" placeholder="tax" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
-                <input type="text" id="add-period" placeholder="period desc" style="width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <button class="btn" onclick="runPayroll()" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Run</button>
+            payroll: `<div style="display:grid;grid-template-columns:auto 1fr;gap:0.4rem 0.5rem;align-items:center;">
+                <button class="btn" onclick="openPayrollModal()" style="font-size:0.8rem;padding:0.35rem 0.6rem;color:var(--accent);border-color:var(--accent);" title="Full form">+ Pay Run</button>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <select id="pay-type" onchange="togglePayrollFields()" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="1">
+                        <option value="employee">Employee</option><option value="contractor">Contractor</option>
+                    </select>
+                    <input type="text" id="pay-name" placeholder="name" style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="2">
+                    <input type="text" id="pay-gross" placeholder="gross" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="3">
+                    <input type="text" id="pay-cpp-ee" placeholder="CPP ee" style="width:65px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="4">
+                    <input type="text" id="pay-ei-ee" placeholder="EI ee" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="5">
+                    <input type="text" id="pay-tax" placeholder="tax" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="6">
+                </div>
+                <div></div>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="pay-cpp-er" placeholder="CPP er" style="width:65px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="7">
+                    <input type="text" id="pay-ei-er" placeholder="EI er" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="8">
+                    <input type="text" id="pay-benefits" placeholder="benefits" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="9">
+                    <input type="date" id="pay-date" style="width:130px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="10">
+                    <select id="pay-period" style="flex:1;min-width:140px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="11">
+                        <option value="">— period —</option>
+                    </select>
+                    <button class="btn" onclick="runPayroll()" style="font-size:0.8rem;padding:0.35rem 0.75rem;" tabindex="12">Run</button>
+                    <button class="btn" onclick="openPayrollSettings()" style="font-size:1.1rem;padding:0.25rem 0.6rem;color:var(--fg-dim);" tabindex="13" title="Deduction rate settings">⚙</button>
+                </div>
             </div>`,
             recurring: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
                 <span style="color:var(--accent);font-size:0.8rem;">+ Recurring</span>
@@ -1168,15 +1498,39 @@
         };
         container.innerHTML = forms[type] || '';
         container.style.display = forms[type] ? 'block' : 'none';
+        // Autofocus first input and set defaults for quick entry
+        if (type === 'assets') {
+            setTimeout(() => {
+                const el = document.getElementById('add-name');
+                const dateEl = document.getElementById('add-date');
+                if (el) el.focus();
+                if (dateEl && state.today) dateEl.value = state.today;
+            }, 50);
+        }
+        if (type === 'payroll') {
+            setTimeout(() => {
+                const el = document.getElementById('pay-name');
+                const dateEl = document.getElementById('pay-date');
+                if (el) el.focus();
+                if (dateEl && state.today) dateEl.value = state.today;
+                togglePayrollFields();
+                loadPayrollPeriods();
+            }, 50);
+        }
     }
 
     async function runPayroll() {
-        const payType = document.getElementById('add-paytype')?.value || 'employee';
-        const name = document.getElementById('add-payee')?.value.trim();
-        const gross = parseFloat(document.getElementById('add-gross')?.value) || 0;
-        const benefits = parseFloat(document.getElementById('add-benefits')?.value) || 0;
-        const tax = parseFloat(document.getElementById('add-tax')?.value) || 0;
-        const period = document.getElementById('add-period')?.value.trim() || '';
+        const payType = document.getElementById('pay-type')?.value || 'employee';
+        const name = document.getElementById('pay-name')?.value.trim();
+        const gross = parseFloat(document.getElementById('pay-gross')?.value) || 0;
+        const cppEe = parseFloat(document.getElementById('pay-cpp-ee')?.value) || 0;
+        const eiEe = parseFloat(document.getElementById('pay-ei-ee')?.value) || 0;
+        const tax = parseFloat(document.getElementById('pay-tax')?.value) || 0;
+        const cppEr = parseFloat(document.getElementById('pay-cpp-er')?.value) || 0;
+        const eiEr = parseFloat(document.getElementById('pay-ei-er')?.value) || 0;
+        const benefits = parseFloat(document.getElementById('pay-benefits')?.value) || 0;
+        const payDate = document.getElementById('pay-date')?.value || state.today;
+        const period = document.getElementById('pay-period')?.value.trim() || '';
 
         if (!name || !gross) { showToast('Name and gross amount required', true); return; }
 
@@ -1184,10 +1538,14 @@
             pay_type: payType,
             employee_name: name,
             gross_amount: gross,
+            cpp_employee: cppEe,
+            ei_employee: eiEe,
+            tax_withheld: tax,
+            cpp_employer: cppEr,
+            ei_employer: eiEr,
             benefits: benefits,
             employer_contributions: 0,
-            tax_withheld: tax,
-            pay_date: state.today,
+            pay_date: payDate,
             period: period,
         };
 
@@ -1196,6 +1554,16 @@
             const data = await res.json();
             if (data.ok) {
                 showToast('✓ ' + data.path);
+                // Clear fields
+                document.getElementById('pay-name').value = '';
+                document.getElementById('pay-gross').value = '';
+                document.getElementById('pay-cpp-ee').value = '';
+                document.getElementById('pay-ei-ee').value = '';
+                document.getElementById('pay-tax').value = '';
+                document.getElementById('pay-cpp-er').value = '';
+                document.getElementById('pay-ei-er').value = '';
+                document.getElementById('pay-benefits').value = '';
+                document.getElementById('pay-period').value = '';
                 loadData('payroll');
             } else {
                 showToast('Error: ' + (data.detail || 'unknown'), true);
@@ -1219,18 +1587,661 @@
         showToast('Use CLI: ' + (cmdMap[type] || 'pair ' + type + ' add'));
     }
 
+    // ─── Dashboard Manage Inline ──────────────────────────────────────────
+    function dashLoadManage(type) {
+        const main = document.getElementById('dash-main-content');
+        const manage = document.getElementById('dash-manage-content');
+        const title = document.getElementById('dash-manage-title');
+        const form = document.getElementById('dash-manage-form');
+        const content = document.getElementById('dash-manage-data');
+
+        main.style.display = 'none';
+        manage.style.display = 'block';
+        title.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+
+        // Highlight active button
+        document.querySelectorAll('#dash-manage-btns .btn').forEach(b => b.classList.remove('active'));
+        if (event && event.target) event.target.classList.add('active');
+
+        // Load add form
+        showAddForm(type, form);
+
+        // Load content
+        content.innerHTML = '<div class="empty">Loading...</div>';
+        loadDataInto(type, content);
+    }
+
+    function dashLoadManageByName(type) {
+        // Programmatic version (no event.target)
+        const main = document.getElementById('dash-main-content');
+        const manage = document.getElementById('dash-manage-content');
+        const title = document.getElementById('dash-manage-title');
+        const form = document.getElementById('dash-manage-form');
+        const content = document.getElementById('dash-manage-data');
+
+        main.style.display = 'none';
+        manage.style.display = 'block';
+        title.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+
+        // Highlight matching button
+        document.querySelectorAll('#dash-manage-btns .btn').forEach(b => {
+            b.classList.toggle('active', b.textContent.toLowerCase() === type);
+        });
+
+        showAddForm(type, form);
+        content.innerHTML = '<div class="empty">Loading...</div>';
+        loadDataInto(type, content);
+    }
+
+    function dashShowMain() {
+        document.getElementById('dash-main-content').style.display = '';
+        document.getElementById('dash-manage-content').style.display = 'none';
+        document.querySelectorAll('#dash-manage-btns .btn').forEach(b => b.classList.remove('active'));
+    }
+
+    async function loadDataInto(type, container) {
+        // Reuse the loadData rendering logic but target a specific container
+        if (type === 'commodities') {
+            const data = await fetch('/api/commodities').then(r => r.json());
+            const items = data.items || [];
+            if (!items.length) { container.innerHTML = '<div class="empty">No commodities configured</div>'; return; }
+            let html = '<table><thead><tr><th>Symbol</th><th>Name</th><th>Source</th><th style="text-align:right">Latest Price</th><th>Date</th><th>Tags</th></tr></thead><tbody>';
+            for (const item of items) {
+                const price = item.latest_price ? item.currency + ' ' + item.latest_price.toFixed(2) : '—';
+                const tags = (item.tags || []).map(t => '<span style="background:var(--border);padding:0.1rem 0.4rem;border-radius:3px;font-size:0.7rem;margin-right:0.25rem;">' + esc(t) + '</span>').join('');
+                html += '<tr><td style="color:var(--accent);font-weight:bold;">' + esc(item.symbol) + '</td><td>' + esc(item.name) + '</td><td style="color:var(--fg-dim)">' + esc(item.source) + '</td><td style="text-align:right">' + price + '</td><td style="color:var(--fg-dim)">' + esc(item.latest_date) + '</td><td>' + tags + '</td></tr>';
+            }
+            container.innerHTML = html + '</tbody></table>';
+            return;
+        }
+
+        if (type === 'payroll') {
+            const data = await fetch('/api/payroll').then(r => r.json());
+            let html = '';
+            html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:1rem;">';
+            html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;text-align:center;"><div style="color:var(--fg);font-size:1rem;">' + data.currency + ' ' + (data.ytd.salaries||0).toLocaleString(undefined,{minimumFractionDigits:2}) + '</div><div style="color:var(--fg-dim);font-size:0.7rem;">Salaries YTD</div></div>';
+            html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;text-align:center;"><div style="color:var(--fg);font-size:1rem;">' + data.currency + ' ' + (data.ytd.benefits||0).toLocaleString(undefined,{minimumFractionDigits:2}) + '</div><div style="color:var(--fg-dim);font-size:0.7rem;">Benefits YTD</div></div>';
+            html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;text-align:center;"><div style="color:var(--fg);font-size:1rem;">' + data.currency + ' ' + (data.ytd.contributions||0).toLocaleString(undefined,{minimumFractionDigits:2}) + '</div><div style="color:var(--fg-dim);font-size:0.7rem;">Employer Contributions YTD</div></div>';
+            html += '</div>';
+            if (data.employees.length) {
+                html += '<div style="color:var(--fg-dim);font-size:0.75rem;margin-bottom:0.5rem;text-transform:uppercase;">Employees</div>';
+                html += '<table><thead><tr><th>Name</th><th>Salary</th><th>Schedule</th><th>Start</th></tr></thead><tbody>';
+                for (const emp of data.employees) {
+                    html += '<tr><td>' + esc(emp.name) + '</td><td>' + emp.currency + ' ' + emp.salary.toLocaleString() + '</td><td>' + esc(emp.schedule) + '</td><td>' + esc(emp.start_date) + '</td></tr>';
+                }
+                html += '</tbody></table>';
+            }
+            if (data.recent_runs.length) {
+                html += '<div style="color:var(--fg-dim);font-size:0.75rem;margin:1rem 0 0.5rem;text-transform:uppercase;">Recent Pay Runs</div>';
+                html += '<table><thead><tr><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>';
+                for (const run of data.recent_runs.slice(-10).reverse()) {
+                    html += '<tr><td>' + esc(run.date) + '</td><td>' + esc(run.description) + '</td><td>' + esc(run.amount) + '</td></tr>';
+                }
+                html += '</tbody></table>';
+            }
+            container.innerHTML = html || '<div class="empty">No payroll data</div>';
+            return;
+        }
+
+        if (['expenses', 'equity', 'income'].includes(type)) {
+            const data = await fetch('/api/' + type).then(r => r.json());
+            if (!data.items || !data.items.length) { container.innerHTML = '<div class="empty">No ' + type + ' found</div>'; return; }
+            let html = '<table><thead><tr><th>Account</th><th style="text-align:right">Balance</th></tr></thead><tbody>';
+            for (const item of data.items) {
+                const cls = type === 'expenses' ? 'amt-neg' : (type === 'income' ? 'amt-pos' : '');
+                html += '<tr><td>' + esc(item.short) + '<span style="color:var(--fg-dim);margin-left:0.5rem;font-size:0.8rem;">' + esc(item.hint) + '</span></td><td style="text-align:right" class="' + cls + '">' + data.currency + ' ' + item.amount.toLocaleString(undefined,{minimumFractionDigits:2}) + '</td></tr>';
+            }
+            container.innerHTML = html + '</tbody></table>';
+            return;
+        }
+
+        // YAML-based tabs
+        const data = await fetch('/api/' + type).then(r => r.json());
+        const items = data.items || [];
+        if (!items.length) { container.innerHTML = '<div class="empty">No ' + type + ' found</div>'; return; }
+
+        if (type === 'assets') {
+            let html = '<table><thead><tr><th>Name</th><th>Category</th><th>Cost</th><th>Method</th><th>Life</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += '<tr style="cursor:pointer;" onclick=\'openAssetModal(' + JSON.stringify(item).replace(/'/g,"&#39;") + ')\'><td>' + esc(item.name||'') + '</td><td>' + esc(item.category||'') + '</td><td>' + (item.currency||'CAD') + ' ' + (item.cost||0).toLocaleString() + '</td><td>' + esc(item.amortization_method||'') + '</td><td>' + (item.useful_life_months||'—') + 'mo</td></tr>';
+            }
+            container.innerHTML = html + '</tbody></table>';
+        } else if (type === 'liabilities') {
+            let html = '<table><thead><tr><th>Name</th><th>Principal</th><th>Rate</th><th>Payment</th><th>Term</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += '<tr><td>' + esc(item.name||'') + '</td><td>' + (item.currency||'CAD') + ' ' + (item.principal||0).toLocaleString() + '</td><td>' + (item.interest_rate||0) + '%</td><td>' + (item.currency||'CAD') + ' ' + (item.payment_amount||0).toFixed(2) + '/mo</td><td>' + (item.term_months||'—') + 'mo</td></tr>';
+            }
+            container.innerHTML = html + '</tbody></table>';
+        } else if (type === 'contacts') {
+            let html = '<table><thead><tr><th>Name</th><th>Role</th><th>Company</th><th>Email</th><th>Phone</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += '<tr><td>' + esc(item.name||'') + '</td><td>' + esc(item.role||'') + '</td><td>' + esc(item.company||'') + '</td><td>' + esc(item.email||'') + '</td><td>' + esc(item.phone||'') + '</td></tr>';
+            }
+            container.innerHTML = html + '</tbody></table>';
+        } else if (type === 'contracts') {
+            let html = '<table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Value</th><th>End Date</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += '<tr><td>' + esc(item.name||'') + '</td><td>' + esc(item.type||'') + '</td><td>' + esc(item.status||'') + '</td><td>' + (item.value ? (item.currency||'CAD')+' '+(item.value).toLocaleString() : '—') + '</td><td>' + esc(item.end_date||'—') + '</td></tr>';
+            }
+            container.innerHTML = html + '</tbody></table>';
+        } else if (type === 'recurring') {
+            let html = '<table><thead><tr><th>Name</th><th>Frequency</th><th>Amount</th><th>Description</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += '<tr><td>' + esc(item.name||'') + '</td><td>' + esc(item.frequency||'') + '</td><td>' + (item.currency||'CAD') + ' ' + (item.amount||0).toFixed(2) + '</td><td>' + esc(item.description||'') + '</td></tr>';
+            }
+            container.innerHTML = html + '</tbody></table>';
+        }
+    }
+
+    // Standalone Contacts view
+    async function loadContactsView() {
+        const form = document.getElementById('contacts-add-form');
+        const content = document.getElementById('contacts-content');
+        showAddForm('contacts', form);
+        content.innerHTML = '<div class="empty">Loading...</div>';
+        await loadDataInto('contacts', content);
+    }
+
+    // Standalone Commodities view
+    async function loadCommoditiesView() {
+        const form = document.getElementById('commodities-add-form');
+        const content = document.getElementById('commodities-content');
+        showAddForm('commodities', form);
+        content.innerHTML = '<div class="empty">Loading...</div>';
+        await loadDataInto('commodities', content);
+    }
+
+    // ─── Payroll Modal & Settings ──────────────────────────────────────────
+    let payrollSettings = { cpp_employee_rate: 0.0595, cpp_employer_rate: 0.0595, ei_employee_rate: 0.0163, ei_employer_rate: 0.0228, cpp_annual_max: 3867.50, ei_annual_max: 1049.12, cpp_exemption: 3500, period_length_days: 14, period_closing_day: 'friday', pay_by_days_after: 5 };
+    let payrollPeriods = [];
+
+    // Load settings on init
+    async function loadPayrollSettings() {
+        try {
+            const data = await fetch('/api/payroll/settings').then(r => r.json());
+            Object.assign(payrollSettings, data);
+        } catch(e) {}
+    }
+
+    // Load recent periods from backend
+    async function loadPayrollPeriods() {
+        try {
+            const data = await fetch('/api/payroll/periods').then(r => r.json());
+            payrollPeriods = data.periods || [];
+            populatePeriodDropdowns();
+        } catch(e) {}
+    }
+
+    function populatePeriodDropdowns() {
+        // Inline dropdown
+        const inlineSel = document.getElementById('pay-period');
+        if (inlineSel) {
+            inlineSel.innerHTML = '<option value="">— period —</option>';
+            for (const p of payrollPeriods) {
+                inlineSel.innerHTML += `<option value="${esc(p.label)}" data-pay-by="${p.pay_by}">${esc(p.label)}</option>`;
+            }
+        }
+        // Modal dropdown
+        const modalSel = document.getElementById('pm-period-select');
+        if (modalSel) {
+            modalSel.innerHTML = '<option value="">— select period —</option>';
+            for (const p of payrollPeriods) {
+                modalSel.innerHTML += `<option value="${esc(p.label)}" data-pay-by="${p.pay_by}">${esc(p.label)} (pay by ${p.pay_by})</option>`;
+            }
+            modalSel.innerHTML += '<option value="__other">Other (custom)…</option>';
+        }
+    }
+
+    function togglePmPeriodOther() {
+        const sel = document.getElementById('pm-period-select');
+        const other = document.getElementById('pm-period-other-group');
+        if (sel && other) {
+            other.style.display = sel.value === '__other' ? 'block' : 'none';
+            if (sel.value === '__other') {
+                document.getElementById('pm-period')?.focus();
+            }
+        }
+    }
+
+    function openPayrollSettings() {
+        document.getElementById('cfg-cpp-ee-rate').value = payrollSettings.cpp_employee_rate;
+        document.getElementById('cfg-ei-ee-rate').value = payrollSettings.ei_employee_rate;
+        document.getElementById('cfg-cpp-er-rate').value = payrollSettings.cpp_employer_rate;
+        document.getElementById('cfg-ei-er-rate').value = payrollSettings.ei_employer_rate;
+        document.getElementById('cfg-cpp-max').value = payrollSettings.cpp_annual_max;
+        document.getElementById('cfg-ei-max').value = payrollSettings.ei_annual_max;
+        document.getElementById('cfg-cpp-exempt').value = payrollSettings.cpp_exemption;
+        document.getElementById('cfg-period-length').value = payrollSettings.period_length_days;
+        document.getElementById('cfg-period-closing').value = payrollSettings.period_closing_day;
+        document.getElementById('cfg-pay-by-days').value = payrollSettings.pay_by_days_after;
+        document.getElementById('payroll-settings-modal').style.display = 'flex';
+    }
+
+    function closePayrollSettings() {
+        document.getElementById('payroll-settings-modal').style.display = 'none';
+    }
+
+    async function savePayrollSettings() {
+        const body = {
+            cpp_employee_rate: parseFloat(document.getElementById('cfg-cpp-ee-rate').value) || 0.0595,
+            cpp_employer_rate: parseFloat(document.getElementById('cfg-cpp-er-rate').value) || 0.0595,
+            ei_employee_rate: parseFloat(document.getElementById('cfg-ei-ee-rate').value) || 0.0163,
+            ei_employer_rate: parseFloat(document.getElementById('cfg-ei-er-rate').value) || 0.0228,
+            cpp_annual_max: parseFloat(document.getElementById('cfg-cpp-max').value) || 3867.50,
+            ei_annual_max: parseFloat(document.getElementById('cfg-ei-max').value) || 1049.12,
+            cpp_exemption: parseFloat(document.getElementById('cfg-cpp-exempt').value) || 3500,
+            period_length_days: parseInt(document.getElementById('cfg-period-length').value) || 14,
+            period_closing_day: document.getElementById('cfg-period-closing').value || 'friday',
+            pay_by_days_after: parseInt(document.getElementById('cfg-pay-by-days').value) || 5,
+        };
+        try {
+            const res = await fetch('/api/payroll/settings', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            const data = await res.json();
+            if (data.ok) {
+                Object.assign(payrollSettings, body);
+                showToast('Payroll settings saved');
+                closePayrollSettings();
+                // Refresh periods since settings changed
+                loadPayrollPeriods();
+            } else {
+                showToast('Error saving settings', true);
+            }
+        } catch(e) { showToast('Network error', true); }
+    }
+
+    // Toggle employee fields visibility for contractor
+    function togglePayrollFields() {
+        const type = document.getElementById('pay-type')?.value;
+        const eeFields = ['pay-cpp-ee','pay-ei-ee','pay-tax','pay-cpp-er','pay-ei-er','pay-benefits'];
+        for (const id of eeFields) {
+            const el = document.getElementById(id);
+            if (el) el.style.display = type === 'contractor' ? 'none' : '';
+        }
+    }
+
+    function togglePayrollModalFields() {
+        const type = document.getElementById('pm-type')?.value;
+        document.getElementById('pm-employee-section').style.display = type === 'contractor' ? 'none' : '';
+    }
+
+    // Auto-calculate deductions from gross using saved rates
+    function calcPayrollFromGross() {
+        const gross = parseFloat(document.getElementById('pm-gross')?.value) || 0;
+        if (!gross) { showToast('Enter gross amount first'); return; }
+
+        const cppEe = Math.min(gross * payrollSettings.cpp_employee_rate, payrollSettings.cpp_annual_max);
+        const eiEe = Math.min(gross * payrollSettings.ei_employee_rate, payrollSettings.ei_annual_max);
+        const cppEr = Math.min(gross * payrollSettings.cpp_employer_rate, payrollSettings.cpp_annual_max);
+        const eiEr = Math.min(gross * payrollSettings.ei_employer_rate, payrollSettings.ei_annual_max);
+
+        document.getElementById('pm-cpp-ee').value = cppEe.toFixed(2);
+        document.getElementById('pm-ei-ee').value = eiEe.toFixed(2);
+        document.getElementById('pm-cpp-er').value = cppEr.toFixed(2);
+        document.getElementById('pm-ei-er').value = eiEr.toFixed(2);
+        updateNetPay();
+    }
+
+    function updateNetPay() {
+        const gross = parseFloat(document.getElementById('pm-gross')?.value) || 0;
+        const cpp = parseFloat(document.getElementById('pm-cpp-ee')?.value) || 0;
+        const ei = parseFloat(document.getElementById('pm-ei-ee')?.value) || 0;
+        const tax = parseFloat(document.getElementById('pm-tax')?.value) || 0;
+        const net = gross - cpp - ei - tax;
+        document.getElementById('pm-net-pay').textContent = state.currency + ' ' + net.toFixed(2);
+    }
+
+    function openPayrollModal() {
+        document.getElementById('pm-type').value = 'employee';
+        document.getElementById('pm-date').value = state.today;
+        document.getElementById('pm-name').value = '';
+        document.getElementById('pm-gross').value = '';
+        document.getElementById('pm-cpp-ee').value = '0';
+        document.getElementById('pm-ei-ee').value = '0';
+        document.getElementById('pm-tax').value = '0';
+        document.getElementById('pm-cpp-er').value = '0';
+        document.getElementById('pm-ei-er').value = '0';
+        document.getElementById('pm-benefits').value = '0';
+        document.getElementById('pm-period-select').value = '';
+        document.getElementById('pm-period').value = '';
+        document.getElementById('pm-period-other-group').style.display = 'none';
+        document.getElementById('pm-net-pay').textContent = '—';
+        document.getElementById('pm-employee-section').style.display = '';
+        document.getElementById('payroll-modal').style.display = 'flex';
+    }
+
+    function closePayrollModal() {
+        document.getElementById('payroll-modal').style.display = 'none';
+    }
+
+    async function submitPayrollModal() {
+        const name = document.getElementById('pm-name')?.value.trim();
+        const gross = parseFloat(document.getElementById('pm-gross')?.value) || 0;
+        if (!name || !gross) { showToast('Name and gross required', true); return; }
+
+        const payType = document.getElementById('pm-type').value;
+        const periodSelect = document.getElementById('pm-period-select')?.value || '';
+        const periodCustom = document.getElementById('pm-period')?.value.trim() || '';
+        const period = periodSelect === '__other' ? periodCustom : periodSelect;
+
+        const body = {
+            pay_type: payType,
+            employee_name: name,
+            gross_amount: gross,
+            cpp_employee: payType === 'employee' ? (parseFloat(document.getElementById('pm-cpp-ee').value) || 0) : 0,
+            ei_employee: payType === 'employee' ? (parseFloat(document.getElementById('pm-ei-ee').value) || 0) : 0,
+            tax_withheld: payType === 'employee' ? (parseFloat(document.getElementById('pm-tax').value) || 0) : 0,
+            cpp_employer: payType === 'employee' ? (parseFloat(document.getElementById('pm-cpp-er').value) || 0) : 0,
+            ei_employer: payType === 'employee' ? (parseFloat(document.getElementById('pm-ei-er').value) || 0) : 0,
+            benefits: payType === 'employee' ? (parseFloat(document.getElementById('pm-benefits').value) || 0) : 0,
+            employer_contributions: 0,
+            pay_date: document.getElementById('pm-date').value || state.today,
+            period: period,
+        };
+
+        try {
+            const res = await fetch('/api/payroll/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            const data = await res.json();
+            if (data.ok) {
+                showToast('✓ ' + data.path);
+                closePayrollModal();
+                loadData('payroll');
+            } else {
+                showToast('Error: ' + (data.detail || 'unknown'), true);
+            }
+        } catch(e) { showToast('Error: ' + e.message, true); }
+    }
+
+    // Wire up net pay calculation in modal
+    ['pm-gross','pm-cpp-ee','pm-ei-ee','pm-tax'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', updateNetPay);
+    });
+
+    // Close modals on backdrop click
+    document.getElementById('payroll-settings-modal')?.addEventListener('click', function(e) { if (e.target === this) closePayrollSettings(); });
+    document.getElementById('payroll-modal')?.addEventListener('click', function(e) { if (e.target === this) closePayrollModal(); });
+
+    // Load settings and periods early
+    loadPayrollSettings();
+    loadPayrollPeriods();
+
+    // ─── Asset Modal ────────────────────────────────────────────────────────
+    let editingAssetSlug = null;
+
+    async function quickAddAsset() {
+        const name = document.getElementById('add-name')?.value.trim();
+        if (!name) { showToast('Name is required'); return; }
+        const cost = parseFloat(document.getElementById('add-cost')?.value);
+        if (!cost || cost <= 0) { showToast('Cost must be > 0'); return; }
+
+        const payload = {
+            name: name,
+            category: document.getElementById('add-category')?.value || 'equipment',
+            cost: cost,
+            amortization_method: document.getElementById('add-method')?.value || 'straight-line',
+            useful_life_months: parseInt(document.getElementById('add-life')?.value) || 12,
+            purchase_date: document.getElementById('add-date')?.value || state.today,
+            salvage_value: parseFloat(document.getElementById('add-salvage')?.value) || 0,
+            rate: parseFloat(document.getElementById('add-rate')?.value) || 0.30,
+            description: document.getElementById('add-desc')?.value.trim() || '',
+            payment_method: document.getElementById('add-payment')?.value || 'cash',
+            linked_liability: document.getElementById('add-liability')?.value.trim() || '',
+        };
+
+        try {
+            const res = await fetch('/api/asset', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Asset added');
+                // Clear inline fields
+                document.getElementById('add-name').value = '';
+                document.getElementById('add-cost').value = '';
+                document.getElementById('add-life').value = '';
+                document.getElementById('add-salvage').value = '0';
+                document.getElementById('add-liability').value = '';
+                document.getElementById('add-desc').value = '';
+                loadData('assets');
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed'), true);
+            }
+        } catch (e) {
+            showToast('Network error: ' + e.message, true);
+        }
+    }
+
+    // Inline quick-add: Enter advances through fields, submits from last
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        const id = e.target.id;
+        const advance = {
+            // Assets
+            'add-name': 'add-category',
+            'add-category': 'add-cost',
+            'add-cost': 'add-method',
+            'add-method': 'add-life',
+            'add-life': 'add-date',
+            'add-date': 'add-salvage',
+            'add-salvage': 'add-rate',
+            'add-rate': 'add-payment',
+            'add-payment': 'add-liability',
+            'add-liability': 'add-desc',
+            // Payroll
+            'pay-type': 'pay-name',
+            'pay-name': 'pay-gross',
+            'pay-gross': 'pay-cpp-ee',
+            'pay-cpp-ee': 'pay-ei-ee',
+            'pay-ei-ee': 'pay-tax',
+            'pay-tax': 'pay-cpp-er',
+            'pay-cpp-er': 'pay-ei-er',
+            'pay-ei-er': 'pay-benefits',
+            'pay-benefits': 'pay-date',
+            'pay-date': 'pay-period',
+        };
+        if (advance[id]) { e.preventDefault(); document.getElementById(advance[id]).focus(); }
+        else if (id === 'add-desc') { e.preventDefault(); quickAddAsset(); }
+        else if (id === 'pay-period') { e.preventDefault(); runPayroll(); }
+    });
+
+    function openAssetModal(item) {
+        const modal = document.getElementById('asset-modal');
+        const title = document.getElementById('asset-modal-title');
+        const deleteBtn = document.getElementById('asset-delete-btn');
+
+        if (item) {
+            // Edit mode
+            title.textContent = 'Edit Asset';
+            editingAssetSlug = item.slug || '';
+            document.getElementById('asset-name').value = item.name || '';
+            document.getElementById('asset-category').value = item.category || 'equipment';
+            document.getElementById('asset-date').value = item.purchase_date || '';
+            document.getElementById('asset-cost').value = item.cost || '';
+            document.getElementById('asset-salvage').value = item.salvage_value || 0;
+            document.getElementById('asset-method').value = item.amortization_method || 'straight-line';
+            document.getElementById('asset-rate').value = item.rate || 0.30;
+            document.getElementById('asset-life').value = item.useful_life_months || 12;
+            document.getElementById('asset-payment').value = item.payment_method || 'cash';
+            document.getElementById('asset-liability').value = item.linked_liability || '';
+            document.getElementById('asset-desc').value = item.description || '';
+            deleteBtn.style.display = 'inline-block';
+        } else {
+            // Add mode
+            title.textContent = 'Add Asset';
+            editingAssetSlug = null;
+            document.getElementById('asset-name').value = '';
+            document.getElementById('asset-category').value = 'equipment';
+            document.getElementById('asset-date').value = state.today;
+            document.getElementById('asset-cost').value = '';
+            document.getElementById('asset-salvage').value = '0';
+            document.getElementById('asset-method').value = 'straight-line';
+            document.getElementById('asset-rate').value = '0.30';
+            document.getElementById('asset-life').value = '12';
+            document.getElementById('asset-payment').value = 'cash';
+            document.getElementById('asset-liability').value = '';
+            document.getElementById('asset-desc').value = '';
+            deleteBtn.style.display = 'none';
+        }
+
+        toggleDecliningRate();
+        toggleLinkedLiability();
+        updateLifeCalc();
+        modal.style.display = 'flex';
+    }
+
+    function closeAssetModal() {
+        document.getElementById('asset-modal').style.display = 'none';
+        editingAssetSlug = null;
+    }
+
+    function toggleDecliningRate() {
+        const method = document.getElementById('asset-method').value;
+        document.getElementById('asset-rate-group').style.display = method === 'declining-balance' ? 'block' : 'none';
+    }
+
+    function toggleLinkedLiability() {
+        const payment = document.getElementById('asset-payment').value;
+        document.getElementById('asset-liability-group').style.display = payment === 'financed' ? 'block' : 'none';
+    }
+
+    function setLife(months) {
+        document.getElementById('asset-life').value = months;
+        updateLifeCalc();
+    }
+
+    function updateLifeCalc() {
+        const months = parseInt(document.getElementById('asset-life').value) || 0;
+        const calcEl = document.getElementById('asset-life-calc');
+        const amortEl = document.getElementById('asset-monthly-amort');
+
+        if (months <= 0) {
+            calcEl.textContent = '';
+            amortEl.textContent = '';
+            return;
+        }
+
+        // Life display
+        const years = months / 12;
+        if (months % 12 === 0) {
+            calcEl.textContent = `= ${years} year${years !== 1 ? 's' : ''}`;
+        } else {
+            calcEl.textContent = `= ${years.toFixed(1)} years`;
+        }
+
+        // Monthly amortization estimate (straight-line)
+        const cost = parseFloat(document.getElementById('asset-cost').value) || 0;
+        const salvage = parseFloat(document.getElementById('asset-salvage').value) || 0;
+        if (cost > 0 && months > 0) {
+            const monthly = (cost - salvage) / months;
+            amortEl.textContent = `~${state.currency} ${monthly.toFixed(2)}/mo`;
+        } else {
+            amortEl.textContent = '';
+        }
+    }
+
+    async function saveAsset() {
+        const name = document.getElementById('asset-name').value.trim();
+        if (!name) { showToast('Name is required'); return; }
+
+        const cost = parseFloat(document.getElementById('asset-cost').value);
+        if (!cost || cost <= 0) { showToast('Cost must be greater than zero'); return; }
+
+        const payload = {
+            name: name,
+            slug: editingAssetSlug || '',
+            category: document.getElementById('asset-category').value,
+            purchase_date: document.getElementById('asset-date').value || state.today,
+            cost: cost,
+            useful_life_months: parseInt(document.getElementById('asset-life').value) || 12,
+            amortization_method: document.getElementById('asset-method').value,
+            rate: parseFloat(document.getElementById('asset-rate').value) || 0.30,
+            salvage_value: parseFloat(document.getElementById('asset-salvage').value) || 0,
+            description: document.getElementById('asset-desc').value.trim(),
+            payment_method: document.getElementById('asset-payment').value,
+            linked_liability: document.getElementById('asset-liability').value.trim(),
+        };
+
+        try {
+            const res = await fetch('/api/asset', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Asset saved');
+                closeAssetModal();
+                loadData('assets');
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed to save'));
+            }
+        } catch (e) {
+            showToast('Network error: ' + e.message);
+        }
+    }
+
+    async function deleteAsset() {
+        if (!editingAssetSlug) return;
+        if (!confirm(`Delete asset "${editingAssetSlug}"? This cannot be undone.`)) return;
+
+        try {
+            const res = await fetch(`/api/asset/${encodeURIComponent(editingAssetSlug)}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Asset deleted');
+                closeAssetModal();
+                loadData('assets');
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed to delete'));
+            }
+        } catch (e) {
+            showToast('Network error: ' + e.message);
+        }
+    }
+
+    // Update life calc when cost/salvage change
+    document.getElementById('asset-cost')?.addEventListener('input', updateLifeCalc);
+    document.getElementById('asset-salvage')?.addEventListener('input', updateLifeCalc);
+
+    // Close asset modal on backdrop click
+    document.getElementById('asset-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeAssetModal();
+    });
+
     // ─── Pairs Reference ────────────────────────────────────────────────────
     async function loadPairsRef() {
         const data = await fetch('/api/pairs-ref').then(r => r.json());
-        const tbody = document.getElementById('pairs-body');
-        tbody.innerHTML = '';
+        const list = document.getElementById('pairs-list');
+        list.innerHTML = '';
         const exprMap = {1:'<', 2:'>', 3:'<<', 4:'>>', 5:'<.', 6:'>.', 7:'<<.', 8:'>>.', 9:'<.>', 10:'<..', 11:'>..', 12:'..<', 13:'..>', 14:'..'};
         for (const p of (data.pairs || [])) {
-            const tr = document.createElement('tr');
             const expr = exprMap[p.num] || '';
-            tr.innerHTML = `<td>${p.num}</td><td style="color:var(--green);font-weight:bold;">${esc(expr)}</td><td style="color:var(--accent)">${esc(p.code)}</td><td>${esc(p.name)}</td><td>${esc(p.normal)}</td><td>${esc(p.reversal)}</td><td style="color:var(--fg-dim)">${esc(p.edge)}</td>`;
-            tbody.appendChild(tr);
+            const card = document.createElement('div');
+            card.style.cssText = 'display:grid;grid-template-columns:3rem 3.5rem 1fr;gap:0.25rem 0.75rem;align-items:baseline;padding:0.6rem 1rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:border-color 0.15s;';
+            card.onmouseenter = () => { card.style.borderColor = 'var(--accent)'; };
+            card.onmouseleave = () => { card.style.borderColor = 'var(--border)'; };
+            card.onclick = () => { goToPairEntry(expr); };
+            card.innerHTML = `
+                <span style="color:var(--fg-dim);font-size:0.8rem;">${p.num}</span>
+                <span style="color:var(--green);font-size:1.3rem;font-weight:bold;font-family:monospace;">${esc(expr)}</span>
+                <span style="font-size:0.95rem;color:var(--fg);">${esc(p.name)}</span>
+                <span></span>
+                <span style="color:var(--accent);font-size:0.8rem;font-family:monospace;">${esc(p.code)}</span>
+                <span style="font-size:0.85rem;color:var(--fg-dim);">${esc(p.normal)}${p.reversal ? ' <span style="color:var(--fg-dim);opacity:0.6;">/ ' + esc(p.reversal) + '</span>' : ''}</span>
+            `;
+            list.appendChild(card);
         }
+    }
+
+    function goToPairEntry(expr) {
+        // Switch to entry view and select the expression
+        currentView = 'entry';
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('view-entry').classList.add('active');
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.tab[onclick*="entry"]').classList.add('active');
+        selectExpr(expr);
     }
 
     // ─── Entry Mode ─────────────────────────────────────────────────────────
@@ -1242,7 +2253,7 @@
             const p = allPairs[key]; if (!p) continue;
             const el = document.createElement('div');
             el.className = 'expr-item';
-            el.innerHTML = `<span class="expr-key">${esc(key)}</span> <span class="expr-desc">${esc(p.desc)}</span>`;
+            el.innerHTML = `<span class="expr-key">${esc(key)}</span><span class="expr-desc">${esc(p.name)}</span>`;
             el.onclick = () => selectExpr(key);
             grid.appendChild(el);
         }
