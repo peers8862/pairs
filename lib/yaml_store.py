@@ -1,4 +1,4 @@
-"""Generic YAML entity storage for hledger-company."""
+"""Generic YAML entity storage for pair."""
 
 import yaml
 from pathlib import Path
@@ -8,8 +8,8 @@ from lib.helpers import ensure_dir
 
 def entity_dir(module_name):
     """Return the directory path for a module's YAML entities."""
-    from lib.helpers import get_company_dir
-    return get_company_dir() / module_name
+    from lib.helpers import get_entity_dir
+    return get_entity_dir() / module_name
 
 
 def load_entity(module_name, slug):

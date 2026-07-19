@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#282c34">
+    <title>Pairs</title>
+    <link rel="manifest" href="/manifest.json">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #282c34; --bg-alt: #21252b; --fg: #abb2bf; --fg-dim: #5c6370;
+            --accent: #61afef; --green: #98c379; --red: #e06c75; --yellow: #e5c07b;
+            --border: #3e4452; --radius: 8px;
+        }
+        body {
+            font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+            background: var(--bg); color: var(--fg);
+            min-height: 100vh; display: flex; flex-direction: column;
+        }
+
+        /* Nav */
+        nav { display: flex; align-items: center; padding: 0.75rem 1.5rem; background: var(--bg-alt); border-bottom: 1px solid var(--border); }
+        nav .brand { color: var(--accent); font-weight: bold; margin-right: 2rem; }
+        nav .tabs { display: flex; gap: 0.25rem; }
+        nav .tab { padding: 0.4rem 1rem; border-radius: 4px; cursor: pointer; color: var(--fg-dim); font-size: 0.85rem; }
+        nav .tab:hover { color: var(--fg); }
+        nav .tab.active { background: var(--border); color: var(--accent); }
+        nav .entity-switcher { margin-left: auto; position: relative; }
+        nav .entity-btn { background: none; border: 1px solid var(--border); color: var(--fg); padding: 0.3rem 0.8rem; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 0.8rem; }
+        nav .entity-btn:hover { border-color: var(--accent); }
+        .entity-dropdown { display: none; position: absolute; top: 100%; right: 0; margin-top: 0.5rem; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 4px; min-width: 180px; z-index: 50; }
+        .entity-dropdown.open { display: block; }
+        .entity-dropdown .entity-item { padding: 0.5rem 1rem; cursor: pointer; font-size: 0.85rem; }
+        .entity-dropdown .entity-item:hover { background: var(--border); color: var(--accent); }
+        .entity-dropdown .entity-item.active { color: var(--green); }
+
+        /* Views */
+        .view { display: none; flex: 1; padding: 1.5rem; max-width: 1000px; width: 100%; margin: 0 auto; }
+        .view.active { display: flex; flex-direction: column; }
+
+        /* Dashboard */
+        .worth-card { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem; text-align: center; }
+        .worth-card .net { font-size: 2.2rem; color: var(--green); font-weight: bold; }
+        .worth-card .label { color: var(--fg-dim); font-size: 0.85rem; margin-top: 0.25rem; }
+        .worth-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+        .worth-breakdown .card { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; text-align: center; }
+        .worth-breakdown .card .val { font-size: 1.3rem; margin-bottom: 0.25rem; }
+        .worth-breakdown .card .lbl { color: var(--fg-dim); font-size: 0.8rem; }
+
+        /* Recent entries table */
+        .section-title { color: var(--fg-dim); font-size: 0.85rem; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { text-align: left; padding: 0.5rem 0.75rem; color: var(--fg-dim); border-bottom: 1px solid var(--border); font-weight: normal; }
+        td { padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--border); }
+        tr:hover td { background: var(--bg-alt); }
+        .amt-pos { color: var(--green); }
+        .amt-neg { color: var(--red); }
+
+        /* Reports */
+        .report-controls { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .report-controls .btn { padding: 0.4rem 1rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-alt); color: var(--fg); cursor: pointer; font-family: inherit; font-size: 0.8rem; }
+        .report-controls .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .report-controls .btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+        .report-controls input { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.75rem; color: var(--fg); font-family: inherit; font-size: 0.8rem; width: 120px; }
+        .report-controls input::placeholder { color: var(--fg-dim); }
+        .report-output { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; overflow-x: auto; white-space: pre; font-size: 0.8rem; flex: 1; min-height: 300px; }
+</style>
+</head>
+    <style>
+        /* Entry view (link mode) */
+        .entry-container { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; flex: 1; min-height: 450px; }
+        @media (max-width: 700px) { .entry-container { grid-template-columns: 1fr; } }
+        .panel-left { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; overflow: hidden; }
+        .panel-right { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; display: flex; flex-direction: column; }
+        .steps { display: flex; gap: 0.5rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); }
+        .step { font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 3px; background: var(--bg-alt); color: var(--fg-dim); }
+        .step.active { background: var(--accent); color: var(--bg); }
+        .step.done { background: var(--green); color: var(--bg); }
+        .expr-input { display: flex; align-items: center; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+        .expr-input label { color: var(--accent); margin-right: 0.5rem; }
+        .expr-input input { flex: 1; background: transparent; border: none; color: var(--fg); font-family: inherit; font-size: 1rem; outline: none; }
+        .expr-input input::placeholder { color: var(--fg-dim); }
+        .expr-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.4rem; padding: 0.75rem; }
+        .expr-item { padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+        .expr-item:hover { border-color: var(--accent); color: var(--accent); }
+        .expr-item .expr-key { font-weight: bold; color: var(--accent); }
+        .expr-item .expr-desc { color: var(--fg-dim); font-size: 0.7rem; }
+        .filter-bar { padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); display: none; }
+        .filter-bar input { width: 100%; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.75rem; color: var(--fg); font-family: inherit; font-size: 0.85rem; outline: none; }
+        .filter-bar input:focus { border-color: var(--accent); }
+        .filter-bar input::placeholder { color: var(--fg-dim); }
+        .account-list { flex: 1; overflow-y: auto; padding: 0.25rem 0; }
+        .account-list .item { padding: 0.4rem 1rem; cursor: pointer; display: flex; justify-content: space-between; font-size: 0.85rem; }
+        .account-list .item:hover { background: var(--border); color: var(--accent); }
+        .account-list .item .hint { color: var(--fg-dim); font-size: 0.8rem; }
+        .account-list .empty { padding: 1rem; color: var(--fg-dim); text-align: center; }
+        .amount-input { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: none; }
+        .amount-input input { width: 100%; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem 0.75rem; color: var(--fg); font-family: inherit; font-size: 1.1rem; outline: none; text-align: right; }
+        .amount-input input:focus { border-color: var(--accent); }
+        .preview-title { color: var(--accent); font-size: 0.85rem; margin-bottom: 0.3rem; }
+        .preview-pair { color: var(--fg-dim); font-size: 0.8rem; margin-bottom: 1rem; }
+        .preview-entry .date { color: var(--fg-dim); margin-bottom: 0.5rem; font-size: 0.85rem; }
+        .posting { display: flex; justify-content: space-between; padding: 0.3rem 0; font-size: 0.85rem; }
+        .posting .amount { color: var(--green); }
+        .posting .amount.negative { color: var(--red); }
+        .posting.pending .account, .posting.pending .amount { color: var(--fg-dim); }
+        .actions { margin-top: auto; display: flex; gap: 0.5rem; padding-top: 1rem; }
+        .btn { padding: 0.5rem 1.2rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font-family: inherit; font-size: 0.85rem; cursor: pointer; }
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+        .btn.primary:hover { opacity: 0.85; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--green); color: var(--bg); padding: 0.75rem 1.5rem; border-radius: var(--radius); font-size: 0.85rem; transition: transform 0.3s ease; z-index: 100; }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        #data-content { margin-top: 0.5rem; overflow-x: auto; }
+        #data-content table { min-width: 600px; }
+        #data-content .empty, .account-list .empty { padding: 2rem; text-align: center; color: var(--fg-dim); }
+    </style>
+<body>
+
+    <!-- Nav -->
+    <nav>
+        <span class="brand" style="border:2px solid var(--accent);padding:0.2rem 0.5rem;border-radius:3px;font-size:0.9rem;">&gt;&lt;</span>
+        <div class="tabs">
+            <span class="tab active" onclick="switchView('dashboard')">Dashboard</span>
+            <span class="tab" onclick="switchView('entry')">Pairs</span>
+            <span class="tab" onclick="switchView('data')">Manage</span>
+            <span class="tab" onclick="switchView('charts')">Charts</span>
+            <span class="tab" onclick="switchView('reports')">Reports</span>
+            <span class="tab" onclick="switchView('pairs')">Codes</span>
+        </div>
+        <div class="entity-switcher">
+            <button class="entity-btn" id="entity-btn" onclick="toggleEntityDropdown()">...</button>
+            <div class="entity-dropdown" id="entity-dropdown"></div>
+        </div>
+    </nav>
+
+    <!-- Dashboard View -->
+    <div class="view active" id="view-dashboard">
+        <!-- Net worth: full width -->
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+            <div><div style="font-size:1.5rem;color:var(--green);font-weight:bold;" id="net-worth">—</div><div style="color:var(--fg-dim);font-size:0.7rem;">Net Worth</div></div>
+            <div style="flex:1;position:relative;height:36px;"><canvas id="spark-networth"></canvas></div>
+        </div>
+        <!-- Assets + Liabilities row -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;">
+            <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;">
+                <div><div style="font-size:1.1rem;color:var(--accent);" id="total-assets">—</div><div style="color:var(--fg-dim);font-size:0.7rem;">Assets</div></div>
+                <div style="flex:1;position:relative;height:28px;"><canvas id="spark-assets"></canvas></div>
+            </div>
+            <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;">
+                <div><div style="font-size:1.1rem;color:var(--red);" id="total-liabilities">—</div><div style="color:var(--fg-dim);font-size:0.7rem;">Liabilities</div></div>
+                <div style="flex:1;position:relative;height:28px;"><canvas id="spark-liabilities"></canvas></div>
+            </div>
+        </div>
+        <!-- Revenue + P/L sparklines -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;">
+            <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;">
+                <div style="color:var(--fg-dim);font-size:0.7rem;margin-bottom:0.4rem;">Monthly Revenue</div>
+                <div style="position:relative;height:36px;"><canvas id="spark-revenue"></canvas></div>
+            </div>
+            <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;">
+                <div style="color:var(--fg-dim);font-size:0.7rem;margin-bottom:0.4rem;">Monthly Profit/Loss</div>
+                <div style="position:relative;height:36px;"><canvas id="spark-profit"></canvas></div>
+            </div>
+        </div>
+        <!-- Quick Entry -->
+        <div id="quick-entry-box" style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1.5rem;">
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+                <span style="color:var(--accent);font-size:0.9rem;">⊹</span>
+                <div style="flex:1;position:relative;">
+                    <input type="text" id="quick-entry-input" placeholder="description or pairs shorthand (<. < > etc)..." autofocus
+                        style="width:100%;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:0.95rem;padding:0.3rem 0;outline:none;" autocomplete="off">
+                    <div id="quick-autocomplete" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg);border:1px solid var(--border);border-radius:0 0 4px 4px;max-height:320px;overflow-y:auto;z-index:20;"></div>
+                </div>
+                <span style="color:var(--fg-dim);font-size:0.7rem;" id="quick-step-label">description</span>
+                <span style="color:var(--fg-dim);font-size:0.75rem;" id="quick-balance">bal: 0.00</span>
+            </div>
+            <div id="quick-entry-postings" style="font-size:0.85rem;min-height:1.5rem;"></div>
+            <div id="quick-entry-actions" style="margin-top:0.75rem;display:none;gap:0.5rem;">
+                <button class="btn primary" id="quick-write-btn" onclick="quickWrite()">Write</button>
+                <button class="btn" id="quick-clear-btn" onclick="quickClear()">Clear</button>
+            </div>
+        </div>
+
+        <div class="section-title">Recent Entries</div>
+        <table id="recent-table"><thead><tr><th>Date</th><th>Description</th><th>Postings</th></tr></thead><tbody id="recent-body"></tbody></table>
+    </div>
+
+    <!-- Entry View -->
+    <div class="view" id="view-entry">
+        <div class="entry-container">
+            <div class="panel-left">
+                <div class="steps">
+                    <span class="step active" id="step-1">expr</span>
+                    <span class="step" id="step-2">account</span>
+                    <span class="step" id="step-3">counter</span>
+                    <span class="step" id="step-4">amount</span>
+                    <span class="step" id="step-5">confirm</span>
+                </div>
+                <div class="expr-input">
+                    <label>⊹</label>
+                    <input type="text" id="expr-field" placeholder="< > << >> <. >. <<. >>. <.> <.. >.. ..< ..> ..">
+                </div>
+                <div id="expr-grid-container" class="expr-grid"></div>
+                <div id="filter-container" class="filter-bar">
+                    <input type="text" id="filter-field" placeholder="type to filter...">
+                </div>
+                <div id="account-list" class="account-list"></div>
+                <div id="amount-container" class="amount-input">
+                    <input type="text" id="amount-field" placeholder="0.00" inputmode="decimal">
+                </div>
+            </div>
+            <div class="panel-right">
+                <div class="preview-title" id="preview-title">select an expression</div>
+                <div class="preview-pair" id="preview-pair"></div>
+                <div class="preview-entry">
+                    <div class="date" id="preview-date"></div>
+                    <div class="posting pending" id="posting-1"><span class="account">...</span><span class="amount">?</span></div>
+                    <div class="posting pending" id="posting-2"><span class="account">...</span><span class="amount">?</span></div>
+                </div>
+                <div class="actions" id="actions" style="display:none">
+                    <button class="btn" onclick="resetEntry()">Reset</button>
+                    <button class="btn primary" id="btn-write" onclick="writeEntry()" disabled>Write</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts View -->
+    <div class="view" id="view-charts">
+        <div class="report-controls">
+            <button class="btn active" onclick="loadChart('networth')">Net Worth</button>
+            <button class="btn" onclick="loadChart('profitloss')">Profit/Loss</button>
+            <button class="btn" onclick="loadChart('revenue')">Revenue</button>
+            <button class="btn" onclick="loadChart('expenses')">Expenses</button>
+            <button class="btn" onclick="loadChart('cashflow')">Cash Flow</button>
+            <button class="btn" onclick="loadChart('prices')">Prices</button>
+        </div>
+        <div style="position:relative;height:400px;margin-top:1rem;">
+            <canvas id="main-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- Reports View -->
+    <div class="view" id="view-reports">
+        <div class="report-controls">
+            <button class="btn active" onclick="loadReport('bs')">Balance Sheet</button>
+            <button class="btn" onclick="loadReport('is')">Income Statement</button>
+            <button class="btn" onclick="loadReport('cashflow')">Cash Flow</button>
+            <button class="btn" onclick="loadReport('register')">Register</button>
+            <input type="text" id="report-period" placeholder="period (e.g. 2026)">
+        </div>
+        <pre class="report-output" id="report-output">Select a report above...</pre>
+    </div>
+
+    <!-- Data View -->
+    <div class="view" id="view-data">
+        <div class="report-controls">
+            <button class="btn active" onclick="loadData('assets')">Assets</button>
+            <button class="btn" onclick="loadData('liabilities')">Liabilities</button>
+            <button class="btn" onclick="loadData('equity')">Equity</button>
+            <button class="btn" onclick="loadData('income')">Income</button>
+            <button class="btn" onclick="loadData('expenses')">Expenses</button>
+            <button class="btn" onclick="loadData('payroll')">Payroll</button>
+            <button class="btn" onclick="loadData('recurring')">Recurring</button>
+            <button class="btn" onclick="loadData('contracts')">Contracts</button>
+            <button class="btn" onclick="loadData('contacts')">Contacts</button>
+            <button class="btn" onclick="loadData('commodities')">Commodities</button>
+        </div>
+        <div id="data-add-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin:0.75rem 0;"></div>
+        <div id="data-content"></div>
+    </div>
+
+    <!-- Pairs Reference View -->
+    <div class="view" id="view-pairs">
+        <div class="section-title">Account Pair Matrix — 14 Double-Entry Relationships</div>
+        <table id="pairs-table">
+            <thead><tr><th>#</th><th>Expr</th><th>Code</th><th>Pair</th><th>Normal</th><th>Reversal</th><th>Edge</th></tr></thead>
+            <tbody id="pairs-body"></tbody>
+        </table>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;display:none;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:90%;max-width:500px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="color:var(--accent);font-weight:bold;">Edit Entry</span>
+                <button onclick="closeModal()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div id="modal-content" style="font-size:0.85rem;"></div>
+            <div style="margin-top:1rem;display:flex;gap:0.5rem;justify-content:flex-end;">
+                <button class="btn" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+    // ─── State ──────────────────────────────────────────────────────────────
+    let state = { step:1, expr:null, pair:null, firstAccount:null, secondAccount:null, amount:null, reversal:false, currency:'CAD', today:'' };
+    let allPairs = {};
+    let currentView = 'dashboard';
+
+    // ─── Init ───────────────────────────────────────────────────────────────
+    async function init() {
+        const status = await fetch('/api/status').then(r => r.json());
+        state.currency = status.currency;
+        state.today = status.today;
+        document.getElementById('entity-btn').textContent = status.name || 'no entity';
+        document.getElementById('preview-date').textContent = status.today;
+
+        allPairs = await fetch('/api/pairs').then(r => r.json());
+        renderExprGrid();
+        await loadDashboard();
+        await loadEntities();
+        await initQuickEntry();
+    }
+
+    // ─── Navigation ─────────────────────────────────────────────────────────
+    function switchView(view) {
+        currentView = view;
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('view-' + view).classList.add('active');
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+        if (view === 'entry') document.getElementById('expr-field').focus();
+        if (view === 'dashboard') { quickClear(); loadDashboard(); }
+        if (view === 'data') loadData('assets');
+        if (view === 'charts') loadChart('networth');
+        if (view === 'pairs') loadPairsRef();
+    }
+
+    // ─── Entity Switcher ────────────────────────────────────────────────────
+    async function loadEntities() {
+        const data = await fetch('/api/entities').then(r => r.json());
+        const dd = document.getElementById('entity-dropdown');
+        dd.innerHTML = '';
+        for (const e of data.entities) {
+            const el = document.createElement('div');
+            el.className = 'entity-item' + (e.slug === data.active ? ' active' : '');
+            el.textContent = e.name || e.slug;
+            el.onclick = () => switchEntity(e.slug);
+            dd.appendChild(el);
+        }
+    }
+
+    function toggleEntityDropdown() {
+        document.getElementById('entity-dropdown').classList.toggle('open');
+    }
+
+    async function switchEntity(slug) {
+        const data = await fetch('/api/switch?slug=' + encodeURIComponent(slug), {method:'POST'}).then(r => r.json());
+        if (data.ok) {
+            document.getElementById('entity-btn').textContent = data.name;
+            document.getElementById('entity-dropdown').classList.remove('open');
+            showToast('Switched to ' + data.name);
+            loadDashboard();
+            loadEntities();
+        }
+    }
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.entity-switcher')) document.getElementById('entity-dropdown').classList.remove('open');
+    });
+
+    // ─── Dashboard ──────────────────────────────────────────────────────────
+    async function loadDashboard() {
+      try {
+        // Net worth
+        const worth = await fetch('/api/worth').then(r => r.json());
+        const fmt = (n) => worth.currency + ' ' + Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+        document.getElementById('net-worth').textContent = fmt(worth.net_worth);
+        document.getElementById('total-assets').textContent = fmt(worth.assets);
+        document.getElementById('total-liabilities').textContent = fmt(worth.liabilities);
+
+        // Sparklines
+        loadSparklines();
+
+        // Recent
+        const recent = await fetch('/api/recent?limit=15').then(r => r.json());
+        const tbody = document.getElementById('recent-body');
+        tbody.innerHTML = '';
+        for (const txn of (recent.entries || []).reverse()) {
+            const tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            tr.onclick = () => openEntryModal(txn);
+
+            // Build postings display
+            let postingsHtml = '';
+            for (const p of txn.postings) {
+                const leaf = p.account.split(':').pop();
+                const amtClass = p.amount && p.amount.includes('-') ? 'amt-neg' : 'amt-pos';
+                postingsHtml += `<div style="display:flex;justify-content:space-between;gap:1rem;"><span style="color:var(--fg-dim)">${esc(leaf)}</span><span class="${amtClass}" style="white-space:nowrap;">${esc(p.amount)}</span></div>`;
+            }
+
+            tr.innerHTML = `<td style="vertical-align:top;white-space:nowrap;">${esc(txn.date)}</td><td style="vertical-align:top;">${esc(txn.description)}</td><td style="min-width:250px;">${postingsHtml}</td>`;
+            tbody.appendChild(tr);
+        }
+      } catch(e) { console.error('loadDashboard error:', e); }
+    }
+
+    // ─── Reports ────────────────────────────────────────────────────────────
+    async function loadReport(cmd) {
+        // Update active button
+        document.querySelectorAll('.report-controls .btn').forEach(b => b.classList.remove('active'));
+        event.target.classList.add('active');
+
+        const period = document.getElementById('report-period').value;
+        let url = '/api/report?cmd=' + cmd;
+        if (period) url += '&period=' + encodeURIComponent(period);
+
+        const data = await fetch(url).then(r => r.json());
+        const output = document.getElementById('report-output');
+        if (data.error) {
+            output.textContent = data.error;
+        } else {
+            output.textContent = data.output || '(no output)';
+        }
+    }
+
+    // ─── Quick Entry (dashboard) ────────────────────────────────────────────
+    // Steps: description -> account -> amount -> (repeat) -> balance -> tags -> date -> write
+    let quickState = { postings: [], step: 'description', currentAccount: '', description: '', tags: '', entryDate: '', allAccounts: [], selectedIdx: -1, pendingBalance: null };
+
+    async function initQuickEntry() {
+        try {
+            const data = await fetch('/api/accounts').then(r => r.json());
+            quickState.allAccounts = data.all || [];
+            quickState.entryDate = state.today;
+            // Show account count in balance area briefly
+            document.getElementById('quick-balance').textContent = quickState.allAccounts.length + ' accounts';
+        } catch(e) {
+            document.getElementById('quick-balance').textContent = 'ERR: ' + e.message;
+        }
+    }
+
+    const quickInput = document.getElementById('quick-entry-input');
+    const autoBox = document.getElementById('quick-autocomplete');
+
+    quickInput.addEventListener('input', function() {
+        if (this.value.length === 1 && quickState.step === 'description') {
+            document.getElementById('quick-entry-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        if (quickState.step === 'account') {
+            showAutocomplete(this.value);
+        } else {
+            hideAutocomplete();
+        }
+        // Live preview during description step
+        if (quickState.step === 'description' && this.value) {
+            document.getElementById('quick-entry-postings').innerHTML =
+                `<div style="color:var(--fg);opacity:0.5;">${esc(quickState.entryDate)}  ${esc(this.value)}</div>`;
+        }
+    });
+
+    quickInput.addEventListener('click', function() {
+        document.getElementById('quick-entry-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (quickState.step === 'account') showAutocomplete(this.value);
+    });
+
+    quickInput.addEventListener('keydown', function(e) {
+        // Escape: cancel current step, go back
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            hideAutocomplete();
+            if (quickState.step === 'amount') {
+                // Cancel this account selection, go back to picking account
+                quickState.currentAccount = '';
+                quickState.step = 'account';
+                this.value = '';
+                this.placeholder = 'account name (Esc cancelled)...';
+                renderQuickPostings();
+                showAutocomplete('');
+            } else if (quickState.step === 'tags' || quickState.step === 'date') {
+                // Go back to account step to add more postings
+                quickState.step = 'account';
+                this.value = '';
+                this.placeholder = 'next account (Enter when done)...';
+                renderQuickPostings();
+                showAutocomplete('');
+            } else if (quickState.step === 'account' && quickState.postings.length > 0) {
+                // Remove last posting
+                quickState.postings.pop();
+                this.value = '';
+                this.placeholder = quickState.postings.length ? 'next account (Enter when done)...' : 'account name...';
+                renderQuickPostings();
+                checkBalance();
+                showAutocomplete('');
+            }
+            return;
+        }
+
+        // Autocomplete navigation
+        if (autoBox.style.display !== 'none') {
+            const items = autoBox.querySelectorAll('.ac-item');
+            if (e.key === 'ArrowDown') { e.preventDefault(); quickState.selectedIdx = Math.min(quickState.selectedIdx + 1, items.length - 1); highlightAC(items); return; }
+            if (e.key === 'ArrowUp') { e.preventDefault(); quickState.selectedIdx = Math.max(quickState.selectedIdx - 1, -1); highlightAC(items); return; }
+            if (e.key === 'Tab') { e.preventDefault(); const idx = quickState.selectedIdx >= 0 ? quickState.selectedIdx : 0; if (items[idx]) selectAccount(items[idx].dataset.full); return; }
+            if (e.key === 'Escape') { hideAutocomplete(); return; }
+        }
+
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const val = this.value.trim();
+
+            // Autocomplete selection
+            if (autoBox.style.display !== 'none' && quickState.selectedIdx >= 0) {
+                const items = autoBox.querySelectorAll('.ac-item');
+                if (items[quickState.selectedIdx]) { selectAccount(items[quickState.selectedIdx].dataset.full); return; }
+            }
+
+            // Step-based handling
+            if (quickState.step === 'description') {
+                if (!val) return; // required
+
+                // Check if it's a Data tab keyword — jump to that tab
+                const dataKeywords = { assets:'assets', liabilities:'liabilities', equity:'equity', income:'income', expenses:'expenses', payroll:'payroll', recurring:'recurring', contracts:'contracts', contacts:'contacts', commodities:'commodities' };
+                const lowerVal = val.toLowerCase();
+                if (dataKeywords[lowerVal]) {
+                    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+                    document.getElementById('view-data').classList.add('active');
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab')[2].classList.add('active');
+                    currentView = 'data';
+                    quickInput.value = '';
+                    loadData(dataKeywords[lowerVal]);
+                    return;
+                }
+
+                // Check if it's a Pairs shorthand expression
+                const exprOrder = ['<<.','>>.','<.>','<..','>..','..<','..>','..','<<','>>','<.','>.','<','>'];
+                const cleanVal = val.replace('/','').split(' ')[0];
+                let matchedExpr = null;
+                for (const candidate of exprOrder) {
+                    if (cleanVal.startsWith(candidate) || cleanVal === candidate) { matchedExpr = candidate; break; }
+                }
+
+                if (matchedExpr && allPairs[matchedExpr]) {
+                    // Switch to Entry tab with this expression
+                    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+                    document.getElementById('view-entry').classList.add('active');
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab')[1].classList.add('active');
+                    currentView = 'entry';
+                    document.getElementById('expr-field').value = val;
+                    parseAndSelectExpr(val);
+                    quickInput.value = '';
+                    return;
+                }
+
+                quickState.description = val;
+                quickState.step = 'account';
+                this.value = '';
+                this.placeholder = 'account name...';
+                renderQuickPostings();
+                showAutocomplete(''); // show all accounts immediately
+            } else if (quickState.step === 'account') {
+                if (!val) {
+                    // Empty enter = done adding postings, go to balance/tags
+                    if (quickState.postings.length >= 1) {
+                        autoBalance();
+                    }
+                    return;
+                }
+                const match = fuzzyMatch(val);
+                if (match) selectAccount(match.full);
+                else selectAccount(val);
+            } else if (quickState.step === 'amount') {
+                const amt = parseFloat(val);
+                if (isNaN(amt)) return;
+                quickState.postings.push({ account: quickState.currentAccount, amount: amt });
+                quickState.currentAccount = '';
+                quickState.step = 'account';
+                this.value = '';
+                this.placeholder = 'next account (Enter when done)...';
+                renderQuickPostings();
+                checkBalance();
+                showAutocomplete(''); // show all accounts again
+            } else if (quickState.step === 'tags') {
+                // Optional — Enter skips, any text becomes tags
+                quickState.tags = val;
+                quickState.step = 'date';
+                this.value = quickState.entryDate;
+                this.placeholder = 'date (Enter to confirm)...';
+                hideAutocomplete();
+                renderQuickPostings();
+            } else if (quickState.step === 'date') {
+                if (val) quickState.entryDate = val;
+                quickState.step = 'done';
+                this.value = '';
+                this.placeholder = 'ready ✓';
+                this.disabled = true;
+                hideAutocomplete();
+                renderQuickPostings();
+                document.getElementById('quick-entry-actions').style.display = 'flex';
+                document.getElementById('quick-write-btn').style.display = '';
+                document.getElementById('quick-write-btn').focus();
+            }
+        }
+    });
+
+    function fuzzyMatch(val) {
+        const lower = val.toLowerCase();
+        // Exact short name match
+        const exact = quickState.allAccounts.find(a => a.short.toLowerCase() === lower);
+        if (exact) return exact;
+        // Starts with short name
+        const startsWith = quickState.allAccounts.find(a => a.short.toLowerCase().startsWith(lower));
+        if (startsWith) return startsWith;
+        // Starts with any path segment
+        const segMatch = quickState.allAccounts.find(a => a.full.split(':').some(s => s.toLowerCase().startsWith(lower)));
+        if (segMatch) return segMatch;
+        // Contains anywhere
+        return quickState.allAccounts.find(a =>
+            a.short.toLowerCase().includes(lower) || a.full.toLowerCase().includes(lower)
+        );
+    }
+
+    function getCounterpartPriority(account) {
+        // If no postings yet, no priority — show all equally
+        if (!quickState.postings.length) return 50;
+
+        const firstAcct = quickState.postings[0].account;
+        const full = account.full || account;
+
+        // Determine first account type
+        const isFirstAssetFixed = firstAcct.startsWith('Assets:Fixed');
+        const isFirstAssetCurrent = firstAcct.startsWith('Assets:Current');
+        const isFirstAccumAmort = firstAcct.startsWith('Assets:Accumulated');
+        const isFirstExpOp = firstAcct.startsWith('Expenses:Operating');
+        const isFirstExpNonOp = firstAcct.startsWith('Expenses:Non-Operating');
+        const isFirstIncOp = firstAcct.startsWith('Income:Operating');
+        const isFirstIncNonOp = firstAcct.startsWith('Income:Non-Operating');
+        const isFirstLiabLong = firstAcct.startsWith('Liabilities:Long-Term');
+        const isFirstLiabCurrent = firstAcct.startsWith('Liabilities:Current') || firstAcct.startsWith('Liabilities:Credit');
+        const isFirstEquity = firstAcct.startsWith('Equity');
+
+        // Determine candidate account type
+        const isCurrent = full.startsWith('Assets:Current');
+        const isFixed = full.startsWith('Assets:Fixed');
+        const isAccum = full.startsWith('Assets:Accumulated');
+        const isExpOp = full.startsWith('Expenses:Operating');
+        const isExpNonOp = full.startsWith('Expenses:Non-Operating');
+        const isIncOp = full.startsWith('Income:Operating');
+        const isIncNonOp = full.startsWith('Income:Non-Operating');
+        const isLiabLong = full.startsWith('Liabilities:Long-Term');
+        const isLiabCurrent = full.startsWith('Liabilities:Current') || full.startsWith('Liabilities:Credit');
+        const isEquity = full.startsWith('Equity');
+
+        // Priority rules (lower = higher priority)
+        if (isFirstAssetFixed) {
+            if (isCurrent) return 1;      // cash purchase
+            if (isLiabLong) return 2;     // financed
+            if (isEquity) return 3;       // owner contributed
+            return 80;
+        }
+        if (isFirstAssetCurrent) {
+            if (isExpOp) return 1;        // paid expense
+            if (isLiabCurrent) return 2;  // paid credit card
+            if (isLiabLong) return 3;     // loan payment
+            if (isIncOp) return 4;        // received income
+            if (isCurrent) return 5;      // transfer
+            if (isExpNonOp) return 6;
+            if (isIncNonOp) return 7;
+            if (isEquity) return 8;
+            return 80;
+        }
+        if (isFirstAccumAmort) {
+            if (isExpNonOp) return 1;     // amortization expense
+            return 80;
+        }
+        if (isFirstExpOp) {
+            if (isCurrent) return 1;      // paid from bank
+            if (isLiabCurrent) return 2;  // on credit
+            return 80;
+        }
+        if (isFirstExpNonOp) {
+            if (isAccum) return 1;        // amortization contra
+            if (isLiabLong) return 2;     // interest on loan
+            if (isCurrent) return 3;      // paid from bank
+            return 80;
+        }
+        if (isFirstIncOp) {
+            if (isCurrent) return 1;      // cash received
+            return 80;
+        }
+        if (isFirstIncNonOp) {
+            if (isCurrent) return 1;      // deposited
+            if (isLiabLong) return 2;     // debt forgiveness
+            return 80;
+        }
+        if (isFirstLiabLong) {
+            if (isCurrent) return 1;      // payment from bank
+            if (isExpNonOp) return 2;     // interest expense
+            if (isLiabLong) return 3;     // refinance
+            return 80;
+        }
+        if (isFirstLiabCurrent) {
+            if (isCurrent) return 1;      // paid off from bank
+            if (isExpOp) return 2;        // expense charged
+            return 80;
+        }
+        if (isFirstEquity) {
+            if (isCurrent) return 1;      // invest/draw cash
+            if (isEquity) return 2;       // reclassify
+            if (isLiabCurrent) return 3;  // dividend payable
+            return 80;
+        }
+        return 50;
+    }
+
+    function showAutocomplete(val) {
+        const lower = (val || '').trim().toLowerCase();
+        let matches;
+        if (!lower) {
+            matches = quickState.allAccounts.slice();
+        } else {
+            matches = quickState.allAccounts.filter(a =>
+                a.short.toLowerCase().includes(lower) || a.full.toLowerCase().includes(lower) || a.hint.toLowerCase().includes(lower)
+            );
+            // Sort by match quality: exact > starts-with > segment-start > contains
+            matches.sort((a, b) => {
+                const as = a.short.toLowerCase(), bs = b.short.toLowerCase();
+                const scoreA = as === lower ? 0 : as.startsWith(lower) ? 1 : a.full.toLowerCase().split(':').some(s => s.toLowerCase().startsWith(lower)) ? 2 : 3;
+                const scoreB = bs === lower ? 0 : bs.startsWith(lower) ? 1 : b.full.toLowerCase().split(':').some(s => s.toLowerCase().startsWith(lower)) ? 2 : 3;
+                return scoreA - scoreB;
+            });
+        }
+
+        // Exclude already-used accounts
+        const usedAccounts = quickState.postings.map(p => p.account);
+        matches = matches.filter(a => !usedAccounts.includes(a.full));
+
+        // Sort by counterpart priority if we have postings and no search term
+        if (quickState.postings.length > 0 && !lower) {
+            matches.sort((a, b) => getCounterpartPriority(a.full) - getCounterpartPriority(b.full));
+        }
+
+        matches = matches.slice(0, 12);
+
+        if (!matches.length) { hideAutocomplete(); return; }
+
+        quickState.selectedIdx = -1;
+        autoBox.innerHTML = '';
+        for (const m of matches) {
+            const div = document.createElement('div');
+            div.className = 'ac-item';
+            div.dataset.full = m.full;
+            div.style.cssText = 'padding:0.5rem 0.75rem;cursor:pointer;display:flex;justify-content:space-between;font-size:0.85rem;border-bottom:1px solid var(--border);';
+            div.innerHTML = `<span>${esc(m.short)}</span><span style="color:var(--fg-dim);font-size:0.75rem;">${esc(m.hint)}</span>`;
+            div.addEventListener('mouseenter', () => { quickState.selectedIdx = [...autoBox.children].indexOf(div); highlightAC(autoBox.querySelectorAll('.ac-item')); });
+            div.addEventListener('click', () => selectAccount(m.full));
+            autoBox.appendChild(div);
+        }
+        autoBox.style.display = 'block';
+    }
+
+    function hideAutocomplete() {
+        autoBox.style.display = 'none';
+        quickState.selectedIdx = -1;
+    }
+
+    function highlightAC(items) {
+        items.forEach((el, i) => {
+            el.style.background = i === quickState.selectedIdx ? 'var(--border)' : '';
+            el.style.color = i === quickState.selectedIdx ? 'var(--accent)' : '';
+        });
+    }
+
+    function selectAccount(full) {
+        quickState.currentAccount = full;
+        quickState.step = 'amount';
+        const short = full.split(':').pop();
+        quickInput.value = '';
+
+        // If there's a pending balance, auto-fill and go to tags
+        if (quickState.pendingBalance) {
+            quickState.postings.push({ account: full, amount: quickState.pendingBalance });
+            quickState.pendingBalance = null;
+            quickState.currentAccount = '';
+            quickState.step = 'tags';
+            quickInput.placeholder = 'tags (optional, Enter to skip)...';
+        } else {
+            // Pre-fill with inverse of current balance (suggested, user can change)
+            const sum = quickState.postings.reduce((s, p) => s + p.amount, 0);
+            if (quickState.postings.length >= 1 && Math.abs(sum) > 0.001) {
+                quickInput.value = String(Math.round(-sum * 100) / 100);
+            }
+            quickInput.placeholder = `amount for ${short}...`;
+        }
+        hideAutocomplete();
+        renderQuickPostings();
+        checkBalance();
+        quickInput.focus();
+    }
+
+    function autoBalance() {
+        const sum = quickState.postings.reduce((s, p) => s + p.amount, 0);
+        if (Math.abs(sum) < 0.001) {
+            // Already balanced — skip to tags
+            quickState.step = 'tags';
+            quickInput.value = '';
+            quickInput.placeholder = 'tags (optional, Enter to skip)...';
+            hideAutocomplete();
+            renderQuickPostings();
+            return;
+        }
+        if (!quickState.currentAccount) {
+            quickInput.placeholder = 'account for balancing amount...';
+            quickState.step = 'account';
+            quickState.pendingBalance = Math.round(-sum * 100) / 100;
+            hideAutocomplete();
+            return;
+        }
+        quickState.postings.push({ account: quickState.currentAccount, amount: Math.round(-sum * 100) / 100 });
+        quickState.currentAccount = '';
+        quickState.step = 'tags';
+        quickInput.value = '';
+        quickInput.placeholder = 'tags (optional, Enter to skip)...';
+        hideAutocomplete();
+        renderQuickPostings();
+        checkBalance();
+    }
+
+    function checkBalance() {
+        const sum = quickState.postings.reduce((s, p) => s + p.amount, 0);
+        const balEl = document.getElementById('quick-balance');
+        balEl.textContent = `bal: ${sum >= 0 ? '' : '-'}${Math.abs(sum).toFixed(2)}`;
+        balEl.style.color = Math.abs(sum) < 0.001 ? 'var(--green)' : 'var(--yellow)';
+
+        const actionsEl = document.getElementById('quick-entry-actions');
+        if (quickState.postings.length >= 2 && Math.abs(sum) < 0.001) {
+            actionsEl.style.display = 'flex';
+        } else if (quickState.postings.length > 0) {
+            actionsEl.style.display = 'flex';
+            document.getElementById('quick-write-btn').style.display = 'none';
+        } else {
+            actionsEl.style.display = 'none';
+        }
+    }
+
+    function inferPairIdentity() {
+        if (quickState.postings.length < 2) return null;
+        const debit = quickState.postings.find(p => p.amount > 0);
+        const credit = quickState.postings.find(p => p.amount < 0);
+        if (!debit || !credit) return null;
+
+        const d = debit.account;
+        const c = credit.account;
+
+        // Determine types
+        const dType = d.startsWith('Expenses:Operating') ? 'expOp'
+            : d.startsWith('Expenses:Non-Operating') ? 'expNonOp'
+            : d.startsWith('Income:Operating') ? 'incOp'
+            : d.startsWith('Income:Non-Operating') ? 'incNonOp'
+            : d.startsWith('Assets:') ? 'asset'
+            : d.startsWith('Liabilities:') ? 'liability'
+            : d.startsWith('Equity:') ? 'equity' : '?';
+
+        const cType = c.startsWith('Expenses:Operating') ? 'expOp'
+            : c.startsWith('Expenses:Non-Operating') ? 'expNonOp'
+            : c.startsWith('Income:Operating') ? 'incOp'
+            : c.startsWith('Income:Non-Operating') ? 'incNonOp'
+            : c.startsWith('Assets:') ? 'asset'
+            : c.startsWith('Liabilities:') ? 'liability'
+            : c.startsWith('Equity:') ? 'equity' : '?';
+
+        // Map to pair
+        const pairMap = {
+            'expOp_asset': { num: 1, expr: '<', name: 'OpExp / Asset' },
+            'expOp_liability': { num: 2, expr: '>', name: 'OpExp / Liability' },
+            'expNonOp_asset': { num: 3, expr: '<<', name: 'NonOpExp / Asset' },
+            'expNonOp_liability': { num: 4, expr: '>>', name: 'NonOpExp / Liability' },
+            'asset_incOp': { num: 5, expr: '<.', name: 'OpIncome / Asset' },
+            'liability_incOp': { num: 6, expr: '>.', name: 'OpIncome / Liability' },
+            'asset_incNonOp': { num: 7, expr: '<<.', name: 'NonOpIncome / Asset' },
+            'liability_incNonOp': { num: 8, expr: '>>.', name: 'NonOpIncome / Liability' },
+            'asset_liability': { num: 9, expr: '<.>', name: 'Asset / Liability' },
+            'liability_asset': { num: 9, expr: '<.>', name: 'Asset / Liability' },
+            'asset_equity': { num: 10, expr: '<..', name: 'Asset / Equity' },
+            'equity_asset': { num: 10, expr: '<..', name: 'Asset / Equity' },
+            'equity_liability': { num: 11, expr: '>..', name: 'Liability / Equity' },
+            'liability_equity': { num: 11, expr: '>..', name: 'Liability / Equity' },
+            'asset_asset': { num: 12, expr: '..<', name: 'Asset / Asset' },
+            'liability_liability': { num: 13, expr: '..>', name: 'Liability / Liability' },
+            'equity_equity': { num: 14, expr: '..', name: 'Equity / Equity' },
+        };
+
+        const key = dType + '_' + cType;
+        return pairMap[key] || null;
+    }
+
+    function renderQuickPostings() {
+        const el = document.getElementById('quick-entry-postings');
+        const stepLabel = document.getElementById('quick-step-label');
+        const stepLabels = { description: 'description ↵', account: 'account', amount: 'amount ↵', tags: 'tags (opt) ↵', date: 'date ↵', done: '✓' };
+        stepLabel.textContent = stepLabels[quickState.step] || '';
+        stepLabel.style.color = quickState.step === 'done' ? 'var(--green)' : 'var(--fg-dim)';
+
+        let html = '';
+
+        // Pair identity badge
+        const pair = inferPairIdentity();
+        if (pair) {
+            html += `<div style="display:inline-block;font-size:0.7rem;padding:0.15rem 0.5rem;background:var(--border);border-radius:3px;color:var(--accent);margin-bottom:0.4rem;">${esc(pair.expr)} [${pair.num}] ${esc(pair.name)}</div>`;
+        }
+
+        if (quickState.description) {
+            html += `<div style="color:var(--fg);margin-bottom:0.25rem;font-weight:bold;">${esc(quickState.entryDate)}  ${esc(quickState.description)}</div>`;
+        }
+        if (quickState.tags) {
+            html += `<div style="color:var(--fg-dim);font-size:0.75rem;margin-bottom:0.4rem;">tags: ${esc(quickState.tags)}</div>`;
+        }
+        for (const p of quickState.postings) {
+            const cls = p.amount >= 0 ? 'amt-pos' : 'amt-neg';
+            const leaf = p.account.split(':').pop();
+            html += `<div style="display:flex;justify-content:space-between;padding:0.15rem 0;"><span style="color:var(--fg-dim)">${esc(leaf)}</span><span class="${cls}">${state.currency} ${p.amount.toFixed(2)}</span></div>`;
+        }
+        if (quickState.currentAccount && quickState.step === 'amount') {
+            const leaf = quickState.currentAccount.split(':').pop();
+            html += `<div style="display:flex;justify-content:space-between;padding:0.15rem 0;"><span style="color:var(--accent)">${esc(leaf)}</span><span style="color:var(--fg-dim)">?</span></div>`;
+        }
+        el.innerHTML = html;
+    }
+
+    async function quickWrite() {
+        const sum = quickState.postings.reduce((s, p) => s + p.amount, 0);
+        if (Math.abs(sum) > 0.001 || quickState.postings.length < 2) return;
+
+        const desc = quickState.description;
+
+        if (quickState.postings.length === 2) {
+            const debit = quickState.postings.find(p => p.amount > 0);
+            const credit = quickState.postings.find(p => p.amount < 0);
+            if (debit && credit) {
+                const body = {
+                    expr: '<', first_account: debit.account, second_account: credit.account,
+                    amount: debit.amount, description: desc, reversal: false, entry_date: quickState.entryDate,
+                };
+                try {
+                    const res = await fetch('/api/entry', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+                    const data = await res.json();
+                    if (data.ok) {
+                        showToast('✓ ' + data.path);
+                        quickClear();
+                        // Refresh recent entries
+                        await loadDashboard();
+                    }
+                    else showToast('Error: ' + (data.detail||'unknown'), true);
+                } catch(err) { showToast('Error: '+err.message, true); }
+            }
+        }
+    }
+
+    function quickClear() {
+        quickState.postings = [];
+        quickState.step = 'description';
+        quickState.currentAccount = '';
+        quickState.description = '';
+        quickState.tags = '';
+        quickState.entryDate = state.today;
+        quickState.pendingBalance = null;
+        quickState.selectedIdx = -1;
+        quickInput.value = '';
+        quickInput.disabled = false;
+        quickInput.placeholder = 'description or pairs shorthand (<. < > etc)...';
+        quickInput.focus();
+        document.getElementById('quick-entry-postings').innerHTML = '';
+        document.getElementById('quick-entry-actions').style.display = 'none';
+        document.getElementById('quick-write-btn').style.display = '';
+        document.getElementById('quick-balance').textContent = 'bal: 0.00';
+        document.getElementById('quick-balance').style.color = 'var(--fg-dim)';
+        hideAutocomplete();
+    }
+
+    // ─── Data View ────────────────────────────────────────────────────────
+    async function loadData(type) {
+        // Update active button
+        document.querySelectorAll('#view-data .report-controls .btn').forEach(b => b.classList.remove('active'));
+        if (event && event.target) event.target.classList.add('active');
+
+        const content = document.getElementById('data-content');
+        const addForm = document.getElementById('data-add-form');
+        content.innerHTML = '<div class="empty">Loading...</div>';
+
+        // Show tailored add-form
+        showAddForm(type, addForm);
+
+        // Commodities tab
+        if (type === 'commodities') {
+            const data = await fetch('/api/commodities').then(r => r.json());
+            const items = data.items || [];
+            if (!items.length) { content.innerHTML = '<div class="empty">No commodities configured</div>'; return; }
+            let html = '<table><thead><tr><th>Symbol</th><th>Name</th><th>Source</th><th style="text-align:right">Latest Price</th><th>Date</th><th>Tags</th></tr></thead><tbody>';
+            for (const item of items) {
+                const price = item.latest_price ? `${item.currency} ${item.latest_price.toFixed(2)}` : '—';
+                const tags = (item.tags || []).map(t => `<span style="background:var(--border);padding:0.1rem 0.4rem;border-radius:3px;font-size:0.7rem;margin-right:0.25rem;">${esc(t)}</span>`).join('');
+                html += `<tr><td style="color:var(--accent);font-weight:bold;">${esc(item.symbol)}</td><td>${esc(item.name)}</td><td style="color:var(--fg-dim)">${esc(item.source)}</td><td style="text-align:right">${price}</td><td style="color:var(--fg-dim)">${esc(item.latest_date)}</td><td>${tags}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            content.innerHTML = html;
+            return;
+        }
+
+        // Payroll tab (custom rendering)
+        if (type === 'payroll') {
+            const data = await fetch('/api/payroll').then(r => r.json());
+            let html = '';
+            // YTD summary
+            html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:1rem;">
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;text-align:center;"><div style="color:var(--fg);font-size:1rem;">${data.currency} ${(data.ytd.salaries||0).toLocaleString(undefined,{minimumFractionDigits:2})}</div><div style="color:var(--fg-dim);font-size:0.7rem;">Salaries YTD</div></div>
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;text-align:center;"><div style="color:var(--fg);font-size:1rem;">${data.currency} ${(data.ytd.benefits||0).toLocaleString(undefined,{minimumFractionDigits:2})}</div><div style="color:var(--fg-dim);font-size:0.7rem;">Benefits YTD</div></div>
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;text-align:center;"><div style="color:var(--fg);font-size:1rem;">${data.currency} ${(data.ytd.contributions||0).toLocaleString(undefined,{minimumFractionDigits:2})}</div><div style="color:var(--fg-dim);font-size:0.7rem;">Employer Contributions YTD</div></div>
+            </div>`;
+            // Employees
+            if (data.employees.length) {
+                html += '<div style="color:var(--fg-dim);font-size:0.75rem;margin-bottom:0.5rem;text-transform:uppercase;">Employees</div>';
+                html += '<table><thead><tr><th>Name</th><th>Salary</th><th>Schedule</th><th>Start</th></tr></thead><tbody>';
+                for (const emp of data.employees) {
+                    html += `<tr><td>${esc(emp.name)}</td><td>${emp.currency} ${emp.salary.toLocaleString()}</td><td>${esc(emp.schedule)}</td><td>${esc(emp.start_date)}</td></tr>`;
+                }
+                html += '</tbody></table>';
+            }
+            // Recent runs
+            if (data.recent_runs.length) {
+                html += '<div style="color:var(--fg-dim);font-size:0.75rem;margin:1rem 0 0.5rem;text-transform:uppercase;">Recent Pay Runs</div>';
+                html += '<table><thead><tr><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>';
+                for (const run of data.recent_runs.slice(-10).reverse()) {
+                    html += `<tr><td>${esc(run.date)}</td><td>${esc(run.description)}</td><td>${esc(run.amount)}</td></tr>`;
+                }
+                html += '</tbody></table>';
+            }
+            content.innerHTML = html || '<div class="empty">No payroll data</div>';
+            return;
+        }
+
+        // Balance-based tabs (from hledger)
+        if (['expenses', 'equity', 'income'].includes(type)) {
+            const data = await fetch('/api/' + type).then(r => r.json());
+            if (!data.items || !data.items.length) { content.innerHTML = '<div class="empty">No ' + type + ' found</div>'; return; }
+            let html = '<table><thead><tr><th>Account</th><th style="text-align:right">Balance</th></tr></thead><tbody>';
+            for (const item of data.items) {
+                const cls = type === 'expenses' ? 'amt-neg' : (type === 'income' ? 'amt-pos' : '');
+                html += `<tr><td>${esc(item.short)}<span style="color:var(--fg-dim);margin-left:0.5rem;font-size:0.8rem;">${esc(item.hint)}</span></td><td style="text-align:right" class="${cls}">${data.currency} ${item.amount.toLocaleString(undefined,{minimumFractionDigits:2})}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            content.innerHTML = html;
+            return;
+        }
+
+        // YAML-based tabs
+        const data = await fetch('/api/' + type).then(r => r.json());
+        const items = data.items || [];
+        if (!items.length) { content.innerHTML = '<div class="empty">No ' + type + ' found</div>'; return; }
+
+        if (type === 'assets') {
+            let html = '<table><thead><tr><th>Name</th><th>Category</th><th>Cost</th><th>Method</th><th>Life</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += `<tr><td>${esc(item.name||'')}</td><td>${esc(item.category||'')}</td><td>${item.currency||'CAD'} ${(item.cost||0).toLocaleString()}</td><td>${esc(item.amortization_method||'')}</td><td>${item.useful_life_months||'—'}mo</td></tr>`;
+            }
+            content.innerHTML = html + '</tbody></table>';
+        } else if (type === 'liabilities') {
+            let html = '<table><thead><tr><th>Name</th><th>Principal</th><th>Rate</th><th>Payment</th><th>Term</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += `<tr><td>${esc(item.name||'')}</td><td>${item.currency||'CAD'} ${(item.principal||0).toLocaleString()}</td><td>${item.interest_rate||0}%</td><td>${item.currency||'CAD'} ${(item.payment_amount||0).toFixed(2)}/mo</td><td>${item.term_months||'—'}mo</td></tr>`;
+            }
+            content.innerHTML = html + '</tbody></table>';
+        } else if (type === 'contacts') {
+            let html = '<table><thead><tr><th>Name</th><th>Role</th><th>Company</th><th>Email</th><th>Phone</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += `<tr><td>${esc(item.name||'')}</td><td>${esc(item.role||'')}</td><td>${esc(item.company||'')}</td><td>${esc(item.email||'')}</td><td>${esc(item.phone||'')}</td></tr>`;
+            }
+            content.innerHTML = html + '</tbody></table>';
+        } else if (type === 'contracts') {
+            let html = '<table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Value</th><th>End Date</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += `<tr><td>${esc(item.name||'')}</td><td>${esc(item.type||'')}</td><td>${esc(item.status||'')}</td><td>${item.value ? (item.currency||'CAD')+' '+(item.value).toLocaleString() : '—'}</td><td>${esc(item.end_date||'—')}</td></tr>`;
+            }
+            content.innerHTML = html + '</tbody></table>';
+        } else if (type === 'recurring') {
+            let html = '<table><thead><tr><th>Name</th><th>Frequency</th><th>Amount</th><th>Description</th></tr></thead><tbody>';
+            for (const item of items) {
+                html += `<tr><td>${esc(item.name||'')}</td><td>${esc(item.frequency||'')}</td><td>${item.currency||'CAD'} ${(item.amount||0).toFixed(2)}</td><td>${esc(item.description||'')}</td></tr>`;
+            }
+            content.innerHTML = html + '</tbody></table>';
+        }
+    }
+
+    // Tailored add-forms per data type
+    function showAddForm(type, container) {
+        const forms = {
+            assets: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Asset</span>
+                <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-category" placeholder="category" style="flex:1;min-width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-cost" placeholder="cost" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
+                <input type="text" id="add-life" placeholder="life (mo)" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="addItem('assets')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            </div>`,
+            liabilities: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Liability</span>
+                <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-principal" placeholder="principal" style="width:90px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
+                <input type="text" id="add-rate" placeholder="rate %" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-term" placeholder="term (mo)" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="addItem('liabilities')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            </div>`,
+            equity: `<div style="display:flex;gap:0.5rem;align-items:center;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Equity account</span>
+                <input type="text" id="add-account" placeholder="e.g. Equity:Reserve" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="addItem('equity')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            </div>`,
+            income: `<div style="display:flex;gap:0.5rem;align-items:center;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Income account</span>
+                <input type="text" id="add-account" placeholder="e.g. Income:Operating:Consulting" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="addItem('income')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            </div>`,
+            expenses: `<div style="display:flex;gap:0.5rem;align-items:center;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Expense account</span>
+                <input type="text" id="add-account" placeholder="e.g. Expenses:Operating:Fuel" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="addItem('expenses')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            </div>`,
+            payroll: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Pay Run</span>
+                <select id="add-paytype" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;"><option value="employee">Employee</option><option value="contractor">Contractor</option></select>
+                <input type="text" id="add-payee" placeholder="name" style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-gross" placeholder="gross" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
+                <input type="text" id="add-benefits" placeholder="benefits" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
+                <input type="text" id="add-tax" placeholder="tax" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
+                <input type="text" id="add-period" placeholder="period desc" style="width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="runPayroll()" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Run</button>
+            </div>`,
+            recurring: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Recurring</span>
+                <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-freq" placeholder="monthly" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-amount" placeholder="amount" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
+                <button class="btn" onclick="addItem('recurring')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            </div>`,
+            contracts: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Contract</span>
+                <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-type" placeholder="type" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-value" placeholder="value" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
+                <input type="text" id="add-end" placeholder="end date" style="width:90px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="addItem('contracts')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            </div>`,
+            contacts: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Contact</span>
+                <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-role" placeholder="role" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-email" placeholder="email" style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="addItem('contacts')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            </div>`,
+            commodities: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <span style="color:var(--accent);font-size:0.8rem;">+ Commodity</span>
+                <input type="text" id="add-symbol" placeholder="symbol (e.g. SHOP.TO)" style="width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-name" placeholder="name" style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-source" placeholder="yahoo" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="add-tags" placeholder="tags (comma sep)" style="width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="addItem('commodities')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            </div>`,
+        };
+        container.innerHTML = forms[type] || '';
+        container.style.display = forms[type] ? 'block' : 'none';
+    }
+
+    async function runPayroll() {
+        const payType = document.getElementById('add-paytype')?.value || 'employee';
+        const name = document.getElementById('add-payee')?.value.trim();
+        const gross = parseFloat(document.getElementById('add-gross')?.value) || 0;
+        const benefits = parseFloat(document.getElementById('add-benefits')?.value) || 0;
+        const tax = parseFloat(document.getElementById('add-tax')?.value) || 0;
+        const period = document.getElementById('add-period')?.value.trim() || '';
+
+        if (!name || !gross) { showToast('Name and gross amount required', true); return; }
+
+        const body = {
+            pay_type: payType,
+            employee_name: name,
+            gross_amount: gross,
+            benefits: benefits,
+            employer_contributions: 0,
+            tax_withheld: tax,
+            pay_date: state.today,
+            period: period,
+        };
+
+        try {
+            const res = await fetch('/api/payroll/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            const data = await res.json();
+            if (data.ok) {
+                showToast('✓ ' + data.path);
+                loadData('payroll');
+            } else {
+                showToast('Error: ' + (data.detail || 'unknown'), true);
+            }
+        } catch(err) { showToast('Error: ' + err.message, true); }
+    }
+
+    async function addItem(type) {
+        // For account-type adds (equity, income, expenses), add to accounts.yaml
+        if (['equity', 'income', 'expenses'].includes(type)) {
+            const acct = document.getElementById('add-account')?.value.trim();
+            if (!acct) return;
+            // TODO: POST to /api/account/add
+            showToast('Account declaration: ' + acct + ' (CLI: pair account add)');
+            return;
+        }
+        // For YAML-based types, show the CLI command
+        const name = document.getElementById('add-name')?.value.trim();
+        if (!name) return;
+        const cmdMap = { assets: 'pair asset add', liabilities: 'pair liability add', recurring: 'pair recurring add', contracts: 'pair contract add', contacts: 'pair contact add' };
+        showToast('Use CLI: ' + (cmdMap[type] || 'pair ' + type + ' add'));
+    }
+
+    // ─── Pairs Reference ────────────────────────────────────────────────────
+    async function loadPairsRef() {
+        const data = await fetch('/api/pairs-ref').then(r => r.json());
+        const tbody = document.getElementById('pairs-body');
+        tbody.innerHTML = '';
+        const exprMap = {1:'<', 2:'>', 3:'<<', 4:'>>', 5:'<.', 6:'>.', 7:'<<.', 8:'>>.', 9:'<.>', 10:'<..', 11:'>..', 12:'..<', 13:'..>', 14:'..'};
+        for (const p of (data.pairs || [])) {
+            const tr = document.createElement('tr');
+            const expr = exprMap[p.num] || '';
+            tr.innerHTML = `<td>${p.num}</td><td style="color:var(--green);font-weight:bold;">${esc(expr)}</td><td style="color:var(--accent)">${esc(p.code)}</td><td>${esc(p.name)}</td><td>${esc(p.normal)}</td><td>${esc(p.reversal)}</td><td style="color:var(--fg-dim)">${esc(p.edge)}</td>`;
+            tbody.appendChild(tr);
+        }
+    }
+
+    // ─── Entry Mode ─────────────────────────────────────────────────────────
+    function renderExprGrid() {
+        const grid = document.getElementById('expr-grid-container');
+        grid.innerHTML = '';
+        const order = ['<','>','<<','>>','<.','>.','<<.','>>.','<.>','<..','>..','..<','..>','..'];
+        for (const key of order) {
+            const p = allPairs[key]; if (!p) continue;
+            const el = document.createElement('div');
+            el.className = 'expr-item';
+            el.innerHTML = `<span class="expr-key">${esc(key)}</span> <span class="expr-desc">${esc(p.desc)}</span>`;
+            el.onclick = () => selectExpr(key);
+            grid.appendChild(el);
+        }
+    }
+
+    document.getElementById('expr-field').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { const raw = this.value.trim(); if (raw) parseAndSelectExpr(raw); }
+    });
+
+    function parseAndSelectExpr(raw) {
+        const reversal = raw.includes('/');
+        const token = raw.replace('/','').split(' ')[0];
+        const amtStr = raw.split(' ').slice(1).join(' ');
+        const order = ['<<.','>>.','<.>','<..','>..','..<','..>','..','<<','>>','<.','>.','<','>'];
+        let expr = null;
+        for (const c of order) { if (token.startsWith(c)) { expr = c; break; } }
+        if (!expr || !allPairs[expr]) return;
+        state.reversal = reversal;
+        if (amtStr) { const p = parseFloat(amtStr); if (!isNaN(p)) state.amount = p; }
+        selectExpr(expr);
+    }
+
+    async function selectExpr(expr) {
+        state.expr = expr;
+        state.pair = allPairs[expr];
+        const data = await fetch(`/api/accounts?expr=${encodeURIComponent(expr)}`).then(r => r.json());
+        state.filteredFirst = data.first;
+        state.filteredSecond = data.second;
+        updatePreview();
+        goToStep(2);
+        renderAccountList(state.filteredFirst, 'first');
+    }
+
+    function renderAccountList(items, target) {
+        const list = document.getElementById('account-list');
+        const filterCont = document.getElementById('filter-container');
+        const exprGrid = document.getElementById('expr-grid-container');
+        exprGrid.style.display = 'none';
+        filterCont.style.display = 'block';
+        list.innerHTML = '';
+        const filterField = document.getElementById('filter-field');
+        filterField.value = '';
+        filterField.placeholder = state.pair[target === 'first' ? 'first_prompt' : 'second_prompt'] || 'filter...';
+        filterField.focus();
+
+        function render(filter) {
+            list.innerHTML = '';
+            const filtered = filter ? items.filter(a => a.short.toLowerCase().includes(filter) || a.hint.toLowerCase().includes(filter)) : items;
+            if (!filtered.length) { list.innerHTML = '<div class="empty">no matches</div>'; return; }
+            for (const acct of filtered) {
+                const el = document.createElement('div');
+                el.className = 'item';
+                el.innerHTML = `<span>${esc(acct.short)}</span><span class="hint">${esc(acct.hint)}</span>`;
+                el.onclick = () => { if (target==='first') selectFirst(acct.full); else selectSecond(acct.full); };
+                list.appendChild(el);
+            }
+        }
+        render('');
+        filterField.oninput = () => render(filterField.value.toLowerCase());
+    }
+
+    function selectFirst(full) {
+        state.firstAccount = full;
+        updatePreview();
+        const second = state.filteredSecond.filter(a => a.full !== full);
+        if (second.length === 1) { selectSecond(second[0].full); }
+        else { goToStep(3); renderAccountList(second, 'second'); }
+    }
+
+    function selectSecond(full) {
+        state.secondAccount = full;
+        updatePreview();
+        if (state.amount) { goToStep(5); showConfirm(); }
+        else { goToStep(4); showAmount(); }
+    }
+
+    function showAmount() {
+        document.getElementById('filter-container').style.display = 'none';
+        document.getElementById('account-list').innerHTML = '';
+        document.getElementById('amount-container').style.display = 'block';
+        const field = document.getElementById('amount-field');
+        field.value = ''; field.focus();
+        field.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                const val = parseFloat(field.value);
+                if (!isNaN(val) && val > 0) { state.amount = val; updatePreview(); goToStep(5); showConfirm(); }
+            }
+        };
+    }
+
+    function showConfirm() {
+        document.getElementById('amount-container').style.display = 'none';
+        document.getElementById('filter-container').style.display = 'none';
+        document.getElementById('account-list').innerHTML = '';
+        document.getElementById('actions').style.display = 'flex';
+        document.getElementById('btn-write').disabled = false;
+    }
+
+    async function writeEntry() {
+        document.getElementById('btn-write').disabled = true;
+        const desc = (state.reversal ? 'Reversal: ' : '') + leafName(state.secondAccount);
+        const body = { expr: state.expr, first_account: state.firstAccount, second_account: state.secondAccount, amount: state.amount, description: desc, reversal: state.reversal, entry_date: state.today };
+        try {
+            const res = await fetch('/api/entry', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            const data = await res.json();
+            if (data.ok) { showToast('✓ ' + data.path); setTimeout(resetEntry, 1500); }
+            else showToast('Error: ' + (data.detail||'unknown'), true);
+        } catch(err) { showToast('Error: '+err.message, true); }
+    }
+
+    function updatePreview() {
+        const title = document.getElementById('preview-title');
+        const pairEl = document.getElementById('preview-pair');
+        const p1 = document.getElementById('posting-1');
+        const p2 = document.getElementById('posting-2');
+        if (state.pair) { title.textContent = `[${state.pair.num}] ${state.pair.name}`; pairEl.textContent = state.pair.desc + (state.reversal ? ' (reversal)' : ''); }
+        if (state.firstAccount) {
+            const amt = state.amount ? `${state.currency} ${state.amount.toFixed(2)}` : '?';
+            p1.className = 'posting'; p1.innerHTML = `<span class="account">${esc(leafName(state.firstAccount))}</span><span class="amount">${amt}</span>`;
+        } else { p1.className = 'posting pending'; p1.innerHTML = '<span class="account">...</span><span class="amount">?</span>'; }
+        if (state.secondAccount) {
+            const amt = state.amount ? `${state.currency} -${state.amount.toFixed(2)}` : '?';
+            p2.className = 'posting'; p2.innerHTML = `<span class="account">${esc(leafName(state.secondAccount))}</span><span class="amount negative">${amt}</span>`;
+        } else { p2.className = 'posting pending'; p2.innerHTML = '<span class="account">...</span><span class="amount">?</span>'; }
+    }
+
+    function goToStep(n) { state.step = n; for (let i=1;i<=5;i++) { const el=document.getElementById('step-'+i); el.className='step'+(i===n?' active':(i<n?' done':'')); } }
+
+    function resetEntry() {
+        state = {...state, step:1, expr:null, pair:null, firstAccount:null, secondAccount:null, amount:null, reversal:false};
+        document.getElementById('expr-field').value = '';
+        document.getElementById('actions').style.display = 'none';
+        document.getElementById('amount-container').style.display = 'none';
+        document.getElementById('filter-container').style.display = 'none';
+        document.getElementById('expr-grid-container').style.display = 'grid';
+        document.getElementById('account-list').innerHTML = '';
+        document.getElementById('preview-title').textContent = 'select an expression';
+        document.getElementById('preview-pair').textContent = '';
+        updatePreview(); goToStep(1); renderExprGrid();
+        document.getElementById('expr-field').focus();
+    }
+
+    // ─── Entry Modal ────────────────────────────────────────────────────────
+    function openEntryModal(txn) {
+        const modal = document.getElementById('edit-modal');
+        const content = document.getElementById('modal-content');
+
+        let postingsHtml = '';
+        for (let i = 0; i < txn.postings.length; i++) {
+            const p = txn.postings[i];
+            postingsHtml += `
+                <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;">
+                    <input type="text" value="${esc(p.account)}" style="flex:2;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
+                    <input type="text" value="${esc(p.amount)}" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;text-align:right;">
+                </div>`;
+        }
+
+        content.innerHTML = `
+            <div style="margin-bottom:0.75rem;">
+                <label style="color:var(--fg-dim);font-size:0.75rem;">Date</label>
+                <input type="text" value="${esc(txn.date)}" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;margin-top:0.25rem;">
+            </div>
+            <div style="margin-bottom:0.75rem;">
+                <label style="color:var(--fg-dim);font-size:0.75rem;">Description</label>
+                <input type="text" value="${esc(txn.description)}" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;margin-top:0.25rem;">
+            </div>
+            <div style="margin-bottom:0.75rem;">
+                <label style="color:var(--fg-dim);font-size:0.75rem;">Postings</label>
+                <div style="margin-top:0.25rem;">${postingsHtml}</div>
+            </div>
+            <div style="color:var(--fg-dim);font-size:0.75rem;padding:0.5rem;background:var(--bg);border-radius:4px;">
+                Note: Editing writes a correction entry. Original remains in journal.
+            </div>
+        `;
+        modal.style.display = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('edit-modal').style.display = 'none';
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('edit-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeModal();
+    });
+
+    // Close modal on Escape
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+    // ─── Charts ─────────────────────────────────────────────────────────────
+    const chartColors = ['#61afef','#98c379','#e06c75','#e5c07b','#c678dd','#56b6c2','#d19a66','#abb2bf'];
+    let mainChart = null;
+
+    Chart.defaults.color = '#abb2bf';
+    Chart.defaults.borderColor = '#3e4452';
+    Chart.defaults.font.family = "'JetBrains Mono','Fira Code',monospace";
+    Chart.defaults.font.size = 11;
+
+    async function loadChart(type) {
+        document.querySelectorAll('#view-charts .report-controls .btn').forEach(b => b.classList.remove('active'));
+        if (event && event.target) event.target.classList.add('active');
+
+        if (mainChart) { mainChart.destroy(); mainChart = null; }
+        const ctx = document.getElementById('main-chart').getContext('2d');
+
+        if (type === 'prices') {
+            const data = await fetch('/api/chart/prices').then(r => r.json());
+            const datasets = [];
+            // Collect all unique dates and normalize each commodity to percentage change
+            let i = 0;
+            const allDates = new Set();
+            for (const [sym, d] of Object.entries(data.commodities || {})) {
+                d.dates.forEach(dt => allDates.add(dt));
+            }
+            const sortedDates = [...allDates].sort();
+
+            for (const [sym, d] of Object.entries(data.commodities || {})) {
+                // Normalize to % change from first price
+                const basePrice = d.prices[0] || 1;
+                const priceMap = {};
+                d.dates.forEach((dt, idx) => { priceMap[dt] = d.prices[idx]; });
+
+                let lastPrice = basePrice;
+                const normalized = sortedDates.map(dt => {
+                    if (priceMap[dt] !== undefined) lastPrice = priceMap[dt];
+                    return Math.round(((lastPrice - basePrice) / basePrice) * 10000) / 100;
+                });
+
+                datasets.push({
+                    label: `${sym} (${d.prices[d.prices.length-1]?.toFixed(2) || '?'})`,
+                    data: normalized,
+                    borderColor: chartColors[i%chartColors.length],
+                    backgroundColor: 'transparent',
+                    tension: 0.3,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: chartColors[i%chartColors.length],
+                    borderWidth: 2,
+                });
+                i++;
+            }
+            mainChart = new Chart(ctx, { type: 'line', data: { labels: sortedDates, datasets }, options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}%` } } },
+                scales: { x: { ticks: { maxTicksLimit: 10 } }, y: { title: { display: true, text: '% change' }, ticks: { callback: v => v + '%' } } }
+            }});
+            return;
+        }
+
+        const data = await fetch('/api/chart/' + type).then(r => r.json());
+        if (!data.labels || !data.labels.length) return;
+
+        if (type === 'networth') {
+            mainChart = new Chart(ctx, { type: 'line', data: { labels: data.labels, datasets: [
+                { label: 'Net Worth', data: data.datasets[0]?.data, borderColor: '#61afef', backgroundColor: 'rgba(97,175,239,0.1)', fill: true, tension: 0.3 },
+                { label: 'Assets', data: data.datasets[1]?.data, borderColor: '#98c379', backgroundColor: 'transparent', tension: 0.3, borderDash: [5,3] },
+                { label: 'Liabilities', data: data.datasets[2]?.data, borderColor: '#e06c75', backgroundColor: 'transparent', tension: 0.3, borderDash: [5,3] },
+            ]}, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } } });
+        } else if (type === 'profitloss') {
+            mainChart = new Chart(ctx, { type: 'bar', data: { labels: data.labels, datasets: [
+                { label: 'Revenue', data: data.datasets[0]?.data, backgroundColor: 'rgba(152,195,121,0.7)', borderColor: '#98c379', borderWidth: 1 },
+                { label: 'Expenses', data: data.datasets[1]?.data, backgroundColor: 'rgba(224,108,117,0.7)', borderColor: '#e06c75', borderWidth: 1 },
+                { label: 'Profit/Loss', data: data.datasets[2]?.data, type: 'line', borderColor: '#61afef', backgroundColor: 'transparent', tension: 0.3, pointRadius: 4 },
+            ]}, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } } });
+        } else if (type === 'revenue') {
+            const datasets = data.datasets.map((ds, i) => ({ label: ds.name, data: ds.data, backgroundColor: chartColors[i%chartColors.length]+'99', borderColor: chartColors[i%chartColors.length], borderWidth: 1 }));
+            mainChart = new Chart(ctx, { type: 'bar', data: { labels: data.labels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true } } } });
+        } else if (type === 'expenses') {
+            const datasets = data.datasets.slice(0,8).map((ds, i) => ({ label: ds.name, data: ds.data, backgroundColor: chartColors[i%chartColors.length]+'99', borderColor: chartColors[i%chartColors.length], borderWidth: 1 }));
+            mainChart = new Chart(ctx, { type: 'bar', data: { labels: data.labels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true } } } });
+        } else if (type === 'cashflow') {
+            const datasets = data.datasets.map((ds, i) => ({ label: ds.name, data: ds.data, borderColor: chartColors[i%chartColors.length], backgroundColor: i===0 ? 'rgba(97,175,239,0.1)' : 'transparent', fill: i===0, tension: 0.3 }));
+            mainChart = new Chart(ctx, { type: 'line', data: { labels: data.labels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } } });
+        }
+    }
+
+    // ─── Sparklines ─────────────────────────────────────────────────────────
+    let sparkCharts = {};
+
+    function createSparkline(canvasId, data, color, fill=true) {
+        if (typeof Chart === 'undefined') return;
+        if (sparkCharts[canvasId]) sparkCharts[canvasId].destroy();
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        sparkCharts[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: { labels: data.map((_,i) => i), datasets: [{ data, borderColor: color, backgroundColor: fill ? color+'22' : 'transparent', fill, tension: 0.4, pointRadius: 0, borderWidth: 2 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, animation: { duration: 600 } }
+        });
+    }
+
+    async function loadSparklines() {
+        const nw = await fetch('/api/chart/networth').then(r => r.json());
+        if (nw.datasets && nw.datasets[0]) createSparkline('spark-networth', nw.datasets[0].data, '#98c379');
+        if (nw.datasets && nw.datasets[1]) createSparkline('spark-assets', nw.datasets[1].data, '#61afef');
+        if (nw.datasets && nw.datasets[2]) createSparkline('spark-liabilities', nw.datasets[2].data, '#e06c75');
+
+        const pl = await fetch('/api/chart/profitloss').then(r => r.json());
+        if (pl.datasets && pl.datasets[0]) createSparkline('spark-revenue', pl.datasets[0].data, '#98c379');
+        if (pl.datasets && pl.datasets[2]) {
+            const profitData = pl.datasets[2].data;
+            const color = profitData[profitData.length-1] >= 0 ? '#98c379' : '#e06c75';
+            createSparkline('spark-profit', profitData, color);
+        }
+    }
+
+    // ─── Helpers ────────────────────────────────────────────────────────────
+    function leafName(a) { return a ? a.split(':').pop() : '...'; }
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+    function showToast(msg, err) { const t=document.getElementById('toast'); t.textContent=msg; t.style.background=err?'var(--red)':'var(--green)'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3000); }
+
+    // ─── PWA ────────────────────────────────────────────────────────────────
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+
+    init();
+    </script>
+</body>
+</html>

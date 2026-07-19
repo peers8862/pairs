@@ -37,10 +37,10 @@ def _print_config(config):
     print("══════════════════════════════════════════════════════════════")
     print()
 
-    company = config.get("pair", {})
-    print(f"  Company name:     {company.get('name', '—')}")
-    print(f"  Slug:             {company.get('slug', '—')}")
-    print(f"  Currency:         {company.get('currency', '—')}")
+    entity_info = config.get("pair", {})
+    print(f"  Entity name:      {entity_info.get('name', '—')}")
+    print(f"  Slug:             {entity_info.get('slug', '—')}")
+    print(f"  Currency:         {entity_info.get('currency', '—')}")
     print()
 
     print(f"  Journal file:     {config.get('journal_file', '—')}")
@@ -85,17 +85,17 @@ def _edit_config(config):
     """Walk through editable fields and update config in place."""
     print("\nEditing configuration (press Enter to keep current value):\n")
 
-    # Company name
-    company = config.setdefault("pair", {})
-    company["name"] = prompt(
-        "Company name",
-        default=company.get("name", ""),
+    # Entity name
+    entity_info = config.setdefault("pair", {})
+    entity_info["name"] = prompt(
+        "Entity name (Company/Project)",
+        default=entity_info.get("name", ""),
     )
 
     # Currency
-    company["currency"] = prompt(
+    entity_info["currency"] = prompt(
         "Currency",
-        default=company.get("currency", "CAD"),
+        default=entity_info.get("currency", "CAD"),
     )
 
     # Journal file

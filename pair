@@ -29,10 +29,19 @@ MODULE_MAP = {
     'income': 'modules.income',
     'transfer': 'modules.transfer',
     'division': 'modules.division',
-    'company': 'modules.company',
+    'market': 'modules.market',
+    'company': 'modules.entity',
+    'entity': 'modules.entity',
+    'dash': 'modules.dash',
+    'chart': 'modules.chart',
+    'account': 'modules.account',
+    'export': 'modules.export',
+    'report': 'modules.report',
+    'link': 'modules.link',
+    'web': 'modules.web',
 }
 
-CORE_COMMANDS = ['init', 'generate', 'worth', 'journal', 'year', 'status', 'where', 'pairs', 'config', 'entry', 'switch']
+CORE_COMMANDS = ['init', 'generate', 'worth', 'journal', 'year', 'status', 'where', 'pairs', 'config', 'entry', 'switch', 'prices']
 
 
 def main():
@@ -91,9 +100,9 @@ def main():
     elif command == 'config':
         from modules.config import cmd_config
         cmd_config(sys.argv[2:])
-    # Switch active company (shortcut for 'company use')
+    # Switch active entity (shortcut for 'entity use')
     elif command == 'switch':
-        from modules.company import cmd_use
+        from modules.entity import cmd_use
         cmd_use(sys.argv[2:])
     # Prompt helper for shell PS1 integration
     elif command == 'prompt':
@@ -103,10 +112,18 @@ def main():
         if prompt_file.exists():
             sys.stdout.write(prompt_file.read_text())
         else:
-            from lib.helpers import get_active_company
-            co = get_active_company()
+            from lib.helpers import get_active_entity
+            co = get_active_entity()
             if co:
                 sys.stdout.write(f"[{co}] ")
+    # Prices alias (shortcut for 'pair market show')
+    elif command == 'prices':
+        from modules.market import dispatch as market_dispatch
+        market_dispatch(['show'] + sys.argv[2:])
+    # Dot — rofi popup link mode
+    elif command == '.':
+        from modules.dot import dispatch as dot_dispatch
+        dot_dispatch(sys.argv[2:])
     # Module dispatch
     elif command in MODULE_MAP:
         module = __import__(MODULE_MAP[command], fromlist=['dispatch'])
@@ -120,14 +137,15 @@ def main():
 def print_usage():
     print("""pair — business accounting on hledger
 
-  Supports multiple companies and holding structures.
-  Each company gets its own directory under companies/<slug>/.
+  Supports multiple entities (Company/Project) and holding structures.
+  Each entity gets its own directory under entities/<slug>/.
 
   pair                      Interactive entry from any accounting pair
+  pair .                    Popup link mode (rofi)
   pair --help               This help
 
 Core commands:
-  init                      First-time setup (creates first company)
+  init                      First-time setup (creates first entity)
   config                    View/edit configuration
   generate                  Regenerate journals from YAML
   worth                     Net worth report
@@ -137,12 +155,12 @@ Core commands:
   status                    System status and pending items
   where <query>             Find entities and entries
 
-Company management:
-  company                   Show active company
-  company list              List all companies
-  company add               Add a new company
-  company use <slug>        Switch active company
-  switch <slug>             Switch active company (shortcut)
+Entity management (Company/Project):
+  entity                    Show active entity
+  entity list               List all entities
+  entity add                Add a new entity
+  entity use <slug>         Switch active entity
+  switch <slug>             Switch active entity (shortcut)
 
 Modules:
   asset add|list|show|edit|dispose|amort|writedown|summary
@@ -159,6 +177,15 @@ Modules:
   tax summary|remit
   recurring add|list|generate
   budget set|vs
+  market show|list|fetch|add|edit|remove|verify|chart|tag|sources
+  account list|add|show|edit|remove|tree|tag|find|link|reconcile
+  dash tui|web|lit|fava|ui  Launch dashboards
+  chart prices|sankey|bar|plot|vega|treemap
+  export csv|beancount|psql|json
+  report <hledger-cmd>      Passthrough to hledger (register, bs, is, bal...)
+  link                      Progressive entry assembly (link mode)
+  web                       PWA server for entry (localhost:8100)
+  prices                    Show recent prices (alias for market show)
   year new|close
 
 Global flags:

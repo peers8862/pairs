@@ -135,8 +135,8 @@ def _search_journals(query):
                     })
 
     # Also search manual journal files
-    from lib.helpers import get_company_dir
-    journal_dir = get_company_dir() / "journal"
+    from lib.helpers import get_entity_dir
+    journal_dir = get_entity_dir() / "journal"
     if journal_dir.exists():
         for journal_file in sorted(journal_dir.rglob("*.journal")):
             try:

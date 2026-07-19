@@ -6,7 +6,7 @@
 $ pair worth
 
 ══════════════════════════════════════════════════════════════
-  Company Net Worth — Clairlea Consulting
+  Entity Net Worth — Clairlea Consulting
   As of 2026-07-15
 ══════════════════════════════════════════════════════════════
 

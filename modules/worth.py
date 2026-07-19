@@ -52,9 +52,9 @@ Flags:
 # ─── pair worth (main report) ────────────────────────────────────────────
 
 def cmd_worth(flags, args):
-    """Show company net worth."""
+    """Show entity net worth."""
     config = load_config()
-    company_name = config.get('pair', {}).get('name', 'Company')
+    entity_name = config.get('pair', {}).get('name', 'Entity')
     currency = config.get('pair', {}).get('currency', 'CAD')
 
     # Parse period/flags from remaining args
@@ -105,7 +105,7 @@ def cmd_worth(flags, args):
 
     print()
     print("══════════════════════════════════════════════════════════════")
-    print(f"  Company Net Worth — {company_name}")
+    print(f"  Entity Net Worth — {entity_name}")
     print(f"  As of {as_of}")
     print("══════════════════════════════════════════════════════════════")
     print()
@@ -213,7 +213,7 @@ def cmd_worth(flags, args):
 
 def _show_periodic(config, frequency, period_end):
     """Show net worth trend over time."""
-    company_name = config.get('pair', {}).get('name', 'Company')
+    entity_name = config.get('pair', {}).get('name', 'Entity')
     currency = config.get('pair', {}).get('currency', 'CAD')
     journal_file = config.get('journal_file')
 
@@ -240,7 +240,7 @@ def _show_periodic(config, frequency, period_end):
 
     # Parse and display
     if result.stdout.strip():
-        print(f"\n  Net Worth — {frequency.title()} ({company_name})\n")
+        print(f"\n  Net Worth — {frequency.title()} ({entity_name})\n")
         print(result.stdout)
     else:
         print("  No data available for the specified period.")

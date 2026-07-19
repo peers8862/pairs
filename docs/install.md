@@ -9,7 +9,7 @@
 ## Install
 
 ```bash
-cd ~/making/hledger-company
+cd ~/making/pair
 chmod +x pair
 ```
 
@@ -21,7 +21,7 @@ ln -s "$(pwd)/pairs" ~/.local/bin/pairs
 
 Option B — alias in your shell rc:
 ```bash
-alias company='~/making/hledger-company/company'
+alias pair='~/making/pair/pair'
 ```
 
 ## First run

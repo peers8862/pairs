@@ -1,5 +1,5 @@
-# consult - hledger billing system configuration
-# Copy this to config.yaml and run 'consult init' to set up interactively.
+# pair - hledger accounting system configuration (legacy example)
+# This is the old consult-style config. See entities/<slug>/config.yaml for current format.
 
 entities:
   my-company:

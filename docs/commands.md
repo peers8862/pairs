@@ -1,4 +1,4 @@
-# hledger-company — Command Surface
+# pair — Command Surface
 
 ## Discovery
 
@@ -29,7 +29,7 @@ pair init
 
 Creates: `config.yaml`, directory structure, `include/company.journal`, `include/accounts.journal`
 
-Asks: company name, entity slug, currency, journal file path, bank account name, fiscal year start.
+Asks: entity name (Company/Project), slug, currency, journal file path, bank account name, fiscal year start.
 
 ### `pair generate`
 
@@ -539,9 +539,9 @@ pair worth --raw                 # pass-through to hledger bs
 ## Help
 
 ```
-$ company
+$ pair
 
-company — business accounting on hledger
+pair — business accounting on hledger
 
 Commands:
   init                    First-time setup
@@ -552,8 +552,9 @@ Commands:
   where <query>           Find entities and entries
   worth                   Net worth report
   pairs                   BitLedger pair reference table
-  pair                    Interactive entry from any pair
+  entry                   Interactive entry from any pair
 
+  entity list|add|use     Entity (Company/Project) management
   asset add|list|show|edit|dispose|amort|writedown|summary
   liability add|list|show|pay|payments|reclassify
   expense add|list
@@ -566,5 +567,5 @@ Commands:
   equity invest|draw|convert
   division list
 
-Use 'company <command> --help' for details.
+Use 'pair <command> --help' for details.
 ```

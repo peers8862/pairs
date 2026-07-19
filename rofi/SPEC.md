@@ -133,7 +133,7 @@ MANAGEMENT ───────────────────────
 ────────────────────────────────────
 SYSTEM ─────────────────────────────
   Pairs Reference
-  Switch Company [babb]
+  Switch Entity [babb]
   Status
   Config
   Generate
@@ -271,10 +271,10 @@ Step 3: show direction choice (Normal / Reversal)
 Step 4: opens terminal with pair entry pre-loaded
 ```
 
-### Company Switch
+### Entity Switch
 
 ```
-msg: "Active company: Babb"
+msg: "Active entity: Babb"
 
 list:
   clairlea    Clairlea Consulting
@@ -421,6 +421,6 @@ pairs/
 
 1. **Width:** Near-fullscreen (95% x 90%), adaptive only if needed for very small screens
 2. **Long output:** Displayed in message area. For truly long content, "Open in terminal" action
-3. **Tax in quick expense:** Yes, if company config has tax > 0, add one HST prompt step
+3. **Tax in quick expense:** Yes, if entity config has tax > 0, add one HST prompt step
 4. **Ctrl+Enter:** Opens in terminal — confirmed
 5. **Paging:** Not needed — message area scrolls in newer rofi versions, or we truncate + offer terminal view

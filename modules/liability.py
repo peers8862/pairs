@@ -512,19 +512,27 @@ def _generate_payment_entries(liab, through_date_str):
             interest_portion = money(remaining_principal * monthly_rate)
             principal_portion = payment_amount - interest_portion
 
-            # Last payment adjustment
-            if principal_portion > remaining_principal:
+            if principal_portion < 0:
+                # Negative amortization: payment doesn't cover interest.
+                # Full payment goes to interest; unpaid interest capitalizes.
+                capitalized_interest = -principal_portion
+                interest_portion = payment_amount
+                principal_portion = Decimal('0')
+                remaining_principal += capitalized_interest
+                actual_payment = payment_amount
+            elif principal_portion > remaining_principal:
+                # Last payment adjustment
                 principal_portion = remaining_principal
-                # Recalculate total payment for last entry
                 actual_payment = principal_portion + interest_portion
             else:
                 actual_payment = payment_amount
+
+            remaining_principal -= principal_portion
         else:
             interest_portion = Decimal('0')
             principal_portion = min(payment_amount, remaining_principal)
             actual_payment = principal_portion
-
-        remaining_principal -= principal_portion
+            remaining_principal -= principal_portion
 
         # Build entry
         postings = []

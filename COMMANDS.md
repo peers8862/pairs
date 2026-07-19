@@ -1,27 +1,27 @@
-# hledger-company — Command Surface
+# pair — Command Surface
 
-CLI entry point: `company`
+CLI entry point: `pair`
 
 ---
 
 ## Data directory discovery
 
-The tool searches for `config.yaml` starting from the current working directory and walking upward until `/`. If found, that directory becomes the data root. If not found, all commands except `company init` exit with:
+The tool searches for `config.yaml` starting from the current working directory and walking upward until `/`. If found, that directory becomes the data root. If not found, all commands except `pair init` exit with:
 
 ```
-No config.yaml found. Run 'company init' to set up, or run from within a company directory.
+No config.yaml found. Run 'pair init' to set up, or run from within an entity directory.
 ```
 
-`company init` always operates in the current directory.
+`pair init` always operates in the current directory.
 
 ---
 
 ## Help output format
 
 ```
-company - plain-text accounting for your business
+pair - plain-text accounting for your business
 
-Usage: company <module> <verb> [args] [flags]
+Usage: pair <module> <verb> [args] [flags]
 
 Modules:
   asset          Capital assets and amortization
@@ -43,18 +43,18 @@ Global flags:
   --batch        Non-interactive mode (read from stdin or flags)
   --quiet, -q    Suppress non-essential output
 
-Run 'company <module> --help' for module-specific commands.
-Run 'company <command> --help' for detailed usage.
+Run 'pair <module> --help' for module-specific commands.
+Run 'pair <command> --help' for detailed usage.
 ```
 
 ---
 
 ## Global commands
 
-### `company init`
+### `pair init`
 
 ```
-company init [--yes]
+pair init [--yes]
 ```
 
 | | |
@@ -65,7 +65,7 @@ company init [--yes]
 
 #### Init flow
 
-1. Company name — "What is the company name?"
+1. Entity name — "What is the entity name (Company/Project)?"
 2. Entity slug — "Short identifier (lowercase, hyphens ok)" [derived from name]
 3. Business number — "Business/tax number (optional)"
 4. Email — "Contact email"
@@ -89,10 +89,10 @@ Creates config.yaml and all directories. Copies `config.example.yaml` if availab
 
 ---
 
-### `company generate`
+### `pair generate`
 
 ```
-company generate [--year YYYY] [--module MODULE] [--dry-run]
+pair generate [--year YYYY] [--module MODULE] [--dry-run]
 ```
 
 | | |
@@ -111,10 +111,10 @@ Flags:
 
 ## Module: asset
 
-### `company asset add`
+### `pair asset add`
 
 ```
-company asset add [--yes] [--batch]
+pair asset add [--yes] [--batch]
 ```
 
 | | |
@@ -139,10 +139,10 @@ Interactive prompts:
 
 Batch flags: `--name`, `--cost`, `--date`, `--life`, `--salvage`, `--method`, `--category`, `--acquisition`
 
-### `company asset list`
+### `pair asset list`
 
 ```
-company asset list [--active] [--category CATEGORY] [--format FORMAT]
+pair asset list [--active] [--category CATEGORY] [--format FORMAT]
 ```
 
 | | |
@@ -157,10 +157,10 @@ Flags:
 - `--category CATEGORY` — filter by category
 - `--format FORMAT` — `table` (default), `csv`, `yaml`
 
-### `company asset show <slug>`
+### `pair asset show <slug>`
 
 ```
-company asset show <slug>
+pair asset show <slug>
 ```
 
 | | |
@@ -170,10 +170,10 @@ company asset show <slug>
 | Reads | `assets/<slug>.yaml` |
 | Writes | nothing |
 
-### `company asset edit <slug>`
+### `pair asset edit <slug>`
 
 ```
-company asset edit <slug> [--yes]
+pair asset edit <slug> [--yes]
 ```
 
 | | |
@@ -183,10 +183,10 @@ company asset edit <slug> [--yes]
 | Reads | `assets/<slug>.yaml` |
 | Writes | `assets/<slug>.yaml`, regenerates affected journals |
 
-### `company asset remove <slug>`
+### `pair asset remove <slug>`
 
 ```
-company asset remove <slug> [--yes]
+pair asset remove <slug> [--yes]
 ```
 
 | | |
@@ -196,10 +196,10 @@ company asset remove <slug> [--yes]
 | Reads | `assets/<slug>.yaml` |
 | Writes | removes `assets/<slug>.yaml`, regenerates `journals/<year>/assets.journal`, `journals/<year>/amortization.journal` |
 
-### `company asset dispose <slug>`
+### `pair asset dispose <slug>`
 
 ```
-company asset dispose <slug> [--date DATE] [--amount AMOUNT] [--yes]
+pair asset dispose <slug> [--date DATE] [--amount AMOUNT] [--yes]
 ```
 
 | | |
@@ -213,10 +213,10 @@ company asset dispose <slug> [--date DATE] [--amount AMOUNT] [--yes]
 
 ## Module: liability
 
-### `company liability add`
+### `pair liability add`
 
 ```
-company liability add [--yes] [--batch]
+pair liability add [--yes] [--batch]
 ```
 
 | | |
@@ -240,10 +240,10 @@ Interactive prompts:
 - Account name [Liabilities:<Name>]
 - Notes (optional)
 
-### `company liability list`
+### `pair liability list`
 
 ```
-company liability list [--active] [--type TYPE]
+pair liability list [--active] [--type TYPE]
 ```
 
 | | |
@@ -253,10 +253,10 @@ company liability list [--active] [--type TYPE]
 | Reads | `liabilities/*.yaml` |
 | Writes | nothing |
 
-### `company liability show <slug>`
+### `pair liability show <slug>`
 
 ```
-company liability show <slug>
+pair liability show <slug>
 ```
 
 | | |
@@ -266,10 +266,10 @@ company liability show <slug>
 | Reads | `liabilities/<slug>.yaml` |
 | Writes | nothing |
 
-### `company liability edit <slug>`
+### `pair liability edit <slug>`
 
 ```
-company liability edit <slug> [--yes]
+pair liability edit <slug> [--yes]
 ```
 
 | | |
@@ -279,10 +279,10 @@ company liability edit <slug> [--yes]
 | Reads | `liabilities/<slug>.yaml` |
 | Writes | `liabilities/<slug>.yaml`, regenerates journals |
 
-### `company liability remove <slug>`
+### `pair liability remove <slug>`
 
 ```
-company liability remove <slug> [--yes]
+pair liability remove <slug> [--yes]
 ```
 
 | | |
@@ -292,10 +292,10 @@ company liability remove <slug> [--yes]
 | Reads | `liabilities/<slug>.yaml` |
 | Writes | removes file, regenerates journals |
 
-### `company liability pay <slug>`
+### `pair liability pay <slug>`
 
 ```
-company liability pay <slug> [--date DATE] [--amount AMOUNT] [--yes]
+pair liability pay <slug> [--date DATE] [--amount AMOUNT] [--yes]
 ```
 
 | | |
@@ -309,10 +309,10 @@ company liability pay <slug> [--date DATE] [--amount AMOUNT] [--yes]
 
 ## Module: expense
 
-### `company expense add`
+### `pair expense add`
 
 ```
-company expense add [--yes] [--batch]
+pair expense add [--yes] [--batch]
 ```
 
 | | |
@@ -335,10 +335,10 @@ Interactive prompts:
 
 Batch flags: `--date`, `--amount`, `--category`, `--payee`, `--description`, `--account`, `--tags`
 
-### `company expense list`
+### `pair expense list`
 
 ```
-company expense list [--from DATE] [--to DATE] [--category CATEGORY] [--format FORMAT]
+pair expense list [--from DATE] [--to DATE] [--category CATEGORY] [--format FORMAT]
 ```
 
 | | |
@@ -348,10 +348,10 @@ company expense list [--from DATE] [--to DATE] [--category CATEGORY] [--format F
 | Reads | `journals/*/expenses.journal` |
 | Writes | nothing |
 
-### `company expense show <id>`
+### `pair expense show <id>`
 
 ```
-company expense show <id>
+pair expense show <id>
 ```
 
 | | |
@@ -361,10 +361,10 @@ company expense show <id>
 | Reads | `journals/*/expenses.journal` |
 | Writes | nothing |
 
-### `company expense edit <id>`
+### `pair expense edit <id>`
 
 ```
-company expense edit <id> [--yes]
+pair expense edit <id> [--yes]
 ```
 
 | | |
@@ -374,10 +374,10 @@ company expense edit <id> [--yes]
 | Reads | `journals/*/expenses.journal` |
 | Writes | `journals/<year>/expenses.journal` |
 
-### `company expense remove <id>`
+### `pair expense remove <id>`
 
 ```
-company expense remove <id> [--yes]
+pair expense remove <id> [--yes]
 ```
 
 | | |
@@ -393,10 +393,10 @@ company expense remove <id> [--yes]
 
 Inherits and extends consult's billing system.
 
-### `company revenue log`
+### `pair revenue log`
 
 ```
-company revenue log [--batch] [--project PROJECT]
+pair revenue log [--batch] [--project PROJECT]
 ```
 
 | | |
@@ -408,10 +408,10 @@ company revenue log [--batch] [--project PROJECT]
 
 Interactive prompts: date, project, hours, focus/description, type (billable/research/admin), tax override, tags.
 
-### `company revenue log edit`
+### `pair revenue log edit`
 
 ```
-company revenue log edit [--project PROJECT]
+pair revenue log edit [--project PROJECT]
 ```
 
 | | |
@@ -421,10 +421,10 @@ company revenue log edit [--project PROJECT]
 | Reads | `timesheets/unbilled.yaml` |
 | Writes | `timesheets/unbilled.yaml` |
 
-### `company revenue status`
+### `pair revenue status`
 
 ```
-company revenue status [--project PROJECT]
+pair revenue status [--project PROJECT]
 ```
 
 | | |
@@ -434,10 +434,10 @@ company revenue status [--project PROJECT]
 | Reads | `timesheets/unbilled.yaml`, `projects/*.yaml` |
 | Writes | nothing |
 
-### `company revenue invoice`
+### `pair revenue invoice`
 
 ```
-company revenue invoice [--project PROJECT] [--yes]
+pair revenue invoice [--project PROJECT] [--yes]
 ```
 
 | | |
@@ -447,10 +447,10 @@ company revenue invoice [--project PROJECT] [--yes]
 | Reads | `timesheets/unbilled.yaml`, `config.yaml`, `projects/<slug>.yaml`, `templates/*.typ` |
 | Writes | `output/invoice-<number>.pdf`, `invoices/<year>/<number>.journal`, `timesheets/billed/<number>.yaml`, `build/<number>.yaml` |
 
-### `company revenue paid`
+### `pair revenue paid`
 
 ```
-company revenue paid [--invoice NUMBER] [--amount AMOUNT] [--date DATE] [--yes]
+pair revenue paid [--invoice NUMBER] [--amount AMOUNT] [--date DATE] [--yes]
 ```
 
 | | |
@@ -460,10 +460,10 @@ company revenue paid [--invoice NUMBER] [--amount AMOUNT] [--date DATE] [--yes]
 | Reads | `timesheets/billed/*.yaml`, `config.yaml` |
 | Writes | `timesheets/billed/<number>.yaml`, `invoices/<year>/<number>-payment.journal` |
 
-### `company revenue outstanding`
+### `pair revenue outstanding`
 
 ```
-company revenue outstanding [--format FORMAT]
+pair revenue outstanding [--format FORMAT]
 ```
 
 | | |
@@ -473,10 +473,10 @@ company revenue outstanding [--format FORMAT]
 | Reads | `timesheets/billed/*.yaml` |
 | Writes | nothing |
 
-### `company revenue export`
+### `pair revenue export`
 
 ```
-company revenue export [--project PROJECT] [--from DATE] [--to DATE] [--type TYPE] [--tag TAG] [--all]
+pair revenue export [--project PROJECT] [--from DATE] [--to DATE] [--type TYPE] [--tag TAG] [--all]
 ```
 
 | | |
@@ -486,10 +486,10 @@ company revenue export [--project PROJECT] [--from DATE] [--to DATE] [--type TYP
 | Reads | `timesheets/unbilled.yaml`, `timesheets/billed/*.yaml` (with --all) |
 | Writes | stdout (CSV) |
 
-### `company revenue undo`
+### `pair revenue undo`
 
 ```
-company revenue undo [--yes]
+pair revenue undo [--yes]
 ```
 
 | | |
@@ -499,10 +499,10 @@ company revenue undo [--yes]
 | Reads | `timesheets/unbilled.yaml` |
 | Writes | `timesheets/unbilled.yaml` |
 
-### `company revenue project add`
+### `pair revenue project add`
 
 ```
-company revenue project add [--yes] [--batch]
+pair revenue project add [--yes] [--batch]
 ```
 
 | | |
@@ -512,10 +512,10 @@ company revenue project add [--yes] [--batch]
 | Reads | `config.yaml` |
 | Writes | `projects/<slug>.yaml` |
 
-### `company revenue project list`
+### `pair revenue project list`
 
 ```
-company revenue project list [--active]
+pair revenue project list [--active]
 ```
 
 | | |
@@ -525,10 +525,10 @@ company revenue project list [--active]
 | Reads | `projects/*.yaml` |
 | Writes | nothing |
 
-### `company revenue rate <project>`
+### `pair revenue rate <project>`
 
 ```
-company revenue rate <project> [--amount AMOUNT] [--from DATE] [--type TYPE]
+pair revenue rate <project> [--amount AMOUNT] [--from DATE] [--type TYPE]
 ```
 
 | | |
@@ -542,10 +542,10 @@ company revenue rate <project> [--amount AMOUNT] [--from DATE] [--type TYPE]
 
 ## Module: payroll
 
-### `company payroll add`
+### `pair payroll add`
 
 ```
-company payroll add [--yes] [--batch]
+pair payroll add [--yes] [--batch]
 ```
 
 | | |
@@ -566,10 +566,10 @@ Interactive prompts:
 - Deductions (if employee): tax, CPP, EI, other
 - Account [Expenses:Payroll:<Name>]
 
-### `company payroll list`
+### `pair payroll list`
 
 ```
-company payroll list [--active] [--type TYPE]
+pair payroll list [--active] [--type TYPE]
 ```
 
 | | |
@@ -579,10 +579,10 @@ company payroll list [--active] [--type TYPE]
 | Reads | `payroll/people/*.yaml` |
 | Writes | nothing |
 
-### `company payroll show <slug>`
+### `pair payroll show <slug>`
 
 ```
-company payroll show <slug>
+pair payroll show <slug>
 ```
 
 | | |
@@ -592,10 +592,10 @@ company payroll show <slug>
 | Reads | `payroll/people/<slug>.yaml`, `payroll/runs/*.yaml` |
 | Writes | nothing |
 
-### `company payroll edit <slug>`
+### `pair payroll edit <slug>`
 
 ```
-company payroll edit <slug> [--yes]
+pair payroll edit <slug> [--yes]
 ```
 
 | | |
@@ -605,10 +605,10 @@ company payroll edit <slug> [--yes]
 | Reads | `payroll/people/<slug>.yaml` |
 | Writes | `payroll/people/<slug>.yaml` |
 
-### `company payroll remove <slug>`
+### `pair payroll remove <slug>`
 
 ```
-company payroll remove <slug> [--yes]
+pair payroll remove <slug> [--yes]
 ```
 
 | | |
@@ -618,10 +618,10 @@ company payroll remove <slug> [--yes]
 | Reads | `payroll/people/<slug>.yaml` |
 | Writes | `payroll/people/<slug>.yaml` |
 
-### `company payroll run`
+### `pair payroll run`
 
 ```
-company payroll run [--date DATE] [--person SLUG] [--yes]
+pair payroll run [--date DATE] [--person SLUG] [--yes]
 ```
 
 | | |
@@ -631,10 +631,10 @@ company payroll run [--date DATE] [--person SLUG] [--yes]
 | Reads | `payroll/people/*.yaml`, `config.yaml` |
 | Writes | `payroll/runs/<date>.yaml`, `journals/<year>/payroll.journal` |
 
-### `company payroll history`
+### `pair payroll history`
 
 ```
-company payroll history [--person SLUG] [--from DATE] [--to DATE]
+pair payroll history [--person SLUG] [--from DATE] [--to DATE]
 ```
 
 | | |
@@ -648,10 +648,10 @@ company payroll history [--person SLUG] [--from DATE] [--to DATE]
 
 ## Module: contract
 
-### `company contract add`
+### `pair contract add`
 
 ```
-company contract add [--yes] [--batch]
+pair contract add [--yes] [--batch]
 ```
 
 | | |
@@ -675,10 +675,10 @@ Interactive prompts:
 - File reference (path to PDF/scan, optional)
 - Notes
 
-### `company contract list`
+### `pair contract list`
 
 ```
-company contract list [--active] [--type TYPE] [--expiring DAYS]
+pair contract list [--active] [--type TYPE] [--expiring DAYS]
 ```
 
 | | |
@@ -693,10 +693,10 @@ Flags:
 - `--type TYPE` — filter by type
 - `--expiring DAYS` — contracts expiring within N days
 
-### `company contract show <slug>`
+### `pair contract show <slug>`
 
 ```
-company contract show <slug>
+pair contract show <slug>
 ```
 
 | | |
@@ -706,10 +706,10 @@ company contract show <slug>
 | Reads | `contracts/<slug>.yaml` |
 | Writes | nothing |
 
-### `company contract edit <slug>`
+### `pair contract edit <slug>`
 
 ```
-company contract edit <slug> [--yes]
+pair contract edit <slug> [--yes]
 ```
 
 | | |
@@ -719,10 +719,10 @@ company contract edit <slug> [--yes]
 | Reads | `contracts/<slug>.yaml` |
 | Writes | `contracts/<slug>.yaml` |
 
-### `company contract remove <slug>`
+### `pair contract remove <slug>`
 
 ```
-company contract remove <slug> [--yes]
+pair contract remove <slug> [--yes]
 ```
 
 | | |
@@ -736,10 +736,10 @@ company contract remove <slug> [--yes]
 
 ## Module: contact
 
-### `company contact add`
+### `pair contact add`
 
 ```
-company contact add [--yes] [--batch]
+pair contact add [--yes] [--batch]
 ```
 
 | | |
@@ -762,10 +762,10 @@ Interactive prompts:
 
 Batch flags: `--name`, `--type`, `--email`, `--phone`, `--org`, `--tags`
 
-### `company contact list`
+### `pair contact list`
 
 ```
-company contact list [--type TYPE] [--tag TAG] [--format FORMAT]
+pair contact list [--type TYPE] [--tag TAG] [--format FORMAT]
 ```
 
 | | |
@@ -775,10 +775,10 @@ company contact list [--type TYPE] [--tag TAG] [--format FORMAT]
 | Reads | `contacts/*.yaml` |
 | Writes | nothing |
 
-### `company contact show <slug>`
+### `pair contact show <slug>`
 
 ```
-company contact show <slug>
+pair contact show <slug>
 ```
 
 | | |
@@ -788,10 +788,10 @@ company contact show <slug>
 | Reads | `contacts/<slug>.yaml`, `contracts/*.yaml`, `projects/*.yaml` |
 | Writes | nothing |
 
-### `company contact edit <slug>`
+### `pair contact edit <slug>`
 
 ```
-company contact edit <slug> [--yes]
+pair contact edit <slug> [--yes]
 ```
 
 | | |
@@ -801,10 +801,10 @@ company contact edit <slug> [--yes]
 | Reads | `contacts/<slug>.yaml` |
 | Writes | `contacts/<slug>.yaml` |
 
-### `company contact remove <slug>`
+### `pair contact remove <slug>`
 
 ```
-company contact remove <slug> [--yes]
+pair contact remove <slug> [--yes]
 ```
 
 | | |
@@ -818,10 +818,10 @@ company contact remove <slug> [--yes]
 
 ## Module: worth
 
-### `company worth`
+### `pair worth`
 
 ```
-company worth [--date DATE] [--period monthly|quarterly|annual] [--months N]
+pair worth [--date DATE] [--period monthly|quarterly|annual] [--months N]
 ```
 
 | | |
@@ -833,7 +833,7 @@ company worth [--date DATE] [--period monthly|quarterly|annual] [--months N]
 
 Output:
 ```
-Company Net Worth — 2026-07-15
+Entity Net Worth — 2026-07-15
 
   Assets
     Current assets
@@ -862,10 +862,10 @@ Flags:
 - `--period monthly|quarterly|annual` — show trend over time
 - `--months N` — how many months of trend (default: 6)
 
-### `company worth breakdown`
+### `pair worth breakdown`
 
 ```
-company worth breakdown [--module MODULE]
+pair worth breakdown [--module MODULE]
 ```
 
 | | |
@@ -875,10 +875,10 @@ company worth breakdown [--module MODULE]
 | Reads | `hledger bs`, `assets/*.yaml`, `liabilities/*.yaml` |
 | Writes | nothing |
 
-### `company worth trend`
+### `pair worth trend`
 
 ```
-company worth trend [--months N] [--format FORMAT]
+pair worth trend [--months N] [--format FORMAT]
 ```
 
 | | |
@@ -896,10 +896,10 @@ Flags:
 
 ## Module: entity (subcommand of init/config)
 
-### `company entity add`
+### `pair entity add`
 
 ```
-company entity add [--yes]
+pair entity add [--yes]
 ```
 
 | | |
@@ -909,10 +909,10 @@ company entity add [--yes]
 | Reads | `config.yaml` |
 | Writes | `config.yaml` |
 
-### `company entity list`
+### `pair entity list`
 
 ```
-company entity list
+pair entity list
 ```
 
 | | |
@@ -922,10 +922,10 @@ company entity list
 | Reads | `config.yaml` |
 | Writes | nothing |
 
-### `company entity edit <slug>`
+### `pair entity edit <slug>`
 
 ```
-company entity edit <slug> [--yes]
+pair entity edit <slug> [--yes]
 ```
 
 | | |
@@ -967,8 +967,8 @@ company entity edit <slug> [--yes]
 ## File layout (complete)
 
 ```
-hledger-company/
-├── company                  # CLI entry point
+pair/
+├── pair                     # CLI entry point
 ├── config.yaml              # entity config, defaults, accounts
 ├── config.example.yaml      # reference schema
 ├── assets/                  # per-asset YAML metadata
@@ -1027,3 +1027,131 @@ hledger-company/
 | worth | 3 (worth, breakdown, trend) |
 | entity | 3 (add, list, edit) |
 | **Total** | **53** |
+
+---
+
+## `pair report`
+
+```
+pair report <hledger-command> [args...]
+```
+
+| Field | Detail |
+|-------|--------|
+| Does | Passes any hledger command through to the active entity's journal |
+| Reads | Active entity's journal file (entity.journal or company.journal) |
+| Writes | Nothing |
+
+Examples:
+- `pair report bs` — balance sheet
+- `pair report is -p 2026-Q2` — income statement for Q2
+- `pair report register expenses -M` — monthly expense register
+- `pair report cashflow` — cash flow statement
+
+---
+
+## `pair link`
+
+```
+pair link
+```
+
+| Field | Detail |
+|-------|--------|
+| Does | Progressive entry assembly via gum CLI |
+| Reads | Entity accounts (via hledger), config |
+| Writes | `generated/<year>/links.journal` |
+| Requires | gum (charmbracelet/gum) |
+
+Expressions (all 14 pairs):
+
+| Expression | Pair | Description |
+|---|---|---|
+| `<` | 1 | Op expense paid from asset |
+| `>` | 2 | Op expense on credit |
+| `<<` | 3 | Non-op expense from asset |
+| `>>` | 4 | Non-op expense on credit |
+| `<.` | 5 | Op income received as asset |
+| `>.` | 6 | Op income from liability |
+| `<<.` | 7 | Non-op income received |
+| `>>.` | 8 | Non-op income from liability |
+| `<.>` | 9 | Asset from liability (loan) |
+| `<..` | 10 | Asset from equity |
+| `>..` | 11 | Liability from equity |
+| `..<` | 12 | Asset to asset transfer |
+| `..>` | 13 | Liability to liability |
+| `..` | 14 | Equity to equity |
+
+Append `/` for reversal. Amount optional after space.
+
+---
+
+## `pair .`
+
+```
+pair .
+```
+
+| Field | Detail |
+|-------|--------|
+| Does | Rofi popup entry assembly with two-column layout |
+| Reads | Entity accounts, config |
+| Writes | `generated/<year>/links.journal` |
+| Requires | rofi 1.7+ |
+
+Same 14 expressions as `pair link`. Left panel: selection. Right panel: assembling entry preview.
+
+---
+
+## `pair web`
+
+```
+pair web [--port PORT]
+```
+
+| Field | Detail |
+|-------|--------|
+| Does | Starts PWA server for progressive entry, dashboards, charts, reporting |
+| Reads | Entity config, YAML data, hledger journals |
+| Writes | `generated/<year>/links.journal`, `generated/<year>/payroll.journal` |
+| Requires | fastapi, uvicorn (in .venv) |
+| Default port | 8100 |
+
+Tabs:
+- **Dashboard** — net worth + sparklines, quick entry, recent transactions
+- **Pairs** — link-mode entry with 14 expressions
+- **Manage** — assets, liabilities, equity, income, expenses, payroll, recurring, contracts, contacts, commodities
+- **Charts** — net worth, P&L, revenue, expenses, cash flow, commodity prices
+- **Reports** — balance sheet, income statement, cash flow, register
+- **Codes** — 14-pair reference table
+
+API endpoints:
+- `GET /api/status` — entity, currency, date
+- `GET /api/pairs` — 14 pair definitions
+- `GET /api/accounts?expr=` — account list with leaf display
+- `POST /api/entry` — write journal entry
+- `GET /api/worth` — net worth breakdown
+- `GET /api/recent?limit=` — recent transactions (grouped)
+- `GET /api/entities` — list entities
+- `POST /api/switch?slug=` — change active entity
+- `GET /api/report?cmd=&period=` — hledger report passthrough
+- `GET /api/assets` — asset YAML data
+- `GET /api/liabilities` — liability YAML data
+- `GET /api/contacts` — contact YAML data
+- `GET /api/contracts` — contract YAML data
+- `GET /api/recurring` — recurring YAML data
+- `GET /api/expenses?period=` — expense balances
+- `GET /api/equity?period=` — equity balances
+- `GET /api/income?period=` — income balances
+- `GET /api/tax` — tax account balances
+- `GET /api/commodities` — commodity list with latest prices
+- `GET /api/payroll` — employees, YTD totals, recent runs
+- `POST /api/payroll/run` — record a pay run
+- `GET /api/chart/networth` — monthly net worth time series
+- `GET /api/chart/profitloss` — monthly P&L time series
+- `GET /api/chart/revenue` — monthly revenue breakdown
+- `GET /api/chart/expenses` — monthly expense breakdown
+- `GET /api/chart/cashflow` — monthly cash balances
+- `GET /api/chart/prices` — commodity price history
+- `GET /api/pairs-ref` — full 14-pair reference data
+- `GET /api/status-items` — pending items and alerts

@@ -8,24 +8,24 @@ from pathlib import Path
 from lib.helpers import BASE_DIR, ensure_dir, load_config
 
 
-# ─── Directory accessors (multi-company aware) ───────────────────────────────
+# ─── Directory accessors (multi-entity aware) ────────────────────────────────
 
 def get_generated_dir():
-    """Return the generated/ directory for the active company."""
-    from lib.helpers import get_company_dir
-    return get_company_dir() / 'generated'
+    """Return the generated/ directory for the active entity."""
+    from lib.helpers import get_entity_dir
+    return get_entity_dir() / 'generated'
 
 
 def get_journal_dir():
-    """Return the journal/ directory for the active company."""
-    from lib.helpers import get_company_dir
-    return get_company_dir() / 'journal'
+    """Return the journal/ directory for the active entity."""
+    from lib.helpers import get_entity_dir
+    return get_entity_dir() / 'journal'
 
 
 def get_include_dir():
-    """Return the include/ directory for the active company."""
-    from lib.helpers import get_company_dir
-    return get_company_dir() / 'include'
+    """Return the include/ directory for the active entity."""
+    from lib.helpers import get_entity_dir
+    return get_entity_dir() / 'include'
 
 
 # ─── Tag management ──────────────────────────────────────────────────────────
@@ -223,6 +223,14 @@ def update_company_journal():
         "\n",
         "include accounts.journal\n",
     ]
+
+    # Include prices.journal if it exists
+    prices_file = include_dir / "prices.journal"
+    if prices_file.exists():
+        lines.append("include prices.journal\n")
+
+    lines.append("\n")
+
     for year in years:
         lines.append(f"include {year}.journal\n")
 

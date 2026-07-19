@@ -39,15 +39,18 @@ Shows:
 
 def _show_include_chain():
     """Check include chain health."""
+    entity_journal = get_include_dir() / "entity.journal"
     company_journal = get_include_dir() / "company.journal"
 
     print("  Include Chain")
     print("  " + "─" * 50)
 
-    if company_journal.exists():
+    if entity_journal.exists():
+        print(f"  ✓ include/entity.journal exists")
+    elif company_journal.exists():
         print(f"  ✓ include/company.journal exists")
     else:
-        print(f"  ✗ include/company.journal MISSING")
+        print(f"  ✗ include/entity.journal MISSING")
         print(f"    Run 'pair generate' to create it.")
         print()
         return

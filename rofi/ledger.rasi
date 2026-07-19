@@ -16,12 +16,13 @@ configuration {
 }
 
 window {
-    width: 95%;
+    width: 90%;
     location: center;
     anchor: center;
     border: 2px;
     border-color: @border-color;
-    padding: 20px;
+    padding: 12px;
+    height: 80%;
 }
 
 mainbox {
@@ -44,7 +45,7 @@ entry {
 }
 
 message {
-    padding: 12px;
+    padding: 8px 12px;
     background-color: #0d0d0d;
 }
 
@@ -53,9 +54,10 @@ textbox {
 }
 
 listview {
-    lines: 14;
+    lines: 8;
     spacing: 0;
-    padding: 8px;
+    padding: 4px 8px;
+    fixed-height: true;
 }
 
 element {
