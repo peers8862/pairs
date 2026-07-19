@@ -195,6 +195,19 @@ def create_app():
         payment_method: str = 'cash'
         linked_liability: str = ''
 
+    class LiabilityRequest(BaseModel):
+        name: str
+        slug: str = ''
+        type: str = 'loan'
+        principal: float = 0
+        interest_rate: float = 0
+        term_months: int = 12
+        start_date: str = ''
+        payment_schedule: str = 'monthly'
+        payment_amount: float = 0
+        lender: str = ''
+        description: str = ''
+
     # ─── Routes ──────────────────────────────────────────────────────────
 
     @app.get("/")
@@ -249,6 +262,36 @@ def create_app():
             return {'all': result, 'first': first, 'second': second}
 
         return {'all': result, 'first': result, 'second': result}
+
+    class AccountAddRequest(BaseModel):
+        parent: str = ''
+        name: str = ''
+
+    @app.post("/api/account/add")
+    async def add_account(req: AccountAddRequest):
+        """Append an account declaration to include/accounts.journal."""
+        import re
+        parent = (req.parent or '').strip().strip(':')
+        name = (req.name or '').strip().strip(':')
+        if not parent or not name:
+            raise HTTPException(status_code=400, detail="Parent and name are required")
+        full = f"{parent}:{name}"
+        # Allow letters, digits, spaces, &, -, and colons only
+        if not re.fullmatch(r'[A-Za-z0-9 &:\-]+', full):
+            raise HTTPException(status_code=400, detail="Invalid account name")
+
+        type_map = {'Assets': 'A', 'Liabilities': 'L', 'Equity': 'E',
+                    'Income': 'R', 'Revenue': 'R', 'Expenses': 'X'}
+        acct_type = type_map.get(full.split(':')[0], 'A')
+
+        accounts_file = get_entity_dir() / 'include' / 'accounts.journal'
+        existing = accounts_file.read_text() if accounts_file.exists() else ''
+        if re.search(rf'^account {re.escape(full)}\b', existing, re.M):
+            return {'status': 'exists', 'full': full, 'message': f"'{full}' already declared"}
+
+        from lib.journal import append_journal
+        append_journal(accounts_file, f"account {full}  ; type:{acct_type}\n")
+        return {'status': 'ok', 'full': full, 'type': acct_type, 'message': f"Added {full}"}
 
     @app.post("/api/entry")
     async def create_entry(req: EntryRequest):
@@ -363,23 +406,29 @@ def create_app():
             return {'currency': currency, 'assets': 0, 'liabilities': 0, 'net_worth': 0, 'accounts': [], 'error': str(e)}
 
     @app.get("/api/recent")
-    async def recent(limit: int = 20):
-        """Recent journal entries, grouped by transaction."""
+    async def recent(limit: int = 100, offset: int = 0, query: str = ''):
+        """Journal register entries with optional search filter."""
         journal = _get_journal_path()
         if not journal:
             raise HTTPException(status_code=404, detail="No journal found")
 
         try:
-            result = subprocess.run(
-                ['hledger', '-f', journal, 'register', '--output-format', 'csv'],
-                capture_output=True, text=True
-            )
+            cmd = ['hledger', '-f', journal, 'register', '--output-format', 'csv']
+            if query:
+                # Bare terms match account names in hledger.
+                # To also match descriptions, we pass both as an OR query.
+                cmd += [query, 'or', 'desc:' + query]
+            result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
-                return {'entries': []}
+                # If OR query fails (older hledger), fall back to simple account match
+                cmd2 = ['hledger', '-f', journal, 'register', '--output-format', 'csv', query]
+                result = subprocess.run(cmd2, capture_output=True, text=True)
+                if result.returncode != 0:
+                    return {'entries': [], 'total': 0}
 
             lines = result.stdout.strip().split('\n')
             if len(lines) <= 1:
-                return {'entries': []}
+                return {'entries': [], 'total': 0}
 
             # CSV header: "txnidx","date","code","description","account","amount","total"
             # Group by txnidx
@@ -402,11 +451,14 @@ def create_app():
                         'amount': parts[5],
                     })
 
-            # Return last N transactions
-            entries = [txns[idx] for idx in txn_order[-limit:]]
-            return {'entries': entries}
+            # Return in reverse chronological order with pagination
+            txn_order.reverse()
+            total = len(txn_order)
+            page = txn_order[offset:offset + limit]
+            entries = [txns[idx] for idx in page]
+            return {'entries': entries, 'total': total, 'offset': offset, 'limit': limit}
         except Exception as e:
-            return {'entries': [], 'error': str(e)}
+            return {'entries': [], 'total': 0, 'error': str(e)}
 
     @app.get("/api/entities")
     async def entities():
@@ -492,7 +544,10 @@ def create_app():
 
         # Slugify
         slug = req.slug.strip() if req.slug else ''
-        if not slug:
+        if slug:
+            if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', slug):
+                raise HTTPException(status_code=400, detail="Invalid slug")
+        else:
             slug = re.sub(r'[^a-z0-9]+', '-', req.name.lower().strip()).strip('-') or 'untitled'
 
         # Category → accounts mapping
@@ -567,7 +622,10 @@ def create_app():
     @app.delete("/api/asset/{slug}")
     async def delete_asset(slug: str):
         """Delete an asset."""
+        import re
         from lib.yaml_store import delete_entity, entity_exists
+        if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', slug):
+            raise HTTPException(status_code=400, detail="Invalid slug")
         if not entity_exists('assets', slug):
             raise HTTPException(status_code=404, detail=f"Asset '{slug}' not found")
         delete_entity('assets', slug)
@@ -577,6 +635,103 @@ def create_app():
     async def liabilities():
         """List all liabilities from YAML."""
         return {'items': _load_yaml_dir('liabilities')}
+
+    @app.post("/api/liability")
+    async def create_or_update_liability(req: LiabilityRequest):
+        """Create or update a liability YAML file (+ creation entry on first save).
+
+        Reuses modules.liability for payment maths and account/journal logic so the
+        web path stays identical to `pair liability add`.
+        """
+        import re
+        from decimal import Decimal
+        from lib.yaml_store import save_entity, entity_exists, load_entity
+        from lib.helpers import money
+        from modules import liability as liab_mod
+
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+
+        slug = req.slug.strip() if req.slug else ''
+        if slug:
+            if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', slug):
+                raise HTTPException(status_code=400, detail="Invalid slug")
+        else:
+            slug = re.sub(r'[^a-z0-9]+', '-', req.name.lower().strip()).strip('-') or 'untitled'
+
+        principal = float(req.principal)
+        if principal <= 0:
+            raise HTTPException(status_code=400, detail="Principal must be greater than zero")
+
+        liab_type = req.type if req.type in liab_mod.TYPES else 'loan'
+        schedule = req.payment_schedule if req.payment_schedule in liab_mod.SCHEDULES else 'monthly'
+        term_months = int(req.term_months) if req.term_months else 12
+        start_date = req.start_date or date.today().isoformat()
+        rate = Decimal(str(req.interest_rate or 0))
+
+        # Payment: an explicit client value wins; otherwise compute like cmd_add
+        if req.payment_amount and req.payment_amount > 0:
+            payment_amount = float(req.payment_amount)
+        elif rate > 0:
+            payment_amount = float(liab_mod._calculate_payment(
+                Decimal(str(principal)), rate, term_months, schedule))
+        else:
+            periods = liab_mod._periods_count(term_months, schedule)
+            payment_amount = float(money(Decimal(str(principal)) / periods)) if periods else 0.0
+
+        # Accounts (mirror liability.cmd_add naming)
+        accounts = liab_mod.DEFAULT_ACCOUNTS.get(liab_type, liab_mod.DEFAULT_ACCOUNTS['loan']).copy()
+        if liab_type in ('loan', 'lease'):
+            accounts['liability'] = f"Liabilities:Long-Term:{req.name}"
+        else:
+            accounts['liability'] = f"Liabilities:Current:{req.name}"
+        accounts['payment_source'] = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
+
+        is_new = not entity_exists('liabilities', slug)
+        existing = load_entity('liabilities', slug) or {} if not is_new else {}
+
+        liab_data = {
+            'name': req.name,
+            'slug': slug,
+            'type': liab_type,
+            'principal': principal,
+            'interest_rate': float(req.interest_rate or 0),
+            'term_months': term_months,
+            'start_date': start_date,
+            'payment_schedule': schedule,
+            'payment_amount': payment_amount,
+            'currency': currency,
+            'accounts': accounts,
+        }
+        if req.lender:
+            liab_data['lender'] = req.lender.strip()
+        if req.description:
+            liab_data['notes'] = req.description
+        # Preserve any recorded payments across edits
+        if existing.get('payments'):
+            liab_data['payments'] = existing['payments']
+
+        save_entity('liabilities', slug, liab_data)
+
+        # Only write the creation entry for a brand-new liability (avoid duplicates on edit)
+        if is_new:
+            ensure_year_structure(int(start_date[:4]))
+            liab_mod._write_creation_entry(liab_data, config)
+
+        return {'status': 'ok', 'slug': slug, 'payment_amount': round(payment_amount, 2),
+                'message': f"Liability '{req.name}' saved"}
+
+    @app.delete("/api/liability/{slug}")
+    async def delete_liability(slug: str):
+        """Delete a liability YAML file (journal entries are left intact)."""
+        import re
+        from lib.yaml_store import delete_entity, entity_exists
+        if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', slug):
+            raise HTTPException(status_code=400, detail="Invalid slug")
+        if not entity_exists('liabilities', slug):
+            raise HTTPException(status_code=404, detail=f"Liability '{slug}' not found")
+        delete_entity('liabilities', slug)
+        return {'status': 'ok', 'message': f"Liability '{slug}' deleted"}
 
     @app.get("/api/contacts")
     async def contacts():
@@ -1120,7 +1275,7 @@ def create_app():
         return {'labels': labels, 'datasets': datasets}
 
     @app.get("/api/chart/networth")
-    async def chart_networth():
+    async def chart_networth(period: str = '', value: str = ''):
         """Monthly net worth (assets + liabilities historical)."""
         journal = _get_journal_path()
         if not journal:
@@ -1128,11 +1283,13 @@ def create_app():
         config = load_config()
         currency = config.get('pair', {}).get('currency', 'CAD')
 
-        result = subprocess.run(
-            ['hledger', '-f', journal, 'bal', 'assets', 'liabilities',
-             '--historical', '-M', '--output-format', 'csv', '--row-total', '--no-elide'],
-            capture_output=True, text=True
-        )
+        cmd = ['hledger', '-f', journal, 'bal', 'assets', 'liabilities',
+             '--historical', '-M', '--output-format', 'csv', '--row-total', '--no-elide']
+        if value == 'market':
+            cmd += ['-V']
+        if period:
+            cmd += ['-p', period]
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             return {'labels': [], 'datasets': [], 'error': result.stderr}
 
@@ -1209,7 +1366,7 @@ def create_app():
         return {**parsed, 'currency': currency}
 
     @app.get("/api/chart/cashflow")
-    async def chart_cashflow():
+    async def chart_cashflow(value: str = ''):
         """Monthly cash balance (chequing + savings historical)."""
         journal = _get_journal_path()
         if not journal:
@@ -1217,11 +1374,11 @@ def create_app():
         config = load_config()
         currency = config.get('pair', {}).get('currency', 'CAD')
 
-        result = subprocess.run(
-            ['hledger', '-f', journal, 'bal', 'assets:current',
-             '--historical', '-M', '--output-format', 'csv', '--no-elide'],
-            capture_output=True, text=True
-        )
+        cmd = ['hledger', '-f', journal, 'bal', 'assets:current',
+               '--historical', '-M', '--output-format', 'csv', '--no-elide']
+        if value == 'market':
+            cmd += ['-V']
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             return {'labels': [], 'datasets': []}
 
@@ -1270,7 +1427,7 @@ def create_app():
         return {'commodities': commodities}
 
     @app.get("/api/chart/profitloss")
-    async def chart_profitloss():
+    async def chart_profitloss(period: str = ''):
         """Monthly profit/loss (revenue - expenses)."""
         journal = _get_journal_path()
         if not journal:
@@ -1279,15 +1436,13 @@ def create_app():
         currency = config.get('pair', {}).get('currency', 'CAD')
 
         # Get income
-        r_inc = subprocess.run(
-            ['hledger', '-f', journal, 'bal', 'income', '-M', '--output-format', 'csv', '--no-elide', '--depth', '1'],
-            capture_output=True, text=True
-        )
-        # Get expenses
-        r_exp = subprocess.run(
-            ['hledger', '-f', journal, 'bal', 'expenses', '-M', '--output-format', 'csv', '--no-elide', '--depth', '1'],
-            capture_output=True, text=True
-        )
+        cmd_inc = ['hledger', '-f', journal, 'bal', 'income', '-M', '--output-format', 'csv', '--no-elide', '--depth', '1']
+        cmd_exp = ['hledger', '-f', journal, 'bal', 'expenses', '-M', '--output-format', 'csv', '--no-elide', '--depth', '1']
+        if period:
+            cmd_inc += ['-p', period]
+            cmd_exp += ['-p', period]
+        r_inc = subprocess.run(cmd_inc, capture_output=True, text=True)
+        r_exp = subprocess.run(cmd_exp, capture_output=True, text=True)
 
         inc_parsed = _parse_hledger_monthly_csv(r_inc.stdout, currency) if r_inc.returncode == 0 else {'labels': [], 'datasets': []}
         exp_parsed = _parse_hledger_monthly_csv(r_exp.stdout, currency) if r_exp.returncode == 0 else {'labels': [], 'datasets': []}
@@ -1319,6 +1474,156 @@ def create_app():
             ],
             'currency': currency,
         }
+
+    @app.get("/api/chart/assets")
+    async def chart_assets(value: str = ''):
+        """Monthly asset balances over time (stacked area), by top-level asset account.
+
+        Replaces hledger-plot's 'assets monthly' preset.
+        """
+        journal = _get_journal_path()
+        if not journal:
+            return {'labels': [], 'datasets': []}
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+
+        cmd = ['hledger', '-f', journal, 'bal', 'type:a', '--historical', '-M',
+               '--output-format', 'csv', '--no-elide', '--depth', '2']
+        if value == 'market':
+            cmd += ['-V']
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return {'labels': [], 'datasets': [], 'error': result.stderr}
+        parsed = _parse_hledger_monthly_csv(result.stdout, currency)
+        for ds in parsed['datasets']:
+            ds['name'] = ds['name'].split(':')[-1]
+        return {**parsed, 'currency': currency}
+
+    @app.get("/api/chart/query")
+    async def chart_query(q: str = '', mode: str = 'line', value: str = ''):
+        """Generic monthly balance chart for an arbitrary hledger query.
+
+        Covers pair chart's bar/plot/vega — any account query, rendered monthly.
+        The query is tokenised and passed as hledger arguments (no shell).
+        """
+        import shlex
+        journal = _get_journal_path()
+        if not journal:
+            return {'labels': [], 'datasets': []}
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+
+        try:
+            query_args = shlex.split(q)
+        except ValueError:
+            query_args = q.split()
+
+        cmd = ['hledger', '-f', journal, 'bal'] + query_args + \
+              ['-M', '--output-format', 'csv', '--no-elide', '--depth', '3']
+        if value == 'market':
+            cmd += ['-V']
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return {'labels': [], 'datasets': [], 'error': result.stderr.strip() or 'Query failed'}
+
+        parsed = _parse_hledger_monthly_csv(result.stdout, currency)
+        # Income/liability/equity read as credits (negative) in hledger — flip so charts read naturally
+        for ds in parsed['datasets']:
+            nm = ds['name']
+            if nm.split(':')[0] in ('Income', 'Revenue', 'Liabilities', 'Equity'):
+                ds['data'] = [round(-v, 2) for v in ds['data']]
+            ds['name'] = nm.split(':')[-1]
+        return {**parsed, 'currency': currency}
+
+    def _period_totals(journal, query, currency, depth=2):
+        """Return [(leaf_name, abs_amount)] for a single-period balance query."""
+        cmd = ['hledger', '-f', journal, 'bal', query, '--depth', str(depth),
+               '-N', '--no-total', '--output-format', 'csv', '--no-elide']
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        out = []
+        if r.returncode != 0:
+            return out
+        lines = r.stdout.strip().split('\n')
+        for line in lines[1:]:
+            parts = [p.strip('"') for p in line.split('","')]
+            if len(parts) < 2:
+                continue
+            name = parts[0]
+            val = parts[-1].replace(currency, '').replace(',', '').strip()
+            try:
+                amt = float(val)
+            except ValueError:
+                continue
+            out.append((name.split(':')[-1], abs(round(amt, 2))))
+        return out
+
+    @app.get("/api/chart/sankey")
+    async def chart_sankey():
+        """Cash-flow sankey: revenue sources → Cash → expense categories (whole period).
+
+        Reproduces hledger-sankey's flow view natively in Chart.js.
+        """
+        journal = _get_journal_path()
+        if not journal:
+            return {'flows': []}
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+
+        income = _period_totals(journal, 'type:r', currency, depth=3)
+        expenses = _period_totals(journal, 'type:x', currency, depth=3)
+        income_names = {n for n, _ in income}
+
+        flows = []
+        for name, amt in income:
+            if amt > 0:
+                flows.append({'from': name, 'to': 'Cash', 'flow': amt})
+        for name, amt in expenses:
+            if amt <= 0:
+                continue
+            # Avoid a cycle if an expense leaf shares a name with an income leaf or the hub
+            to_name = name + ' ' if (name in income_names or name == 'Cash') else name
+            flows.append({'from': 'Cash', 'to': to_name, 'flow': amt})
+        return {'flows': flows, 'currency': currency}
+
+    @app.get("/api/chart/treemap")
+    async def chart_treemap():
+        """Expense hierarchy treemap (leaf categories, whole period).
+
+        Reproduces the 'treemap' chart as a real treemap via chartjs-chart-treemap.
+        """
+        journal = _get_journal_path()
+        if not journal:
+            return {'tree': []}
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+
+        cmd = ['hledger', '-f', journal, 'bal', 'type:x', '--depth', '3',
+               '-N', '--no-total', '--output-format', 'csv', '--no-elide', '--layout', 'bare']
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            return {'tree': [], 'error': r.stderr.strip()}
+
+        batch_abbr = {'Operating': 'OP', 'Non-Operating': 'NO'}
+        tree = []
+        lines = r.stdout.strip().split('\n')
+        for line in lines[1:]:
+            parts = [p.strip('"') for p in line.split('","')]
+            if len(parts) < 2:
+                continue
+            segs = parts[0].replace('Expenses:', '').split(':')
+            batch = segs[0]
+            leaf = segs[-1]
+            abbr = batch_abbr.get(batch, batch[:2].upper())
+            val = parts[-1].replace(currency, '').replace(',', '').strip()
+            try:
+                amt = abs(float(val))
+            except ValueError:
+                continue
+            if amt > 0:
+                display = f"{abbr} · {leaf}" if leaf != batch else abbr
+                tree.append({'name': display, 'value': round(amt, 2), 'group': abbr})
+        tree.sort(key=lambda x: x['value'], reverse=True)
+        return {'tree': tree, 'currency': currency}
 
     # ─── Helpers ─────────────────────────────────────────────────────────
 
