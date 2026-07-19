@@ -513,7 +513,10 @@ def create_app():
         if period:
             hledger_cmd += ['-p', period]
         if args:
-            hledger_cmd += args.split()
+            arg_list = args.split()
+            if any(a.startswith('-') for a in arg_list):
+                raise HTTPException(status_code=400, detail="Report args cannot start with '-'")
+            hledger_cmd += arg_list
 
         try:
             result = subprocess.run(hledger_cmd, capture_output=True, text=True)
@@ -1517,6 +1520,9 @@ def create_app():
             query_args = shlex.split(q)
         except ValueError:
             query_args = q.split()
+        # Block hledger flag injection (e.g. -f /other.journal, -o /path); query terms never start with '-'
+        if any(a.startswith('-') for a in query_args):
+            raise HTTPException(status_code=400, detail="Query terms cannot start with '-'")
 
         cmd = ['hledger', '-f', journal, 'bal'] + query_args + \
               ['-M', '--output-format', 'csv', '--no-elide', '--depth', '3']
