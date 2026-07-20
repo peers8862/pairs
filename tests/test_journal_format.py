@@ -1,3 +1,8 @@
+import shutil
+import subprocess
+
+import pytest
+
 from lib.journal import format_quantity, format_commodity_entry
 
 
@@ -64,3 +69,30 @@ def test_entry_ends_with_blank_line():
         [("Assets:Current:Business Chequing", "CAD", -510.14)],
     )
     assert entry.endswith("\n\n")
+
+
+@pytest.mark.skipif(shutil.which("hledger") is None, reason="hledger not installed")
+def test_hledger_parses_generated_entries(tmp_path):
+    """Real hledger must accept our lot syntax, not just our own assertions."""
+    buy = format_commodity_entry(
+        "2026-07-20", "Buy TSLA | 10 sh",
+        ("Assets:Investments:Taxable:TSLA", 10, "TSLA", "CAD", 5101.44),
+        [("Assets:Current:Business Chequing", "CAD", -5101.44)],
+        {"pair": "1011"},
+    )
+    sell = format_commodity_entry(
+        "2026-07-25", "Sell TSLA | 6 sh",
+        ("Assets:Investments:Taxable:TSLA", -6, "TSLA", "CAD", 3060.86),
+        [("Assets:Current:Business Chequing", "CAD", 3510.05),
+         ("Income:Non-Operating:Capital Gains", "CAD", -449.19)],
+        {"pair": "0110"},
+    )
+    journal = tmp_path / "test.journal"
+    journal.write_text(buy + sell)
+
+    result = subprocess.run(
+        ["hledger", "-f", str(journal), "print"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "TSLA" in result.stdout
