@@ -5,6 +5,9 @@ non-registered accounts. FIFO and specific-lot identification are US concepts
 and are not permissible here.
 """
 
+import re
+import subprocess
+
 
 class InsufficientHoldingError(Exception):
     """Raised when a disposal exceeds the quantity held."""
@@ -51,3 +54,57 @@ def compute_acb_from_events(events):
 
     average = (cost / qty) if qty else 0.0
     return qty, cost, average
+
+
+TAX_ACCOUNTS = ('taxable', 'corporate', 'tfsa', 'rrsp')
+REGISTERED_ACCOUNTS = ('tfsa', 'rrsp')
+
+_ACCOUNT_LABELS = {
+    'taxable': 'Taxable',
+    'corporate': 'Corporate',
+    'tfsa': 'TFSA',
+    'rrsp': 'RRSP',
+}
+
+# Matches: "<qty> <SYMBOL> @@ <CUR> <total>" within a posting line.
+_POSTING_RE = re.compile(
+    r'(-?[\d.]+)\s+(\S+)\s+@@\s+[A-Z]{3}\s+(-?[\d.]+)'
+)
+
+
+def holding_account(tax_account, symbol):
+    """Return the account path for a holding."""
+    label = _ACCOUNT_LABELS[tax_account.lower()]
+    return f"Assets:Investments:{label}:{symbol}"
+
+
+def parse_hledger_events(output, symbol):
+    """Extract chronological buy/sell events for one symbol from hledger print.
+
+    Returns a list of (kind, quantity, total_cost) tuples suitable for
+    compute_acb_from_events.
+    """
+    events = []
+    for line in output.splitlines():
+        match = _POSTING_RE.search(line)
+        if not match:
+            continue
+        qty_str, line_symbol, total_str = match.groups()
+        if line_symbol != symbol:
+            continue
+        qty = float(qty_str)
+        total = abs(float(total_str))
+        events.append(('sell' if qty < 0 else 'buy', abs(qty), total))
+    return events
+
+
+def read_holding_events(journal_path, tax_account, symbol):
+    """Query hledger for a holding's history and return replay events."""
+    account = holding_account(tax_account, symbol)
+    result = subprocess.run(
+        ['hledger', '-f', str(journal_path), 'print', account],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"hledger failed: {result.stderr.strip()}")
+    return parse_hledger_events(result.stdout, symbol)

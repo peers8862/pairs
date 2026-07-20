@@ -104,3 +104,53 @@ def test_sell_all_fractional_does_not_falsely_raise():
         ("sell", 0.3, 0),
     ])
     assert qty == 0
+
+
+from modules.investment import (
+    holding_account, parse_hledger_events, TAX_ACCOUNTS, REGISTERED_ACCOUNTS,
+)
+
+
+def test_holding_account_path():
+    assert holding_account("taxable", "TSLA") == "Assets:Investments:Taxable:TSLA"
+    assert holding_account("tfsa", "BTC") == "Assets:Investments:TFSA:BTC"
+    assert holding_account("rrsp", "GE") == "Assets:Investments:RRSP:GE"
+    assert holding_account("corporate", "SHOP.TO") == "Assets:Investments:Corporate:SHOP.TO"
+
+
+def test_registered_accounts_are_a_subset_of_tax_accounts():
+    assert set(REGISTERED_ACCOUNTS) < set(TAX_ACCOUNTS)
+    assert "tfsa" in REGISTERED_ACCOUNTS
+    assert "rrsp" in REGISTERED_ACCOUNTS
+    assert "taxable" not in REGISTERED_ACCOUNTS
+
+
+def test_parse_buy_and_sell_from_hledger_print():
+    output = """2026-07-20 * Buy TSLA | 10 sh
+    Assets:Investments:Taxable:TSLA      10 TSLA @@ CAD 5101.44
+    Assets:Current:Business Chequing        CAD -5101.44
+
+2026-07-25 * Sell TSLA | 6 sh
+    Assets:Investments:Taxable:TSLA      -6 TSLA @@ CAD 3060.86
+    Assets:Current:Business Chequing         CAD 3510.05
+"""
+    events = parse_hledger_events(output, "TSLA")
+    assert events == [("buy", 10.0, 5101.44), ("sell", 6.0, 3060.86)]
+
+
+def test_parse_ignores_other_symbols():
+    output = """2026-07-20 * Buy BTC
+    Assets:Investments:TFSA:BTC      0.5 BTC @@ CAD 45000.00
+"""
+    assert parse_hledger_events(output, "TSLA") == []
+
+
+def test_parse_handles_fractional_quantities():
+    output = """2026-07-20 * Buy BTC
+    Assets:Investments:TFSA:BTC      0.00431 BTC @@ CAD 396.50
+"""
+    assert parse_hledger_events(output, "BTC") == [("buy", 0.00431, 396.50)]
+
+
+def test_parse_empty_output():
+    assert parse_hledger_events("", "TSLA") == []
