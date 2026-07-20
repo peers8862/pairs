@@ -215,6 +215,11 @@ def create_app():
         date: str = ''
         description: str = ''
 
+    class TaxRemitRequest(BaseModel):
+        amount: float
+        date: str = ''
+        period: str = ''
+
     # ─── Routes ──────────────────────────────────────────────────────────
 
     @app.get("/")
@@ -1316,6 +1321,66 @@ def create_app():
             return {'items': items, 'currency': currency}
         except Exception as e:
             return {'items': [], 'error': str(e)}
+
+    @app.get("/api/tax/summary")
+    async def tax_summary(period: str = ''):
+        """HST collected vs paid vs net owing for a period."""
+        journal = _get_journal_path()
+        if not journal:
+            raise HTTPException(status_code=404, detail="No journal found")
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+
+        def bal(acct):
+            cmd = ['hledger', '-f', journal, 'bal', acct, '-N', '--no-total', '--output-format', 'csv']
+            if period:
+                cmd += ['-p', period]
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            total = 0.0
+            if r.returncode == 0:
+                for line in r.stdout.strip().split('\n')[1:]:
+                    parts = [p.strip('"') for p in line.split('","')]
+                    if len(parts) >= 2:
+                        v = parts[-1].replace(currency, '').replace(',', '').strip()
+                        try:
+                            total += float(v)
+                        except ValueError:
+                            pass
+            return total
+
+        collected = abs(bal('Liabilities:Current:HST Payable'))
+        paid = 0.0
+        for a in ('Assets:Current:HST Receivable', 'Expenses:HST Paid', 'Assets:Current:Input Tax Credits'):
+            paid += abs(bal(a))
+        return {'collected': round(collected, 2), 'paid': round(paid, 2),
+                'net_owing': round(collected - paid, 2), 'currency': currency, 'period': period}
+
+    @app.post("/api/tax/remit")
+    async def tax_remit(req: TaxRemitRequest):
+        """Record an HST remittance to CRA (pair 1000)."""
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+        bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
+        if req.amount <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be greater than zero")
+        d = req.date or date.today().isoformat()
+        amt = money(req.amount)
+        if req.period.strip():
+            period_desc = req.period.strip()
+        else:
+            today = date.today()
+            period_desc = f"{today.year}-Q{(today.month - 1) // 3 + 1}"
+        postings = [
+            ('Liabilities:Current:HST Payable', currency, float(amt)),
+            (bank, currency, float(-amt)),
+        ]
+        entry = format_entry(d, f"Tax remittance: HST {period_desc}", postings,
+                             {'pair': '1000', 'remittance': 'hst', 'period': period_desc})
+        year = d[:4]
+        ensure_year_structure(int(year))
+        append_journal(get_generated_dir() / year / "tax.journal", entry)
+        _ensure_year_include(year, "tax.journal")
+        return {'status': 'ok', 'message': f"Remittance recorded: {currency} {amt} ({period_desc})"}
 
     @app.get("/api/status-items")
     async def status_items():
