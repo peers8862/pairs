@@ -8,6 +8,8 @@ and are not permissible here.
 import re
 import subprocess
 
+from lib.journal import format_commodity_entry, format_quantity
+
 
 class InsufficientHoldingError(Exception):
     """Raised when a disposal exceeds the quantity held."""
@@ -111,3 +113,35 @@ def read_holding_events(journal_path, tax_account, symbol):
     if result.returncode != 0:
         raise RuntimeError(f"hledger failed: {result.stderr.strip()}")
     return parse_hledger_events(result.stdout, symbol)
+
+
+def build_buy_entry(date, symbol, qty, unit_price, quote_currency, fx, fee,
+                    tax_account, cash_account, entity_currency):
+    """Build the journal entry for a purchase.
+
+    Total cost is stated in entity currency using @@ syntax, so ACB is
+    denominated in CAD by construction and FX stays out of the basis.
+    Commission is folded into the total per CRA treatment.
+    """
+    if qty <= 0:
+        raise ValueError(f"Quantity must be positive, got {qty}")
+    if unit_price <= 0:
+        raise ValueError(f"Price must be positive, got {unit_price}")
+    if tax_account.lower() not in TAX_ACCOUNTS:
+        raise ValueError(
+            f"Invalid tax account '{tax_account}'. Valid: {', '.join(TAX_ACCOUNTS)}"
+        )
+
+    total = round(qty * unit_price * fx + fee, 2)
+
+    tags = {'pair': '1011', 'price': f"{unit_price:.2f}", 'fee': f"{fee:.2f}"}
+    if quote_currency != entity_currency:
+        tags['fx'] = f"{fx:g}"
+
+    description = f"Buy {symbol} | {format_quantity(qty)} units"
+    return format_commodity_entry(
+        date, description,
+        (holding_account(tax_account, symbol), qty, symbol, entity_currency, total),
+        [(cash_account, entity_currency, -total)],
+        tags,
+    )
