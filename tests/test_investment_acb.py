@@ -21,8 +21,8 @@ def test_two_buys_average():
 
 
 def test_sell_reduces_cost_proportionally_not_by_lot():
-    """This is ACB, not FIFO. A FIFO implementation gives 2290.92 remaining
-    cost here (oldest lot consumed first); ACB gives 3436.38."""
+    """This is ACB, not FIFO. A FIFO implementation would leave 3490.92
+    remaining cost here (only the oldest lot consumed); ACB leaves 3436.38."""
     qty, cost, avg = compute_acb_from_events([
         ("buy", 10, 3727.30),
         ("buy", 5, 2000.00),
@@ -80,3 +80,27 @@ def test_crypto_fractional_quantities():
     ])
     assert qty == pytest.approx(0.75)
     assert avg == pytest.approx(93333.333, abs=0.01)
+
+
+def test_full_disposal_of_fractional_position_is_exact_zero():
+    """Float dust must not survive a full disposal, or the average becomes
+    nonsensical and capital-gains reporting is corrupted."""
+    qty, cost, avg = compute_acb_from_events([
+        ("buy", 0.1, 100.0),
+        ("buy", 0.2, 200.0),
+        ("sell", 0.3, 0),
+    ])
+    assert qty == 0
+    assert cost == pytest.approx(0.0)
+    assert avg == 0.0
+
+
+def test_sell_all_fractional_does_not_falsely_raise():
+    """Selling exactly the held fractional amount must not trip the
+    insufficient-holding guard on float residue."""
+    qty, cost, avg = compute_acb_from_events([
+        ("buy", 0.1, 100.0),
+        ("buy", 0.2, 200.0),
+        ("sell", 0.3, 0),
+    ])
+    assert qty == 0

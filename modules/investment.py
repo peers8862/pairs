@@ -10,6 +10,9 @@ class InsufficientHoldingError(Exception):
     """Raised when a disposal exceeds the quantity held."""
 
 
+_EPSILON = 1e-9
+
+
 def compute_acb_from_events(events):
     """Replay buy/sell events and return (quantity, cost, average).
 
@@ -32,7 +35,7 @@ def compute_acb_from_events(events):
             qty += event_qty
             cost += total_cost
         elif kind == 'sell':
-            if event_qty > qty:
+            if event_qty > qty + _EPSILON:
                 raise InsufficientHoldingError(
                     f"Cannot sell {event_qty}; only {qty} held"
                 )
@@ -41,6 +44,10 @@ def compute_acb_from_events(events):
             basis = event_qty * (cost / qty) if qty else 0.0
             cost -= basis
             qty -= event_qty
+            # Snap float dust from a full disposal to exact zero.
+            if abs(qty) < _EPSILON:
+                qty = 0
+                cost = 0.0
 
     average = (cost / qty) if qty else 0.0
     return qty, cost, average
