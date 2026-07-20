@@ -373,6 +373,28 @@
             <input type="text" id="report-period" placeholder="period (e.g. 2026)">
         </div>
         <pre class="report-output" id="report-output">Select a report above...</pre>
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.85rem 1rem;margin-top:1rem;">
+            <div style="color:var(--accent);font-size:0.85rem;margin-bottom:0.6rem;">Export</div>
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <select id="exp-format" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.82rem;">
+                    <option value="csv">CSV (balances)</option>
+                    <option value="json">JSON (transactions)</option>
+                    <option value="beancount">Beancount (transactions)</option>
+                </select>
+                <select id="exp-scope" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.82rem;">
+                    <option value="all">Everything</option>
+                    <option value="assets">Assets</option>
+                    <option value="liabilities">Liabilities</option>
+                    <option value="equity">Equity</option>
+                    <option value="income">Income</option>
+                    <option value="expenses">Expenses</option>
+                </select>
+                <input type="text" id="exp-query" placeholder="extra query (optional)" style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.82rem;">
+                <input type="text" id="exp-period" placeholder="period (optional)" style="width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.82rem;">
+                <button class="btn" onclick="downloadExport()" style="font-size:0.82rem;padding:0.4rem 0.85rem;">Download</button>
+            </div>
+            <div style="color:var(--fg-dim);font-size:0.72rem;margin-top:0.5rem;">"Everything" gives a total export; pick a scope or add a query for a granular subset. (PostgreSQL export: <code>pair export psql</code>.)</div>
+        </div>
     </div>
 
     <!-- Data View (hidden from nav, used internally by dashboard manage) -->
@@ -3541,6 +3563,22 @@
                 showToast('Error: ' + (data.detail || 'Failed'), true);
             }
         } catch (e) { showToast('Network error: ' + e.message, true); }
+    }
+
+    // ─── Export ─────────────────────────────────────────────────────────────
+    function downloadExport() {
+        const format = document.getElementById('exp-format').value;
+        const scope = document.getElementById('exp-scope').value;
+        const query = document.getElementById('exp-query').value.trim();
+        const period = document.getElementById('exp-period').value.trim();
+        const params = new URLSearchParams({ format, scope });
+        if (query) params.set('query', query);
+        if (period) params.set('period', period);
+        // Navigating to the endpoint triggers the file download (Content-Disposition: attachment)
+        const a = document.createElement('a');
+        a.href = '/api/export?' + params.toString();
+        document.body.appendChild(a); a.click(); a.remove();
+        showToast('Preparing ' + format.toUpperCase() + ' export…');
     }
 
     // ─── Entity Settings + Divisions ────────────────────────────────────────
