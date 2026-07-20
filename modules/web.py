@@ -18,7 +18,7 @@ sys.path.insert(0, str(BASE_DIR))
 from lib.helpers import (
     load_config, money, parse_global_flags, get_active_entity, get_entity_dir
 )
-from lib.ui import get_entity_journal, get_entity_name, require_entity
+from lib.ui import get_entity_journal, get_entity_name, get_entity_currency, require_entity
 from lib.journal import (
     format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
@@ -232,7 +232,18 @@ def create_app():
         fetch_pair: str = ''
         currency: str = ''
         type: str = ''
+        sector: str = ''
+        geography: str = ''
+        strategy: str = ''
+        risk: str = ''
+        tax_account: str = ''
         tags: list = []
+
+    class FetchRequest(BaseModel):
+        symbol: str = ''
+        days: int = 7
+        tag: str = ''
+        type: str = ''
 
     # ─── Routes ──────────────────────────────────────────────────────────
 
@@ -1002,16 +1013,13 @@ def create_app():
             commodities.append(entry)
 
         entry['symbol'] = symbol
-        if req.name.strip():
-            entry['name'] = req.name.strip()
-        if req.source.strip():
-            entry['source'] = req.source.strip()
-        if req.fetch_pair.strip():
-            entry['fetch_pair'] = req.fetch_pair.strip()
-        if req.currency.strip():
-            entry['currency'] = req.currency.strip()
-        if req.type.strip():
-            entry['type'] = req.type.strip()
+        # Only overwrite fields the caller actually filled in, so metadata set
+        # from the CLI (sector, risk, ...) survives an edit from the web form.
+        for field in ('name', 'source', 'fetch_pair', 'currency', 'type',
+                      'sector', 'geography', 'strategy', 'risk', 'tax_account'):
+            value = getattr(req, field, '').strip()
+            if value:
+                entry[field] = value
         tags = [t.strip() for t in req.tags if isinstance(t, str) and t.strip()]
         if tags:
             entry['tags'] = tags
@@ -1037,12 +1045,77 @@ def create_app():
         save_config(config)
         return {'status': 'ok', 'message': f"Removed {symbol}"}
 
+    # Yahoo's search endpoint returns an empty `currency` for every quote, so
+    # infer it from the symbol suffix / exchange code instead.
+    EXCHANGE_CURRENCY = {
+        'TOR': 'CAD', 'NEO': 'CAD', 'VAN': 'CAD', 'CNQ': 'CAD',
+        'NMS': 'USD', 'NYQ': 'USD', 'NGM': 'USD', 'PCX': 'USD', 'ASE': 'USD',
+        'BTS': 'USD', 'NAS': 'USD', 'CCC': 'USD', 'CME': 'USD',
+        'LSE': 'GBP', 'GER': 'EUR', 'PAR': 'EUR', 'AMS': 'EUR', 'MIL': 'EUR',
+        'SAO': 'BRL', 'TYO': 'JPY', 'HKG': 'HKD', 'ASX': 'AUD',
+    }
+
+    def _infer_currency(result):
+        """Best-effort quote currency for a Yahoo search hit."""
+        if result.get('currency'):
+            return result['currency']
+        symbol = result.get('symbol', '')
+        # Crypto/FX pairs carry their quote currency in the symbol: BTC-CAD.
+        if '-' in symbol:
+            quote = symbol.rsplit('-', 1)[-1]
+            if len(quote) == 3 and quote.isalpha():
+                return quote.upper()
+        return EXCHANGE_CURRENCY.get(result.get('exchange', ''), '')
+
+    @app.get("/api/market/search")
+    async def market_search(q: str = ''):
+        """Search Yahoo Finance for symbols. Mirrors `pair market add QUERY`."""
+        from modules.market import _yahoo_search
+        query = q.strip()
+        if not query:
+            return {'results': [], 'currency': ''}
+
+        base_currency = get_entity_currency()
+        tracked = {c.get('symbol', '').lower()
+                   for c in (load_config().get('market', {}).get('commodities', []) or [])}
+
+        results = []
+        for r in _yahoo_search(query)[:10]:
+            symbol = r.get('symbol', '')
+            # Crypto arrives as BTC-CAD; the CLI stores BTC and fetches BTC-CAD.
+            # Suggest that split but let the user confirm it in the form.
+            store_symbol = symbol
+            if '-' in symbol and r.get('type') == 'cryptocurrency':
+                store_symbol = symbol.split('-')[0]
+            currency = _infer_currency(r)
+            results.append({
+                **r,
+                'currency': currency,
+                'store_symbol': store_symbol,
+                'fetch_pair': symbol,
+                'matches_currency': bool(currency) and currency == base_currency,
+                'tracked': store_symbol.lower() in tracked,
+            })
+
+        # Surface entity-currency matches first; Yahoo's own order breaks ties.
+        results.sort(key=lambda r: not r['matches_currency'])
+        return {'results': results, 'currency': base_currency}
+
     @app.post("/api/market/fetch")
-    async def market_fetch():
+    async def market_fetch(req: FetchRequest = FetchRequest()):
         """Trigger price fetching via the CLI (pricehist). Best-effort with a timeout."""
         pair_bin = BASE_DIR / 'pair'
+        cmd = [sys.executable, str(pair_bin), 'market', 'fetch']
+        if req.symbol.strip():
+            cmd += ['--symbol', req.symbol.strip()]
+        if req.tag.strip():
+            cmd += ['--tag', req.tag.strip()]
+        if req.type.strip():
+            cmd += ['--type', req.type.strip()]
+        days = req.days if 1 <= req.days <= 3650 else 7
+        cmd += ['--days', str(days)]
         try:
-            r = subprocess.run([sys.executable, str(pair_bin), 'market', 'fetch'],
+            r = subprocess.run(cmd,
                                capture_output=True, text=True, timeout=180,
                                stdin=subprocess.DEVNULL, cwd=str(BASE_DIR))
             out = (r.stdout or '') + (r.stderr or '')

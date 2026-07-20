@@ -180,6 +180,9 @@ def _find_commodity(identifier):
     return None, None
 
 
+FILTER_FLAGS = ('--tag', '--type', '--sector', '--geography')
+
+
 def _filter_commodities(commodities, args):
     """Filter commodities list by --tag, --type, --sector, etc from args."""
     filtered = commodities
@@ -679,6 +682,10 @@ def cmd_fetch(flags, args):
                 days = int(args[i + 1])
             except ValueError:
                 pass
+            i += 2
+        elif args[i] in FILTER_FLAGS and i + 1 < len(args):
+            # Applied below by _filter_commodities; skip past the value so it
+            # is not mistaken for a bare symbol argument.
             i += 2
         else:
             # Bare arg = symbol filter
