@@ -162,6 +162,42 @@ def format_quantity(value):
     return text if text and text != '-' else '0'
 
 
+def format_commodity_entry(date, description, commodity_posting, cash_postings, tags=None):
+    """Format an hledger entry containing one commodity posting.
+
+    Args:
+        date: str YYYY-MM-DD
+        description: str transaction description
+        commodity_posting: (account, quantity, symbol, total_currency, total_cost)
+            Emitted as `QTY SYMBOL @@ CUR TOTAL` — total-price syntax, so the
+            cost is stated in entity currency and FX stays out of the basis.
+        cash_postings: list of (account, currency, amount) tuples
+        tags: dict of tag key:value pairs (optional)
+
+    Returns:
+        str: formatted journal entry with trailing newline
+    """
+    tag_str = ""
+    if tags:
+        pairs = [f"{k}:{v}" for k, v in tags.items()]
+        tag_str = "  ; " + ", ".join(pairs)
+
+    lines = [f"{date} * {description}{tag_str}"]
+
+    account, quantity, symbol, total_currency, total_cost = commodity_posting
+    amount_str = f"{format_quantity(quantity)} {symbol} @@ {total_currency} {total_cost:.2f}"
+    padding = max(1, 52 - len(account))
+    lines.append(f"    {account}{' ' * padding}{amount_str}")
+
+    for acct, currency, amount in cash_postings:
+        amount_str = f"{currency} {amount:.2f}"
+        padding = max(1, 52 - len(acct))
+        lines.append(f"    {acct}{' ' * padding}{amount_str}")
+
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 # ─── Include chain management ────────────────────────────────────────────────
 
 def ensure_year_structure(year):
