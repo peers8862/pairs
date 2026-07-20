@@ -66,9 +66,12 @@ _ACCOUNT_LABELS = {
     'rrsp': 'RRSP',
 }
 
-# Matches: "<qty> <SYMBOL> @@ <CUR> <total>" within a posting line.
+# Matches: "<qty> <SYMBOL> @@ <CUR> <total>" within a posting line. hledger
+# double-quotes symbols containing non-letter characters (e.g. "SHOP.TO"),
+# so the symbol is matched with optional surrounding quotes that are not
+# captured in the group.
 _POSTING_RE = re.compile(
-    r'(-?[\d.]+)\s+(\S+)\s+@@\s+[A-Z]{3}\s+(-?[\d.]+)'
+    r'(-?[\d.]+)\s+"?([^"\s]+)"?\s+@@\s+[A-Z]{3}\s+(-?[\d.]+)'
 )
 
 

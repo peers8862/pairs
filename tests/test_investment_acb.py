@@ -154,3 +154,29 @@ def test_parse_handles_fractional_quantities():
 
 def test_parse_empty_output():
     assert parse_hledger_events("", "TSLA") == []
+
+
+def test_parse_quoted_symbol_with_dot():
+    """hledger quotes symbols containing dots (SHOP.TO). The quotes must be
+    stripped or the position is silently dropped."""
+    output = '''2026-07-20 * Buy SHOP.TO
+    Assets:Investments:Corporate:SHOP.TO   10 "SHOP.TO" @@ CAD 500.00
+    Assets:Current:Business Chequing              CAD -500.00
+'''
+    assert parse_hledger_events(output, "SHOP.TO") == [("buy", 10.0, 500.00)]
+
+
+def test_parse_quoted_symbol_sell():
+    output = '''2026-07-25 * Sell SHOP.TO
+    Assets:Investments:Corporate:SHOP.TO   -4 "SHOP.TO" @@ CAD 240.00
+    Assets:Current:Business Chequing              CAD 240.00
+'''
+    assert parse_hledger_events(output, "SHOP.TO") == [("sell", 4.0, 240.00)]
+
+
+def test_parse_quoted_does_not_alias_different_symbol():
+    """Stripping quotes must not make "SHOP.TO" match a query for SHOP."""
+    output = '''2026-07-20 * Buy
+    Assets:Investments:Corporate:SHOP.TO   10 "SHOP.TO" @@ CAD 500.00
+'''
+    assert parse_hledger_events(output, "SHOP") == []
