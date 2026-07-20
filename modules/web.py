@@ -895,41 +895,99 @@ def create_app():
 
     @app.get("/api/payroll")
     async def payroll_list():
-        """List payroll data: employees from contracts + recent pay runs."""
+        """List payroll data: workers from contracts + recent pay runs."""
         import yaml
         entity_dir = get_entity_dir()
         config = load_config()
         currency = config.get('pair', {}).get('currency', 'CAD')
 
-        # Get employees from employment contracts
+        def load_contact(slug):
+            if not slug or not contacts_dir.exists():
+                return {}
+            cf = contacts_dir / f"{slug}.yaml"
+            if not cf.exists():
+                return {}
+            with open(cf) as cfh:
+                return yaml.safe_load(cfh) or {}
+
+        def party_contact(data, roles):
+            for party in data.get('parties', []):
+                if party.get('role') in roles:
+                    return party.get('contact'), party.get('role')
+            return None, ''
+
         employees = []
+        contractors = []
+        contractor_slugs = set()
         contracts_dir = entity_dir / 'contracts'
         contacts_dir = entity_dir / 'contacts'
+
         if contracts_dir.exists():
             for f in contracts_dir.glob('*.yaml'):
                 with open(f) as fh:
                     data = yaml.safe_load(fh) or {}
                 if data.get('type') == 'employment' and data.get('status') == 'active':
-                    # Get contact name
-                    contact_slug = None
-                    for party in data.get('parties', []):
-                        if party.get('role') == 'employee':
-                            contact_slug = party.get('contact')
-                    name = data.get('name', '')
-                    if contact_slug and contacts_dir.exists():
-                        cf = contacts_dir / f"{contact_slug}.yaml"
-                        if cf.exists():
-                            with open(cf) as cfh:
-                                contact = yaml.safe_load(cfh) or {}
-                            name = contact.get('name', contact_slug)
+                    contact_slug, _ = party_contact(data, {'employee'})
+                    contact = load_contact(contact_slug)
+                    name = contact.get('name') or data.get('name', '')
                     employees.append({
                         'name': name,
                         'slug': contact_slug or '',
+                        'contact_slug': contact_slug or '',
+                        'contract_slug': data.get('slug', f.stem),
                         'salary': data.get('value', 0),
                         'schedule': data.get('payment_schedule', 'biweekly'),
                         'start_date': data.get('start_date', ''),
+                        'end_date': data.get('end_date', ''),
+                        'status': data.get('status', ''),
+                        'email': contact.get('email', ''),
                         'currency': data.get('currency', currency),
                     })
+                elif data.get('status') == 'active' and data.get('type') in ('service', 'contractor'):
+                    contact_slug, party_role = party_contact(data, {'contractor', 'provider', 'vendor'})
+                    if not contact_slug:
+                        continue
+                    contact = load_contact(contact_slug)
+                    contractors.append({
+                        'name': contact.get('name') or data.get('name', contact_slug),
+                        'slug': contact_slug,
+                        'contact_slug': contact_slug,
+                        'contract_slug': data.get('slug', f.stem),
+                        'contract_name': data.get('name', ''),
+                        'role': party_role or contact.get('role', ''),
+                        'rate': data.get('value', 0),
+                        'schedule': data.get('payment_schedule', ''),
+                        'start_date': data.get('start_date', ''),
+                        'end_date': data.get('end_date', ''),
+                        'status': data.get('status', ''),
+                        'email': contact.get('email', ''),
+                        'currency': data.get('currency', currency),
+                    })
+                    contractor_slugs.add(contact_slug)
+
+        if contacts_dir.exists():
+            for f in contacts_dir.glob('*.yaml'):
+                with open(f) as fh:
+                    contact = yaml.safe_load(fh) or {}
+                if contact.get('role') == 'contractor' and contact.get('slug') not in contractor_slugs:
+                    contractors.append({
+                        'name': contact.get('name', f.stem),
+                        'slug': contact.get('slug', f.stem),
+                        'contact_slug': contact.get('slug', f.stem),
+                        'contract_slug': '',
+                        'contract_name': '',
+                        'role': 'contractor',
+                        'rate': 0,
+                        'schedule': '',
+                        'start_date': '',
+                        'end_date': '',
+                        'status': 'active',
+                        'email': contact.get('email', ''),
+                        'currency': currency,
+                    })
+
+        employees.sort(key=lambda e: e.get('name', '').lower())
+        contractors.sort(key=lambda c: c.get('name', '').lower())
 
         # Get recent pay runs from hledger
         recent_runs = []
@@ -972,6 +1030,7 @@ def create_app():
 
         return {
             'employees': employees,
+            'contractors': contractors,
             'recent_runs': recent_runs[-10:],
             'ytd': ytd,
             'currency': currency,
