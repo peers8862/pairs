@@ -134,9 +134,16 @@ from FIFO, and is the single most important behavior to keep under test.
 
 Gain is `proceeds - fee - basis`.
 
-**Registered accounts short-circuit.** When `--account` is `tfsa` or `rrsp`, no ACB is
-computed and no gain/loss posting is written, because those gains are not taxable. The
-command states this in its output rather than silently omitting the posting.
+**Registered accounts route the gain elsewhere — they do not omit it.** When
+`--account` is `tfsa` or `rrsp`, the gain is posted to
+`Income:Non-Operating:Registered Gains` (configurable via
+`config.accounts.registered_gains`) rather than to capital gains.
+
+Omitting the posting entirely, as an earlier draft of this spec proposed, would leave
+the transaction out of balance — proceeds minus basis is a non-zero residual that has
+to land somewhere, and hledger would reject the entry. A TFSA gain is economically real;
+it is only its *tax treatment* that differs. Keeping it in a separate account preserves
+double-entry while letting tax reports exclude it by account.
 
 ### Caching
 
@@ -156,7 +163,7 @@ Journal mtime is a sound invalidation signal here because every write path goes 
 |---|---|
 | Sell qty exceeds holding | Refuse; print held quantity. Never write a negative position. |
 | Symbol absent from `market.commodities` | Warn and offer to add, since prices will not fetch otherwise |
-| Registered account on sell | Skip gain/loss; state the reason in output |
+| Registered account on sell | Book gain to the registered-gains account; state the reason in output |
 | No `--price` and no `P` directive | Prompt; required |
 | Zero or negative qty/price | Reject via `validate_positive_number` |
 | Resulting journal unparseable | Surface `hledger` stderr; do not write |
