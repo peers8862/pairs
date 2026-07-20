@@ -1422,6 +1422,51 @@ def create_app():
         save_config(config)
         return {'status': 'ok', 'message': 'Settings saved'}
 
+    @app.get("/api/export")
+    async def export_data(format: str = 'csv', scope: str = 'all', query: str = '', period: str = ''):
+        """Export journal data as a downloadable file (csv / json / beancount)."""
+        import shlex
+        from fastapi.responses import Response
+        journal = _get_journal_path()
+        if not journal:
+            raise HTTPException(status_code=404, detail="No journal found")
+        entity = get_active_entity() or 'entity'
+
+        scope_map = {'all': [], 'assets': ['type:a'], 'liabilities': ['type:l'],
+                     'equity': ['type:e'], 'income': ['type:r'], 'expenses': ['type:x']}
+        q = list(scope_map.get(scope, []))
+        if query.strip():
+            try:
+                extra = shlex.split(query)
+            except ValueError:
+                extra = query.split()
+            if any(a.startswith('-') for a in extra):
+                raise HTTPException(status_code=400, detail="Query terms cannot start with '-'")
+            q += extra
+
+        if format == 'csv':
+            cmd = ['hledger', '-f', journal, 'bal'] + q + ['--layout', 'bare', '-N', '-O', 'csv']
+            media, ext = 'text/csv', 'csv'
+        elif format == 'json':
+            cmd = ['hledger', '-f', journal, 'print'] + q + ['-O', 'json']
+            media, ext = 'application/json', 'json'
+        elif format == 'beancount':
+            cmd = ['hledger', '-f', journal, 'print'] + q + ['-O', 'beancount']
+            media, ext = 'text/plain', 'beancount'
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown format: {format}")
+
+        if period.strip() and not period.strip().startswith('-'):
+            cmd += ['-p', period.strip()]
+
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise HTTPException(status_code=400, detail=r.stderr.strip() or 'Export failed')
+
+        fname = f"{entity}-{scope}.{ext}"
+        return Response(content=r.stdout, media_type=media,
+                        headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
     @app.get("/api/status-items")
     async def status_items():
         """Pending items and status checks."""
