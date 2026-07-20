@@ -152,6 +152,16 @@ def format_entry(date, description, postings, tags=None):
     return "\n".join(lines) + "\n"
 
 
+def format_quantity(value):
+    """Format a commodity quantity at up to 8dp, trailing zeros stripped.
+
+    Money uses 2dp, but quantities must not: 0.00431 BTC formatted as money
+    rounds to 0.00, producing a balanced but silently wrong entry.
+    """
+    text = f"{value:.8f}".rstrip('0').rstrip('.')
+    return text if text and text != '-' else '0'
+
+
 # ─── Include chain management ────────────────────────────────────────────────
 
 def ensure_year_structure(year):
