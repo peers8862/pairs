@@ -469,6 +469,15 @@
                 <span style="color:var(--accent);font-weight:bold;" id="commodity-modal-title">Add Commodity</span>
                 <button onclick="closeCommodityModal()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
             </div>
+            <!-- Yahoo search — mirrors `pair market add QUERY` -->
+            <div id="cm-search-band" style="margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid var(--border);">
+                <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Search Yahoo Finance</label>
+                <div style="display:flex;gap:0.5rem;">
+                    <input type="text" id="cm-search" placeholder="shopify, bitcoin, VFV…" onkeydown="if(event.key==='Enter'){event.preventDefault();searchCommodity();}" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    <button class="btn" id="cm-search-btn" onclick="searchCommodity()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Search</button>
+                </div>
+                <div id="cm-search-results" style="margin-top:0.5rem;"></div>
+            </div>
             <div style="display:grid;gap:0.75rem;font-size:0.85rem;">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
                     <div>
@@ -499,6 +508,36 @@
                         <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Type</label>
                         <select id="cm-type" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
                             <option value="">—</option><option value="equity">equity</option><option value="crypto">crypto</option><option value="currency">currency</option><option value="etf">etf</option><option value="commodity">commodity</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Sector</label>
+                        <input type="text" id="cm-sector" placeholder="tech / health / energy" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Geography</label>
+                        <input type="text" id="cm-geography" placeholder="canada / us / global" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Strategy</label>
+                        <select id="cm-strategy" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="">—</option><option value="growth">growth</option><option value="income">income</option><option value="spec">spec</option><option value="hedge">hedge</option><option value="core">core</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Risk</label>
+                        <select id="cm-risk" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="">—</option><option value="low">low</option><option value="med">med</option><option value="high">high</option><option value="extreme">extreme</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Tax account</label>
+                        <select id="cm-tax-account" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="">—</option><option value="tfsa">tfsa</option><option value="rrsp">rrsp</option><option value="taxable">taxable</option><option value="corporate">corporate</option>
                         </select>
                     </div>
                 </div>
@@ -2005,6 +2044,8 @@
                 <div></div>
                 <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
                     <input type="text" id="qc-filter" placeholder="filter by tag" oninput="filterCommodities()" style="width:130px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                    <input type="number" id="qc-days" value="7" min="1" max="3650" title="Days of history to fetch" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                    <span style="color:var(--fg-dim);font-size:0.75rem;">days</span>
                     <button class="btn" onclick="fetchPrices()" id="fetch-prices-btn" style="font-size:0.8rem;padding:0.35rem 0.75rem;">↻ Fetch prices</button>
                 </div>
             </div>`,
@@ -3629,6 +3670,7 @@
 
     // ─── Commodities (full CRUD) ────────────────────────────────────────────
     let editingCommoditySymbol = null;
+    let searchResultCache = [];
     let marketSources = ['yahoo', 'bankofcanada', 'ecb', 'coinbasepro', 'alphavantage'];
 
     async function ensureSources() {
@@ -3638,34 +3680,44 @@
         } catch (e) {}
     }
 
+    // Modal field id ↔ commodity key. Keep in sync with CommodityRequest in web.py.
+    const CM_FIELDS = {
+        'cm-symbol': 'symbol', 'cm-name': 'name', 'cm-source': 'source',
+        'cm-currency': 'currency', 'cm-fetch': 'fetch_pair', 'cm-type': 'type',
+        'cm-sector': 'sector', 'cm-geography': 'geography', 'cm-strategy': 'strategy',
+        'cm-risk': 'risk', 'cm-tax-account': 'tax_account',
+    };
+
     async function openCommodityModal(item) {
         await ensureSources();
         const sel = document.getElementById('cm-source');
         sel.innerHTML = marketSources.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
         const del = document.getElementById('cm-delete-btn');
-        if (item) {
-            document.getElementById('commodity-modal-title').textContent = 'Edit Commodity';
-            editingCommoditySymbol = item.symbol || '';
-            document.getElementById('cm-symbol').value = item.symbol || '';
-            document.getElementById('cm-name').value = item.name || '';
-            document.getElementById('cm-source').value = item.source || 'yahoo';
-            document.getElementById('cm-currency').value = item.currency || state.currency || 'CAD';
-            document.getElementById('cm-fetch').value = item.fetch_pair || '';
-            document.getElementById('cm-type').value = item.type || '';
-            document.getElementById('cm-tags').value = (item.tags || []).join(', ');
-            del.style.display = 'inline-block';
-        } else {
-            document.getElementById('commodity-modal-title').textContent = 'Add Commodity';
-            editingCommoditySymbol = null;
-            ['cm-symbol','cm-name','cm-fetch','cm-tags'].forEach(id => document.getElementById(id).value = '');
-            document.getElementById('cm-source').value = 'yahoo';
-            document.getElementById('cm-currency').value = state.currency || 'CAD';
-            document.getElementById('cm-type').value = '';
-            del.style.display = 'none';
+
+        for (const [id, key] of Object.entries(CM_FIELDS)) {
+            document.getElementById(id).value = (item && item[key]) || '';
         }
+        document.getElementById('cm-tags').value = ((item && item.tags) || []).join(', ');
+        if (!document.getElementById('cm-source').value) document.getElementById('cm-source').value = 'yahoo';
+        if (!document.getElementById('cm-currency').value) document.getElementById('cm-currency').value = state.currency || 'CAD';
+
+        // Search is an add-time affordance; editing an existing symbol hides it.
+        clearCommoditySearch();
+        document.getElementById('cm-search-band').style.display = item ? 'none' : 'block';
+        document.getElementById('commodity-modal-title').textContent = item ? 'Edit Commodity' : 'Add Commodity';
+        editingCommoditySymbol = item ? (item.symbol || '') : null;
+        del.style.display = item ? 'inline-block' : 'none';
+
         document.getElementById('commodity-modal').style.display = 'flex';
     }
     function closeCommodityModal() { document.getElementById('commodity-modal').style.display = 'none'; editingCommoditySymbol = null; }
+
+    function clearCommoditySearch() {
+        const q = document.getElementById('cm-search');
+        const results = document.getElementById('cm-search-results');
+        if (q) q.value = '';
+        if (results) results.innerHTML = '';
+    }
 
     function commodityPayloadFrom(ids) {
         return {
@@ -3679,13 +3731,78 @@
         };
     }
 
+    function modalCommodityPayload() {
+        const payload = {};
+        for (const [id, key] of Object.entries(CM_FIELDS)) {
+            payload[key] = document.getElementById(id).value.trim();
+        }
+        payload.tags = (document.getElementById('cm-tags').value || '').split(',').map(t => t.trim()).filter(Boolean);
+        return payload;
+    }
+
     async function postCommodity(payload) {
         const res = await fetch('/api/commodity', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
         return { ok: res.ok, data: await res.json() };
     }
 
+    // Yahoo's quoteType vocabulary vs the type values the CLI stores.
+    const YAHOO_TYPE_MAP = { cryptocurrency: 'crypto', equity: 'equity', etf: 'etf', currency: 'currency', future: 'commodity' };
+
+    async function searchCommodity() {
+        const q = document.getElementById('cm-search').value.trim();
+        const box = document.getElementById('cm-search-results');
+        if (!q) { box.innerHTML = ''; return; }
+        const btn = document.getElementById('cm-search-btn');
+        btn.disabled = true; btn.textContent = 'Searching…';
+        box.innerHTML = '<div style="color:var(--fg-dim);font-size:0.75rem;padding:0.5rem 0;">Searching…</div>';
+        try {
+            const d = await fetch('/api/market/search?q=' + encodeURIComponent(q)).then(r => r.json());
+            renderSearchResults(d.results || [], d.currency || '');
+        } catch (e) {
+            box.innerHTML = '<div style="color:var(--red);font-size:0.75rem;padding:0.5rem 0;">Search failed: ' + esc(e.message) + '</div>';
+        } finally { btn.disabled = false; btn.textContent = 'Search'; }
+    }
+
+    function renderSearchResults(results, baseCurrency) {
+        const box = document.getElementById('cm-search-results');
+        if (!results.length) {
+            box.innerHTML = '<div style="color:var(--fg-dim);font-size:0.75rem;padding:0.5rem 0;">No results — fill the form in manually.</div>';
+            return;
+        }
+        searchResultCache = results;
+        let html = '<div style="max-height:190px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;">';
+        results.forEach((r, i) => {
+            const star = r.matches_currency ? ' <span style="color:var(--accent);" title="Matches entity currency">★</span>' : '';
+            const tracked = r.tracked ? ' <span style="color:var(--fg-dim);font-size:0.7rem;">· tracked</span>' : '';
+            html += `<div onclick="applySearchResult(${i})" style="padding:0.4rem 0.6rem;cursor:pointer;border-bottom:1px solid var(--border);font-size:0.78rem;display:flex;gap:0.5rem;align-items:baseline;"
+                onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
+                <span style="color:var(--accent);font-weight:bold;min-width:80px;">${esc(r.symbol)}</span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name || '')}</span>
+                <span style="color:var(--fg-dim);font-size:0.72rem;">${esc(r.exchange || '')} ${esc(r.currency || '')}${star}${tracked}</span>
+            </div>`;
+        });
+        html += '</div>';
+        if (baseCurrency) html += `<div style="color:var(--fg-dim);font-size:0.7rem;margin-top:0.35rem;">★ matches entity currency (${esc(baseCurrency)}) · click a result to fill the form</div>`;
+        box.innerHTML = html;
+    }
+
+    // Pre-fill only — the user reviews and confirms before anything is saved.
+    // Notably the crypto BTC-CAD → BTC split is shown, not applied silently.
+    function applySearchResult(idx) {
+        const r = searchResultCache[idx];
+        if (!r) return;
+        document.getElementById('cm-symbol').value = r.store_symbol || r.symbol || '';
+        document.getElementById('cm-name').value = r.name || '';
+        document.getElementById('cm-source').value = 'yahoo';
+        document.getElementById('cm-fetch').value = r.fetch_pair || r.symbol || '';
+        document.getElementById('cm-currency').value = r.currency || state.currency || 'CAD';
+        document.getElementById('cm-type').value = YAHOO_TYPE_MAP[r.type] || '';
+        if (r.tracked) showToast(`${r.store_symbol} is already tracked — saving will update it`);
+        document.getElementById('cm-symbol').focus();
+    }
+
     async function saveCommodity() {
-        const payload = commodityPayloadFrom({ symbol:'cm-symbol', name:'cm-name', source:'cm-source', fetch:'cm-fetch', currency:'cm-currency', type:'cm-type', tags:'cm-tags' });
+        const payload = modalCommodityPayload();
         if (!payload.symbol) { showToast('Symbol required', true); return; }
         const { ok, data } = await postCommodity(payload);
         if (ok) { showToast(data.message || 'Saved'); closeCommodityModal(); loadCommoditiesView(); }
@@ -3724,7 +3841,15 @@
         if (btn) { btn.disabled = true; btn.textContent = '↻ Fetching…'; }
         showToast('Fetching prices — this may take a moment…');
         try {
-            const res = await fetch('/api/market/fetch', { method: 'POST' });
+            const body = {
+                days: parseInt(document.getElementById('qc-days')?.value, 10) || 7,
+                tag: (document.getElementById('qc-filter')?.value || '').trim(),
+            };
+            const res = await fetch('/api/market/fetch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
             const data = await res.json();
             showToast(data.status === 'ok' ? 'Prices updated' : ('Fetch: ' + (data.output || 'error').split('\n').pop()), data.status !== 'ok');
             loadCommoditiesView();
