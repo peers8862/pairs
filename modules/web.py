@@ -220,6 +220,11 @@ def create_app():
         date: str = ''
         period: str = ''
 
+    class ConfigRequest(BaseModel):
+        name: str = ''
+        currency: str = ''
+        divisions: list = []
+
     # ─── Routes ──────────────────────────────────────────────────────────
 
     @app.get("/")
@@ -1381,6 +1386,41 @@ def create_app():
         append_journal(get_generated_dir() / year / "tax.journal", entry)
         _ensure_year_include(year, "tax.journal")
         return {'status': 'ok', 'message': f"Remittance recorded: {currency} {amt} ({period_desc})"}
+
+    @app.get("/api/config")
+    async def get_config():
+        """Return editable entity settings."""
+        config = load_config()
+        p = config.get('pair', {})
+        return {
+            'name': p.get('name', ''),
+            'slug': p.get('slug', ''),
+            'currency': p.get('currency', 'CAD'),
+            'divisions': config.get('divisions', []) or [],
+            'accounts': config.get('accounts', {}) or {},
+        }
+
+    @app.post("/api/config")
+    async def update_config(req: ConfigRequest):
+        """Update entity name, currency, and divisions."""
+        import re
+        from lib.helpers import save_config
+        config = load_config()
+        config.setdefault('pair', {})
+        if req.name.strip():
+            config['pair']['name'] = req.name.strip()
+        if req.currency.strip():
+            config['pair']['currency'] = req.currency.strip()
+        divs = []
+        for d in (req.divisions or []):
+            name = (d.get('name') or '').strip() if isinstance(d, dict) else ''
+            if not name:
+                continue
+            slug = (d.get('slug') or '').strip() or re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+            divs.append({'name': name, 'slug': slug})
+        config['divisions'] = divs
+        save_config(config)
+        return {'status': 'ok', 'message': 'Settings saved'}
 
     @app.get("/api/status-items")
     async def status_items():
