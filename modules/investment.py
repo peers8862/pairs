@@ -145,3 +145,54 @@ def build_buy_entry(date, symbol, qty, unit_price, quote_currency, fx, fee,
         [(cash_account, entity_currency, -total)],
         tags,
     )
+
+
+def build_sell_entry(date, symbol, qty, unit_price, fee, tax_account,
+                     cash_account, entity_currency, events, gains_account,
+                     registered_gains_account="Income:Non-Operating:Registered Gains"):
+    """Build the journal entry for a disposal.
+
+    Basis comes from the running ACB average.
+
+    Registered accounts (TFSA, RRSP) route the gain to a separate account
+    rather than omitting it. The gain is economically real and the entry must
+    balance; keeping it in its own account is what lets tax reporting exclude
+    it without breaking double-entry.
+    """
+    if qty <= 0:
+        raise ValueError(f"Quantity must be positive, got {qty}")
+    if tax_account.lower() not in TAX_ACCOUNTS:
+        raise ValueError(
+            f"Invalid tax account '{tax_account}'. Valid: {', '.join(TAX_ACCOUNTS)}"
+        )
+
+    held_qty, _, average = compute_acb_from_events(events)
+    if qty > held_qty:
+        raise InsufficientHoldingError(
+            f"Cannot sell {format_quantity(qty)} {symbol}; "
+            f"only {format_quantity(held_qty)} held in {tax_account}"
+        )
+
+    basis = round(qty * average, 2)
+    proceeds = round(qty * unit_price - fee, 2)
+    gain = round(proceeds - basis, 2)
+
+    registered = tax_account.lower() in REGISTERED_ACCOUNTS
+
+    cash_postings = [(cash_account, entity_currency, proceeds)]
+    if gain == 0:
+        pair = '1011'
+    else:
+        pair = '0110' if gain > 0 else '0010'
+        target = registered_gains_account if registered else gains_account
+        cash_postings.append((target, entity_currency, -gain))
+
+    tags = {'pair': pair, 'acb_per_unit': f"{average:.4f}", 'fee': f"{fee:.2f}"}
+
+    description = f"Sell {symbol} | {format_quantity(qty)} units"
+    return format_commodity_entry(
+        date, description,
+        (holding_account(tax_account, symbol), -qty, symbol, entity_currency, basis),
+        cash_postings,
+        tags,
+    )
