@@ -208,6 +208,13 @@ def create_app():
         lender: str = ''
         description: str = ''
 
+    class TransferRequest(BaseModel):
+        amount: float
+        from_account: str
+        to_account: str
+        date: str = ''
+        description: str = ''
+
     # ─── Routes ──────────────────────────────────────────────────────────
 
     @app.get("/")
@@ -350,6 +357,63 @@ def create_app():
             'entry': entry.strip(),
             'path': f"generated/{year}/links.journal",
         }
+
+    def _ensure_year_include(year, fname):
+        """Ensure generated/<year>/<fname> is pulled in by the year include file."""
+        from lib.journal import get_include_dir
+        year_include = get_include_dir() / f"{year}.journal"
+        if year_include.exists():
+            line = f"include ../generated/{year}/{fname}"
+            if line not in year_include.read_text():
+                with open(year_include, 'a') as f:
+                    f.write(f"\n{line}\n")
+
+    @app.post("/api/transfer")
+    async def create_transfer(req: TransferRequest):
+        """Record an asset-to-asset transfer (pair 1011)."""
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+        if req.amount <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be greater than zero")
+        if not req.from_account.strip() or not req.to_account.strip():
+            raise HTTPException(status_code=400, detail="From and To accounts are required")
+
+        entry_date = req.date or date.today().isoformat()
+        amt = money(req.amount)
+        desc = req.description.strip() or "Internal transfer"
+        postings = [
+            (req.to_account.strip(), currency, float(amt)),
+            (req.from_account.strip(), currency, float(-amt)),
+        ]
+        entry = format_entry(entry_date, desc, postings, {'pair': '1011'})
+        year = entry_date[:4]
+        ensure_year_structure(int(year))
+        append_journal(get_generated_dir() / year / "transfers.journal", entry)
+        _ensure_year_include(year, "transfers.journal")
+        return {'status': 'ok', 'message': f"Transfer recorded: {currency} {amt}"}
+
+    @app.get("/api/transfers")
+    async def list_transfers():
+        """Recent transfers parsed from generated/*/transfers.journal."""
+        import re
+        entity_dir = get_entity_dir()
+        gen = entity_dir / 'generated'
+        items = []
+        if gen.exists():
+            for jf in sorted(gen.glob('*/transfers.journal')):
+                lines = jf.read_text().splitlines()
+                cur = None
+                for ln in lines:
+                    m = re.match(r'^(\d{4}-\d{2}-\d{2})\s+\*?\s*(.*?)(\s+;.*)?$', ln)
+                    if m and not ln.startswith(' '):
+                        cur = {'date': m.group(1), 'description': m.group(2).strip(), 'postings': []}
+                        items.append(cur)
+                    elif cur is not None and ln.startswith(' ') and ln.strip():
+                        parts = ln.strip().rsplit('  ', 1)
+                        if len(parts) == 2:
+                            cur['postings'].append({'account': parts[0].strip(), 'amount': parts[1].strip()})
+        items.sort(key=lambda x: x['date'], reverse=True)
+        return {'items': items[:50]}
 
     # ─── Dashboard endpoints ─────────────────────────────────────────────
 

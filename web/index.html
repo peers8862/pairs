@@ -169,6 +169,7 @@
                 <button class="btn" onclick="dashLoadManage('payroll')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Payroll</button>
                 <button class="btn" onclick="dashLoadManage('recurring')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Recurring</button>
                 <button class="btn" onclick="dashLoadManage('contracts')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Contracts</button>
+                <button class="btn" onclick="dashLoadManage('transfers')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Transfers</button>
             </div>
             <div id="dash-time-btns" style="display:flex;gap:0.3rem;">
                 <button class="btn active" onclick="setDashPeriod('ytd')" style="font-size:0.7rem;padding:0.25rem 0.5rem;">YTD</button>
@@ -1866,8 +1867,26 @@
                 <input type="text" id="add-tags" placeholder="tags (comma sep)" style="width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
                 <button class="btn" onclick="addItem('commodities')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
             </div>`,
+            transfers: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <span style="color:var(--accent);font-size:0.8rem;">Transfer</span>
+                <input type="text" id="tr-amount" placeholder="amount" style="width:90px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
+                <input type="text" id="tr-from" list="acct-datalist" placeholder="from account" style="flex:1;min-width:150px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <span style="color:var(--fg-dim);">→</span>
+                <input type="text" id="tr-to" list="acct-datalist" placeholder="to account" style="flex:1;min-width:150px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="date" id="tr-date" style="width:130px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <input type="text" id="tr-desc" placeholder="description" style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                <button class="btn" onclick="submitTransfer()" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Record</button>
+                <datalist id="acct-datalist"></datalist>
+            </div>`,
         };
         container.innerHTML = forms[type] || '';
+        if (type === 'transfers') {
+            setTimeout(() => {
+                const d = document.getElementById('tr-date'); if (d && state.today) d.value = state.today;
+                populateAcctDatalist();
+                const a = document.getElementById('tr-amount'); if (a) a.focus();
+            }, 50);
+        }
         container.style.display = forms[type] ? 'block' : 'none';
         // Autofocus first input and set defaults for quick entry
         if (type === 'assets') {
@@ -2120,6 +2139,24 @@
             for (const item of data.items) {
                 const cls = type === 'expenses' ? 'amt-neg' : (type === 'income' ? 'amt-pos' : '');
                 html += '<tr><td>' + esc(item.short) + '<span style="color:var(--fg-dim);margin-left:0.5rem;font-size:0.8rem;">' + esc(item.hint) + '</span></td><td style="text-align:right" class="' + cls + '">' + data.currency + ' ' + item.amount.toLocaleString(undefined,{minimumFractionDigits:2}) + '</td></tr>';
+            }
+            container.innerHTML = html + '</tbody></table>';
+            return;
+        }
+
+        if (type === 'transfers') {
+            const data = await fetch('/api/transfers').then(r => r.json());
+            const items = data.items || [];
+            if (!items.length) { container.innerHTML = '<div class="empty">No transfers yet</div>'; return; }
+            let html = '<table><thead><tr><th>Date</th><th>Description</th><th>Postings</th></tr></thead><tbody>';
+            for (const t of items) {
+                let ph = '';
+                for (const p of (t.postings || [])) {
+                    const leaf = p.account.split(':').pop();
+                    const cls = p.amount.includes('-') ? 'amt-neg' : 'amt-pos';
+                    ph += '<div style="display:flex;justify-content:space-between;gap:1rem;"><span style="color:var(--fg-dim)">' + esc(leaf) + '</span><span class="' + cls + '" style="white-space:nowrap;">' + esc(p.amount) + '</span></div>';
+                }
+                html += '<tr><td style="vertical-align:top;white-space:nowrap;">' + esc(t.date) + '</td><td style="vertical-align:top;">' + esc(t.description) + '</td><td style="min-width:220px;">' + ph + '</td></tr>';
             }
             container.innerHTML = html + '</tbody></table>';
             return;
@@ -3406,6 +3443,43 @@
                 document.getElementById('acct-name').value = '';
                 acctExpanded[parent] = true;  // reveal the new child
                 await loadAccounts();
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed'), true);
+            }
+        } catch (e) { showToast('Network error: ' + e.message, true); }
+    }
+
+    // ─── Transfers ──────────────────────────────────────────────────────────
+    let acctCache = null;
+    async function populateAcctDatalist() {
+        const dl = document.getElementById('acct-datalist');
+        if (!dl) return;
+        if (!acctCache) {
+            const data = await fetch('/api/accounts').then(r => r.json()).catch(() => ({all: []}));
+            acctCache = (data.all || []).map(a => a.full);
+        }
+        dl.innerHTML = acctCache.map(a => `<option value="${esc(a)}"></option>`).join('');
+    }
+
+    async function submitTransfer() {
+        const amount = parseFloat(document.getElementById('tr-amount')?.value);
+        if (!amount || amount <= 0) { showToast('Amount must be > 0', true); return; }
+        const from_account = document.getElementById('tr-from')?.value.trim();
+        const to_account = document.getElementById('tr-to')?.value.trim();
+        if (!from_account || !to_account) { showToast('From and To accounts required', true); return; }
+        const payload = {
+            amount, from_account, to_account,
+            date: document.getElementById('tr-date')?.value || state.today,
+            description: document.getElementById('tr-desc')?.value.trim() || '',
+        };
+        try {
+            const res = await fetch('/api/transfer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Transfer recorded');
+                ['tr-amount','tr-from','tr-to','tr-desc'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+                const dash = document.getElementById('dash-manage-content');
+                if (dash && dash.style.display !== 'none') dashLoadManageByName('transfers');
             } else {
                 showToast('Error: ' + (data.detail || 'Failed'), true);
             }
