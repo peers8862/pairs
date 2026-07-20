@@ -225,6 +225,15 @@ def create_app():
         currency: str = ''
         divisions: list = []
 
+    class CommodityRequest(BaseModel):
+        symbol: str
+        name: str = ''
+        source: str = ''
+        fetch_pair: str = ''
+        currency: str = ''
+        type: str = ''
+        tags: list = []
+
     # ─── Routes ──────────────────────────────────────────────────────────
 
     @app.get("/")
@@ -966,6 +975,82 @@ def create_app():
             })
 
         return {'items': items, 'currency': currency}
+
+    @app.get("/api/market/sources")
+    async def market_sources():
+        """Supported price sources."""
+        return {'sources': ['yahoo', 'bankofcanada', 'ecb', 'coinbasepro', 'alphavantage']}
+
+    @app.post("/api/commodity")
+    async def create_or_update_commodity(req: CommodityRequest):
+        """Create or update a commodity in the entity's market config (merges to keep extra fields)."""
+        import re
+        from lib.helpers import save_config
+        symbol = req.symbol.strip()
+        if not symbol:
+            raise HTTPException(status_code=400, detail="Symbol is required")
+        if not re.fullmatch(r'[A-Za-z0-9.\-]+', symbol):
+            raise HTTPException(status_code=400, detail="Invalid symbol")
+
+        config = load_config()
+        market = config.setdefault('market', {})
+        commodities = market.get('commodities', []) or []
+
+        entry = next((c for c in commodities if c.get('symbol', '').lower() == symbol.lower()), None)
+        if entry is None:
+            entry = {'symbol': symbol}
+            commodities.append(entry)
+
+        entry['symbol'] = symbol
+        if req.name.strip():
+            entry['name'] = req.name.strip()
+        if req.source.strip():
+            entry['source'] = req.source.strip()
+        if req.fetch_pair.strip():
+            entry['fetch_pair'] = req.fetch_pair.strip()
+        if req.currency.strip():
+            entry['currency'] = req.currency.strip()
+        if req.type.strip():
+            entry['type'] = req.type.strip()
+        tags = [t.strip() for t in req.tags if isinstance(t, str) and t.strip()]
+        if tags:
+            entry['tags'] = tags
+        elif 'tags' in entry:
+            del entry['tags']
+
+        market['commodities'] = commodities
+        save_config(config)
+        return {'status': 'ok', 'symbol': symbol, 'message': f"Saved {symbol}"}
+
+    @app.delete("/api/commodity/{symbol}")
+    async def delete_commodity(symbol: str):
+        """Remove a commodity from the market config."""
+        from lib.helpers import save_config
+        config = load_config()
+        market = config.get('market', {})
+        commodities = market.get('commodities', []) or []
+        new_list = [c for c in commodities if c.get('symbol', '').lower() != symbol.lower()]
+        if len(new_list) == len(commodities):
+            raise HTTPException(status_code=404, detail=f"Commodity '{symbol}' not found")
+        market['commodities'] = new_list
+        config['market'] = market
+        save_config(config)
+        return {'status': 'ok', 'message': f"Removed {symbol}"}
+
+    @app.post("/api/market/fetch")
+    async def market_fetch():
+        """Trigger price fetching via the CLI (pricehist). Best-effort with a timeout."""
+        pair_bin = BASE_DIR / 'pair'
+        try:
+            r = subprocess.run([sys.executable, str(pair_bin), 'market', 'fetch'],
+                               capture_output=True, text=True, timeout=180,
+                               stdin=subprocess.DEVNULL, cwd=str(BASE_DIR))
+            out = (r.stdout or '') + (r.stderr or '')
+            return {'status': 'ok' if r.returncode == 0 else 'error', 'output': out.strip()[-4000:]}
+        except subprocess.TimeoutExpired:
+            return {'status': 'error', 'output': 'Fetch timed out after 180s.'}
+        except Exception as e:
+            return {'status': 'error', 'output': str(e)}
 
     @app.get("/api/payroll")
     async def payroll_list():
