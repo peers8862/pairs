@@ -25,6 +25,8 @@ from lib.ui import (
 MARKET_OPTIONS = [
     {'key': 'list',      'label': 'Show tracked commodities'},
     {'key': 'add',       'label': 'Add a commodity to track'},
+    {'key': 'buy',       'label': 'Record a purchase'},
+    {'key': 'sell',      'label': 'Record a sale'},
     {'key': 'show',      'label': 'Current prices table'},
     {'key': 'edit',      'label': 'Edit a commodity'},
     {'key': 'remove',    'label': 'Remove a commodity'},
@@ -71,6 +73,12 @@ def dispatch(args):
             cmd_list(flags, action_args)
         elif action == 'add':
             cmd_add(flags, action_args)
+        elif action == 'buy':
+            from modules.investment import cmd_buy
+            cmd_buy(flags, action_args)
+        elif action == 'sell':
+            from modules.investment import cmd_sell
+            cmd_sell(flags, action_args)
         elif action == 'edit':
             cmd_edit(flags, action_args)
         elif action == 'remove':
@@ -100,6 +108,12 @@ def dispatch(args):
         cmd_list(flags, all_args)
     elif key == 'add':
         cmd_add(flags, all_args)
+    elif key == 'buy':
+        from modules.investment import cmd_buy
+        cmd_buy(flags, all_args)
+    elif key == 'sell':
+        from modules.investment import cmd_sell
+        cmd_sell(flags, all_args)
     elif key == 'show':
         cmd_show(flags, all_args)
     elif key == 'edit':
@@ -980,6 +994,8 @@ With no argument, shows a numbered menu.
 Commands:
   list                  List tracked commodities
   add [QUERY]           Add a commodity (Yahoo search + interactive)
+  buy [SYMBOL]          Record a purchase (ACB tracked)
+  sell [SYMBOL]         Record a sale (computes capital gain/loss)
   show                  Current prices table
   edit [SYMBOL|#]       Edit commodity metadata
   remove [SYMBOL|#]     Remove a commodity from tracking
@@ -1738,7 +1754,7 @@ def _get_alert_groups():
     return alerts.get('groups', [])
 
 
-def _find_commodity(symbol):
+def _find_commodity_entry(symbol):
     """Find a commodity entry by symbol. Returns dict or None."""
     commodities = _get_commodities()
     for c in commodities:
@@ -1986,7 +2002,7 @@ def cmd_alert_add(flags, args):
                 break
 
     # Check if symbol is in commodities registry
-    commodity = _find_commodity(symbol)
+    commodity = _find_commodity_entry(symbol)
     if not commodity:
         print(f"\n  '{symbol}' is not in your commodities list.")
         if flags.get('batch'):
@@ -2272,7 +2288,7 @@ def _alert_check_once(flags, rules, entity):
             errors += 1
             continue
 
-        commodity = _find_commodity(symbol)
+        commodity = _find_commodity_entry(symbol)
         if not commodity:
             commodity = {'symbol': symbol, 'fetch_pair': symbol, 'currency': 'CAD'}
 

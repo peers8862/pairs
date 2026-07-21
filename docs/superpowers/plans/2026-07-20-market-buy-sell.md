@@ -15,7 +15,7 @@
 - Entity currency is CAD. Fees are always expressed in entity currency.
 - Cost basis is ACB (weighted average), never FIFO. Sells reduce accumulated cost proportionally and must not alter the average.
 - Holdings live at `Assets:Investments:<TaxAccount>:<SYMBOL>` where `<TaxAccount>` is one of `Taxable`, `Corporate`, `TFSA`, `RRSP`.
-- Registered accounts (`TFSA`, `RRSP`) never receive gain/loss postings.
+- Registered accounts (`TFSA`, `RRSP`) route gains to `Income:Non-Operating:Registered Gains` (configurable via `config.accounts.registered_gains`) instead of the capital-gains account. They are never omitted — the entry would not balance.
 - Money renders at 2 decimal places; quantities render at up to 8, with trailing zeros stripped.
 - Total cost uses hledger `@@` (total price) syntax in CAD, never `@` (unit price).
 - Pair tags: buy `1011`, sell-at-gain `0110`, sell-at-loss `0010`, sell-at-break-even `1011`.
