@@ -683,6 +683,22 @@
         </div>
     </div>
 
+    <!-- Entity Archive -->
+    <div id="ar-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:76;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:94%;max-width:680px;max-height:92vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.9rem;">
+                <span style="color:var(--accent);font-weight:bold;">Entity Archive</span>
+                <button onclick="closeArchive()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div style="color:var(--fg-dim);font-size:0.75rem;margin-bottom:0.6rem;">Removed and archived entities/projects. Restore brings them back; delete is permanent.</div>
+            <div id="ar-hidden"></div>
+            <div style="border-top:1px solid var(--border);margin:1rem 0 0.6rem;"></div>
+            <div style="color:var(--fg-dim);font-size:0.75rem;margin-bottom:0.5rem;">Active entities — remove (hide, keep files) or archive (move to archive folder)</div>
+            <div id="ar-active"></div>
+            <div id="ar-error" style="display:none;color:var(--red);font-size:0.78rem;margin-top:0.6rem;white-space:pre-wrap;"></div>
+        </div>
+    </div>
+
     <!-- New Entity / Project -->
     <div id="ne-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:75;align-items:center;justify-content:center;">
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:94%;max-width:620px;max-height:92vh;overflow-y:auto;">
@@ -1263,6 +1279,13 @@
         const sep = document.createElement('div');
         sep.className = 'entity-sep';
         dd.appendChild(sep);
+        const ar = document.createElement('div');
+        ar.className = 'entity-item';
+        ar.style.color = 'var(--fg-dim)';
+        ar.textContent = 'Archive' + (data.hidden_count ? ` (${data.hidden_count})` : '');
+        ar.onclick = (ev) => { ev.stopPropagation(); toggleEntityDropdown(); openArchive(); };
+        dd.appendChild(ar);
+
         const nu = document.createElement('div');
         nu.className = 'entity-new';
         nu.textContent = '+ NEW';
@@ -4237,6 +4260,85 @@
     }
 
     document.getElementById('trade-modal')?.addEventListener('click', function(e) { if (e.target === this) closeTradeModal(); });
+
+    // ─── Entity Archive ─────────────────────────────────────────────────────
+    async function openArchive() {
+        document.getElementById('ar-error').style.display = 'none';
+        document.getElementById('ar-modal').style.display = 'flex';
+        await renderArchive();
+    }
+    function closeArchive() { document.getElementById('ar-modal').style.display = 'none'; }
+
+    function arRow(label, sub, badge, buttons) {
+        return `<div style="display:flex;align-items:center;gap:0.6rem;padding:0.45rem 0;border-bottom:1px solid var(--border);font-size:0.82rem;">
+            <div style="flex:1;min-width:0;">
+                <div>${label}${badge}</div>
+                <div style="color:var(--fg-dim);font-size:0.72rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sub}</div>
+            </div>
+            <div style="display:flex;gap:0.35rem;white-space:nowrap;">${buttons}</div>
+        </div>`;
+    }
+
+    async function renderArchive() {
+        const hiddenEl = document.getElementById('ar-hidden');
+        const activeEl = document.getElementById('ar-active');
+        try {
+            const [arch, ents] = await Promise.all([
+                fetch('/api/entity/archived').then(r => r.json()),
+                fetch('/api/entities').then(r => r.json()),
+            ]);
+
+            hiddenEl.innerHTML = (arch.items || []).length
+                ? arch.items.map(i => arRow(
+                    esc(i.name),
+                    esc(i.path),
+                    ` <span style="color:var(--fg-dim);font-size:0.7rem;">${esc(i.state)} · ${esc(i.kind)}${i.parent ? ' · under ' + esc(i.parent) : ''}</span>`,
+                    `<button class="btn" style="font-size:0.72rem;padding:0.2rem 0.5rem;" onclick="arAction('${esc(i.slug)}','restore')">Restore</button>
+                     <button class="btn" style="font-size:0.72rem;padding:0.2rem 0.5rem;color:var(--red);border-color:var(--red);" onclick="arAction('${esc(i.slug)}','delete')">Delete</button>`
+                  )).join('')
+                : '<div style="color:var(--fg-dim);font-size:0.78rem;padding:0.4rem 0;">Nothing removed or archived.</div>';
+
+            activeEl.innerHTML = (ents.entities || []).map(e => {
+                const isActive = e.slug === ents.active;
+                const btns = isActive
+                    ? '<span style="color:var(--green);font-size:0.72rem;">active</span>'
+                    : `<button class="btn" style="font-size:0.72rem;padding:0.2rem 0.5rem;" onclick="arAction('${esc(e.slug)}','remove')">Remove</button>
+                       <button class="btn" style="font-size:0.72rem;padding:0.2rem 0.5rem;" onclick="arAction('${esc(e.slug)}','archive')">Archive</button>`;
+                return arRow(esc(e.name || e.slug),
+                    esc(e.path || ''),
+                    ` <span style="color:var(--fg-dim);font-size:0.7rem;">${esc(e.kind || 'entity')}</span>`,
+                    btns);
+            }).join('');
+        } catch (e) {
+            hiddenEl.innerHTML = '<div style="color:var(--red);font-size:0.78rem;">Could not load archive.</div>';
+        }
+    }
+
+    async function arAction(slug, action) {
+        const err = document.getElementById('ar-error');
+        if (action === 'delete' && !confirm(`Permanently delete "${slug}" and its files? This cannot be undone.`)) return;
+        try {
+            const res = await fetch('/api/entity/lifecycle', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ slug, action }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                err.style.display = 'none';
+                showToast(data.message || 'Done');
+                await renderArchive();
+                await loadEntities();
+            } else {
+                err.textContent = data.detail || 'Failed';
+                err.style.display = 'block';
+            }
+        } catch (e) {
+            err.textContent = 'Network error: ' + e.message;
+            err.style.display = 'block';
+        }
+    }
+
+    document.getElementById('ar-modal')?.addEventListener('click', function (e) { if (e.target === this) closeArchive(); });
 
     // ─── New Entity / Project ───────────────────────────────────────────────
     // Mirrors `pair create`: kind first, then parent (projects), then the

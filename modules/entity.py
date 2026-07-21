@@ -7,6 +7,7 @@ from pathlib import Path
 from lib.helpers import (
     BASE_DIR, GLOBAL_CONFIG_FILE,
     load_global_config, save_global_config, get_active_entity, entity_dir_for,
+    entity_state, visible_entities, hidden_entities,
     prompt, validate_slug, ensure_dir, expand_path, slugify, save_config, confirm
 )
 from lib.journal import write_journal_atomic
@@ -35,6 +36,7 @@ ENTITY_DIRS = [
 DOCS_BASE = Path.home() / 'Documents' / 'Accounting'
 ENTITIES_BASE = DOCS_BASE / 'Entities'
 PROJECTS_BASE = DOCS_BASE / 'Projects'
+ARCHIVE_BASE = DOCS_BASE / 'Pairs' / 'Archive'
 
 # Files that mark a folder as an existing hledger ledger (registration signal).
 JOURNAL_EXTS = ('.journal', '.j', '.hledger')
@@ -56,11 +58,21 @@ def dispatch(args):
         cmd_path(args[1:])
     elif args[0] == 'move':
         cmd_move(args[1:])
+    elif args[0] == 'remove':
+        cmd_remove(args[1:])
+    elif args[0] == 'restore':
+        cmd_restore(args[1:])
+    elif args[0] == 'archive':
+        cmd_archive(args[1:])
+    elif args[0] == 'delete':
+        cmd_delete(args[1:])
+    elif args[0] == 'archived':
+        cmd_archived()
     elif args[0] in ('--help', '-h'):
         print_help()
     else:
         print(f"Unknown entity subcommand: {args[0]}")
-        print("Usage: pair entity [show|list|add|use|path|move]")
+        print("Usage: pair entity [show|list|create|use|path|move|remove|restore|archive|delete|archived]")
         sys.exit(1)
 
 
@@ -103,12 +115,18 @@ def cmd_list():
         print("No entities configured. Run 'pair init' first.")
         return
 
+    shown = visible_entities(config)
     print("Entities (Company/Project):\n")
-    for e in entities:
+    for e in shown:
         marker = " *" if e['slug'] == active else "  "
-        print(f"  {marker} {e['name']} ({e['slug']})")
+        kind = e.get('kind', 'entity')
+        suffix = "  (project)" if kind == 'project' else ""
+        print(f"  {marker} {e['name']} ({e['slug']}){suffix}")
 
+    hidden = len(entities) - len(shown)
     print(f"\n  * = active")
+    if hidden:
+        print(f"  {hidden} removed/archived — see 'pair entity archived'")
 
 
 def _find_journal_file(folder):
@@ -563,6 +581,192 @@ def cmd_move(args):
     print(f"\n  ✓ {slug} moved to {dest}\n")
 
 
+# ─── Lifecycle: remove / restore / archive / delete ──────────────────────────
+
+def _find_entry(config, slug):
+    for e in config.get('entities', []) or []:
+        if e.get('slug') == slug:
+            return e
+    return None
+
+
+def _owned_projects(config, slug):
+    return [e for e in config.get('entities', []) or []
+            if e.get('parent') == slug and entity_state(e) == 'active']
+
+
+def _lifecycle_target(args, verb):
+    """Resolve and validate the slug for a lifecycle command."""
+    args = [a for a in args if not a.startswith('-')]
+    if not args:
+        print(f"\n  Usage: pair entity {verb} <slug>\n")
+        return None, None
+    slug = args[0]
+    config = load_global_config()
+    entry = _find_entry(config, slug)
+    if not entry:
+        print(f"\n  No entity or project with slug '{slug}'\n")
+        return None, None
+    if slug == get_active_entity() and verb != 'restore':
+        print(f"\n  '{slug}' is the active entity. Switch away first:  pair switch <other>\n")
+        return None, None
+    owned = _owned_projects(config, slug)
+    if owned and verb != 'restore':
+        print(f"\n  '{slug}' owns {len(owned)} project(s): {', '.join(o['slug'] for o in owned)}")
+        print(f"  {verb.capitalize()} or reparent those first.\n")
+        return None, None
+    return config, entry
+
+
+def cmd_remove(args):
+    """Hide an entity/project from lists and references. Files untouched."""
+    config, entry = _lifecycle_target(args, 'remove')
+    if not config:
+        return
+    slug = entry['slug']
+    if entry.get('removed'):
+        print(f"\n  '{slug}' is already removed.\n")
+        return
+    entry['removed'] = True
+    save_global_config(config)
+    print(f"\n  ✓ '{slug}' removed from lists. Files left at {entity_dir_for(slug, config)}")
+    print(f"  Bring it back with: pair entity restore {slug}\n")
+
+
+def cmd_restore(args):
+    """Undo a remove or archive."""
+    config, entry = _lifecycle_target(args, 'restore')
+    if not config:
+        return
+    slug = entry['slug']
+    state = entity_state(entry)
+    if state == 'active':
+        print(f"\n  '{slug}' is already active.\n")
+        return
+
+    if state == 'archived':
+        import shutil
+        current = entity_dir_for(slug, config)
+        target = expand_path(entry.get('prev_path') or (ENTITIES_BASE / slug))
+        if current.exists():
+            if target.exists() and any(target.iterdir()):
+                print(f"\n  Cannot restore — destination exists and is not empty: {target}\n")
+                return
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(current), str(target))
+        entry['path'] = str(target)
+        entry.pop('prev_path', None)
+        entry.pop('archived', None)
+        print(f"\n  ✓ '{slug}' restored to {target}")
+    else:
+        entry.pop('removed', None)
+        print(f"\n  ✓ '{slug}' restored to lists")
+
+    save_global_config(config)
+    print(f"  Switch to it with: pair switch {slug}\n")
+
+
+def cmd_archive(args):
+    """Move an entity/project folder into the archive base, keep a reference."""
+    import shutil
+    config, entry = _lifecycle_target(args, 'archive')
+    if not config:
+        return
+    slug = entry['slug']
+    if entry.get('archived'):
+        print(f"\n  '{slug}' is already archived.\n")
+        return
+
+    src = entity_dir_for(slug, config)
+    dest = (ARCHIVE_BASE / slug).resolve()
+    if dest.exists() and any(dest.iterdir()):
+        print(f"\n  Archive slot already occupied: {dest}\n")
+        return
+
+    print(f"\n  Archive '{slug}'")
+    print(f"    from: {src}")
+    print(f"      to: {dest}")
+    if not confirm("\n  Proceed?", default_yes=False):
+        print("  Cancelled.\n")
+        return
+
+    if src.exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.move(str(src), str(dest))
+        except Exception as e:
+            print(f"\n  Archive failed, nothing changed: {e}\n")
+            return
+    else:
+        print(f"  (folder not found at {src} — recording the archive anyway)")
+
+    entry['prev_path'] = str(src)
+    entry['path'] = str(dest)
+    entry['archived'] = True
+    save_global_config(config)
+    print(f"\n  ✓ '{slug}' archived to {dest}")
+    print(f"  See archived items with: pair entity archived")
+    print(f"  Bring it back with:      pair entity restore {slug}\n")
+
+
+def cmd_delete(args):
+    """Permanently delete an entity/project — files and registration."""
+    import shutil
+    assume_yes = any(a in ('--yes', '-y') for a in args)
+    config, entry = _lifecycle_target(args, 'delete')
+    if not config:
+        return
+    slug = entry['slug']
+    folder = entity_dir_for(slug, config)
+
+    count = 0
+    if folder.exists():
+        count = sum(1 for _ in folder.rglob('*') if _.is_file())
+
+    print(f"\n  DELETE '{slug}' — this cannot be undone.")
+    print(f"    folder: {folder}{'' if folder.exists() else '   (missing)'}")
+    print(f"    files:  {count}")
+    print(f"\n  Alternatives: 'pair entity remove {slug}' (hide, keep files)")
+    print(f"                'pair entity archive {slug}' (move to archive)")
+
+    if not assume_yes:
+        try:
+            typed = prompt(f"\n  Type the slug '{slug}' to confirm", required=False)
+        except EOFError:
+            print("\n  Not confirmed (no input). Re-run with --yes to delete.\n")
+            return
+        if (typed or '').strip() != slug:
+            print("  Slug did not match. Cancelled.\n")
+            return
+
+    if folder.exists():
+        try:
+            shutil.rmtree(folder)
+        except Exception as e:
+            print(f"\n  Delete failed, registration left intact: {e}\n")
+            return
+
+    config['entities'] = [e for e in config.get('entities', []) or [] if e.get('slug') != slug]
+    save_global_config(config)
+    print(f"\n  ✓ '{slug}' deleted ({count} files removed)\n")
+
+
+def cmd_archived():
+    """List removed and archived entities/projects."""
+    config = load_global_config()
+    hidden = hidden_entities(config)
+    if not hidden:
+        print("\n  Nothing removed or archived.\n")
+        return
+    print("\n  Removed / archived:\n")
+    for e in hidden:
+        state = entity_state(e)
+        kind = e.get('kind', 'entity')
+        print(f"    [{state:8}] {e.get('name', e['slug'])} ({e['slug']}) — {kind}")
+        print(f"               {entity_dir_for(e['slug'], config)}")
+    print("\n  Restore with: pair entity restore <slug>\n")
+
+
 def print_help():
     print("""pair entity — manage entities (Company/Project)
 
@@ -575,6 +779,13 @@ Usage:
   pair entity add           Alias for create
   pair entity use <slug>    Switch active entity
   pair switch <slug>        Switch active entity (shortcut)
+
+Lifecycle:
+  pair entity remove <slug>   Hide from lists (files kept, reversible)
+  pair entity restore <slug>  Undo a remove or archive
+  pair entity archive <slug>  Move folder to the archive, keep a reference
+  pair entity archived        List removed/archived items
+  pair entity delete <slug>   Permanently delete files + registration
 
 Entity folder location:
   pair entity path                      Show where the active entity lives
