@@ -680,7 +680,11 @@
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:96%;max-width:900px;max-height:92vh;overflow-y:auto;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.9rem;">
                 <span style="color:var(--accent);font-weight:bold;">Advanced Entry</span>
-                <button onclick="closeAdvancedEntry()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+                <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <button class="btn" id="adv-pin" onclick="advTogglePin()" title="Pin to keep all details after writing"
+                        style="font-size:0.8rem;padding:0.2rem 0.5rem;color:var(--fg-dim);line-height:1;">📌</button>
+                    <button onclick="closeAdvancedEntry()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+                </div>
             </div>
 
             <!-- Header fields -->
@@ -741,6 +745,7 @@
                     <select id="adv-pair-select" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.3rem 0.4rem;color:var(--fg);font-family:inherit;font-size:0.78rem;"></select>
                 </div>
                 <div style="display:flex;gap:0.5rem;margin-left:auto;">
+                    <button class="btn" onclick="advClearFields()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Clear fields</button>
                     <button class="btn" onclick="closeAdvancedEntry()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
                     <button class="btn" id="adv-write" onclick="advWrite()" disabled style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Write to journal</button>
                 </div>
@@ -4342,15 +4347,26 @@
         };
     }
 
-    async function openAdvancedEntry() {
+    // Pin keeps every detail after a write, so near-identical entries can be
+    // repeated without retyping. Unpinned, the overlay resets as usual.
+    let advPinned = false;
+
+    function advTogglePin() {
+        advPinned = !advPinned;
+        const b = document.getElementById('adv-pin');
+        b.style.background = advPinned ? 'var(--accent)' : '';
+        b.style.color = advPinned ? 'var(--bg)' : 'var(--fg-dim)';
+        b.style.borderColor = advPinned ? 'var(--accent)' : 'var(--border)';
+        b.title = advPinned
+            ? 'Pinned — details are kept after writing'
+            : 'Pin to keep all details after writing';
+    }
+
+    function advClearFields() {
         document.getElementById('adv-date').value = new Date().toISOString().slice(0, 10);
         ['adv-code','adv-payee','adv-note','adv-tags'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('adv-status').value = '';
-        const box = document.getElementById('adv-postings');
-        box.innerHTML = advRowHtml() + advRowHtml();
-        const sel = document.getElementById('adv-pair-select');
-        sel.innerHTML = '<option value="">— none —</option><option value="compound">compound</option>' +
-            Object.entries(PAIR_LABELS).map(([c, l]) => `<option value="${c}">${c} · ${esc(l)}</option>`).join('');
+        document.getElementById('adv-postings').innerHTML = advRowHtml() + advRowHtml();
         document.getElementById('adv-preview').textContent = '';
         document.getElementById('adv-raw').value = '';
         advRawMode = false;
@@ -4358,10 +4374,22 @@
         document.getElementById('adv-refields').style.display = 'none';
         document.getElementById('adv-status-badge').textContent = '';
         document.getElementById('adv-pair').textContent = '';
+        const sel = document.getElementById('adv-pair-select');
+        sel.value = '';
+        delete sel.dataset.touched;
         document.getElementById('adv-write').disabled = true;
+        advRefresh();
+    }
+
+    async function openAdvancedEntry() {
+        const sel = document.getElementById('adv-pair-select');
+        sel.innerHTML = '<option value="">— none —</option><option value="compound">compound</option>' +
+            Object.entries(PAIR_LABELS).map(([c, l]) => `<option value="${c}">${c} · ${esc(l)}</option>`).join('');
+        // A pinned overlay reopens with the previous details intact.
+        const keep = advPinned && document.getElementById('adv-raw').value.trim();
+        if (!keep) advClearFields(); else advRefresh();
         document.getElementById('adv-modal').style.display = 'flex';
         advLoadAccounts();
-        advRefresh();
     }
     function closeAdvancedEntry() { document.getElementById('adv-modal').style.display = 'none'; }
 
@@ -4446,8 +4474,13 @@
             });
             const data = await res.json();
             if (res.ok) {
-                showToast(data.message || 'Entry written');
-                closeAdvancedEntry();
+                if (advPinned) {
+                    showToast((data.message || 'Entry written') + ' — details kept');
+                    btn.disabled = false;
+                } else {
+                    showToast(data.message || 'Entry written');
+                    closeAdvancedEntry();
+                }
                 if (typeof loadDashboard === 'function') loadDashboard();
             } else {
                 showToast('Error: ' + (data.detail || 'Failed'), true);
