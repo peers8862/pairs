@@ -104,6 +104,10 @@ def main():
     elif command == 'switch':
         from modules.entity import cmd_use
         cmd_use(sys.argv[2:])
+    # Create a new entity or project (shortcut for 'entity create')
+    elif command == 'create':
+        from modules.entity import cmd_create
+        cmd_create(sys.argv[2:])
     # Prompt helper for shell PS1 integration
     elif command == 'prompt':
         # Fast path: read cache file (no YAML parsing)
