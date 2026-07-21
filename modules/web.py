@@ -245,6 +245,15 @@ def create_app():
         tag: str = ''
         type: str = ''
 
+    class EntryPreviewRequest(BaseModel):
+        journal_text: str = ''
+        postings: list = []
+
+    class AdvancedEntryRequest(BaseModel):
+        journal_text: str
+        date: str = ''
+        pair: str = ''
+
     class BuyRequest(BaseModel):
         symbol: str
         qty: float
@@ -1248,6 +1257,105 @@ def create_app():
                 'registered': registered, 'currency': entity_currency,
                 'message': f"Sold {req.qty:g} {commodity['symbol']} — "
                            f"{'gain' if gain >= 0 else 'loss'} {entity_currency} {abs(gain):.2f}"}
+
+    def _account_types(journal=None):
+        """Map account name -> hledger type letter, via `hledger accounts --types`.
+
+        Returns (types, error). Never swallows the failure silently: if hledger
+        cannot read the journal, pair inference is unavailable and the caller
+        must say so rather than reporting "no pair inferred".
+        """
+        types = {}
+        path = journal or get_entity_journal()
+        try:
+            result = subprocess.run(
+                ['hledger', '-f', str(path), 'accounts', '--types'],
+                capture_output=True, text=True, timeout=30)
+        except FileNotFoundError:
+            return types, 'hledger is not installed'
+        except subprocess.TimeoutExpired:
+            return types, 'hledger timed out reading accounts'
+        except Exception as e:
+            return types, str(e)
+
+        if result.returncode != 0:
+            return types, (result.stderr or 'could not read accounts').strip().splitlines()[0]
+
+        for line in result.stdout.splitlines():
+            if ';' not in line:
+                continue
+            name, _, tag = line.partition(';')
+            letter = tag.replace('type:', '').strip()
+            if name.strip() and letter:
+                types[name.strip()] = letter[:1].upper()
+        return types, ''
+
+    @app.post("/api/entry/preview")
+    async def entry_preview(req: EntryPreviewRequest):
+        """Validate entry text via hledger. Read-only — never writes."""
+        from lib.entry import validate_entry, infer_pair
+        text = req.journal_text or ''
+        if not text.strip():
+            return {'ok': False, 'rendered': '', 'errors': '', 'inferred_pair': ''}
+
+        result = validate_entry(text)
+
+        # Infer the pair code from the posting accounts the client is editing.
+        inferred = ''
+        inference_error = ''
+        accounts = [p.get('account', '').strip() for p in (req.postings or [])]
+        accounts = [a for a in accounts if a]
+        if len(accounts) > 2:
+            inferred = 'compound'
+        elif len(accounts) == 2:
+            known, inference_error = _account_types()
+            if not inference_error:
+                typed = [{'account': a, 'type': known.get(a, '')} for a in accounts]
+                missing = [t['account'] for t in typed if not t['type']]
+                if missing:
+                    inference_error = f"unknown account type for: {', '.join(missing)}"
+                else:
+                    inferred = infer_pair(typed)
+
+        return {**result, 'inferred_pair': inferred, 'inference_error': inference_error}
+
+    @app.post("/api/entry/advanced")
+    async def entry_advanced(req: AdvancedEntryRequest):
+        """Validate then append an advanced entry. Re-validates server-side."""
+        import re
+        from lib.entry import validate_entry, record_entry
+        text = (req.journal_text or '').strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Entry is empty")
+
+        result = validate_entry(text)
+        if not result['ok']:
+            raise HTTPException(status_code=400, detail=result['errors'] or 'Invalid entry')
+
+        entry_date = (req.date or '').strip() or date.today().strftime('%Y-%m-%d')
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', entry_date):
+            raise HTTPException(status_code=400, detail=f"Invalid date: {entry_date}")
+
+        # Tag the entry so pair-keyed views keep working.
+        tags = ['mode:advanced']
+        pair = (req.pair or '').strip()
+        if pair:
+            tags.append(f"pair:{pair}")
+        lines = text.splitlines()
+        if '  ; ' in lines[0]:
+            lines[0] = lines[0] + ', ' + ', '.join(tags)
+        else:
+            lines[0] = lines[0] + '  ; ' + ', '.join(tags)
+        tagged = "\n".join(lines).rstrip() + "\n\n"
+
+        # The tags must not break parsing.
+        recheck = validate_entry(tagged)
+        if not recheck['ok']:
+            raise HTTPException(status_code=400, detail=recheck['errors'])
+
+        year = record_entry(tagged, entry_date)
+        return {'status': 'ok', 'year': year, 'pair': pair,
+                'message': f"Entry written to generated/{year}/entries.journal"}
 
     @app.get("/api/payroll")
     async def payroll_list():
