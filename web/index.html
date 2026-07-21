@@ -4170,10 +4170,6 @@
         const pairEl = document.getElementById('adv-pair');
         const writeBtn = document.getElementById('adv-write');
 
-        if (!fields.postings.some(p => p.account)) {
-            pre.textContent = ''; badge.textContent = ''; pairEl.textContent = '';
-            writeBtn.disabled = true; return;
-        }
         try {
             const d = await fetch('/api/entry/preview', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -4181,9 +4177,15 @@
             }).then(r => r.json());
 
             if (d.ok) {
-                badge.innerHTML = '<span style="color:var(--green)">✓ valid</span>';
-                pre.textContent = d.rendered || '';
-                writeBtn.disabled = false;
+                // Valid hledger, but a complete double entry needs 2+ postings.
+                if (d.incomplete) {
+                    badge.innerHTML = `<span style="color:var(--fg-dim)">${esc(d.incomplete)}</span>`;
+                    writeBtn.disabled = true;
+                } else {
+                    badge.innerHTML = '<span style="color:var(--green)">✓ valid</span>';
+                    writeBtn.disabled = false;
+                }
+                pre.textContent = d.rendered || d.journal_text || '';
             } else {
                 badge.innerHTML = '<span style="color:var(--red)">✗ invalid</span>';
                 pre.textContent = d.errors || '';
