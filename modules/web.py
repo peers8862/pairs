@@ -1308,12 +1308,17 @@ def create_app():
 
         fields = _entry_fields(req)
         named = [p for p in fields['postings'] if (p.get('account') or '').strip()]
-        if not named:
-            return {'ok': False, 'rendered': '', 'errors': '', 'journal_text': '',
-                    'inferred_pair': '', 'inference_error': ''}
 
+        # Preview as soon as there is anything to show. hledger accepts a
+        # posting-less transaction (manual: "Postings are not required"), so a
+        # header-only entry previews fine and the user gets feedback from the
+        # first keystroke instead of a blank box until an account is typed.
         text = serialize_entry(fields)
         result = validate_entry(text)
+
+        # Valid hledger, but not yet a complete double entry.
+        if result['ok'] and len(named) < 2:
+            result = {**result, 'incomplete': 'Add at least two postings to write this entry'}
 
         # Infer the pair code from the posting accounts the client is editing.
         inferred = ''
@@ -1332,7 +1337,7 @@ def create_app():
                 else:
                     inferred = infer_pair(typed)
 
-        return {**result, 'journal_text': text,
+        return {**result, 'journal_text': text, 'posting_count': len(named),
                 'inferred_pair': inferred, 'inference_error': inference_error}
 
     @app.post("/api/entry/advanced")
