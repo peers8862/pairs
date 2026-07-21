@@ -96,3 +96,41 @@ def test_hledger_parses_generated_entries(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "TSLA" in result.stdout
+
+
+# ─── ensure_generated_include ────────────────────────────────────────────────
+# Regression: investment entries were written to generated/<year>/investments.journal
+# but never included in the year aggregator, so hledger never saw them (holdings
+# read as zero). ensure_generated_include wires the include line in.
+
+def _write_aggregator(tmp_path, lines):
+    inc = tmp_path / "include"
+    inc.mkdir()
+    year_file = inc / "2026.journal"
+    year_file.write_text(lines)
+    return inc, year_file
+
+
+def test_ensure_generated_include_appends_missing(tmp_path, monkeypatch):
+    import lib.journal as J
+    inc, year_file = _write_aggregator(tmp_path, "include ../generated/2026/assets.journal\n")
+    monkeypatch.setattr(J, "get_include_dir", lambda: inc)
+    J.ensure_generated_include("2026", "investments.journal")
+    assert "include ../generated/2026/investments.journal" in year_file.read_text()
+
+
+def test_ensure_generated_include_is_idempotent(tmp_path, monkeypatch):
+    import lib.journal as J
+    inc, year_file = _write_aggregator(tmp_path, "include ../generated/2026/investments.journal\n")
+    monkeypatch.setattr(J, "get_include_dir", lambda: inc)
+    J.ensure_generated_include("2026", "investments.journal")
+    assert year_file.read_text().count("investments.journal") == 1
+
+
+def test_ensure_generated_include_noop_when_aggregator_absent(tmp_path, monkeypatch):
+    import lib.journal as J
+    inc = tmp_path / "include"
+    inc.mkdir()
+    monkeypatch.setattr(J, "get_include_dir", lambda: inc)
+    J.ensure_generated_include("2026", "investments.journal")  # must not raise
+    assert not (inc / "2026.journal").exists()
