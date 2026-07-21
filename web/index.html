@@ -3699,7 +3699,9 @@
         }
         document.getElementById('cm-tags').value = ((item && item.tags) || []).join(', ');
         if (!document.getElementById('cm-source').value) document.getElementById('cm-source').value = 'yahoo';
-        if (!document.getElementById('cm-currency').value) document.getElementById('cm-currency').value = state.currency || 'CAD';
+        // No default — entity currency is wrong for foreign-listed securities,
+        // and a wrong currency here propagates into cost basis.
+        document.getElementById('cm-currency').placeholder = state.currency || 'CAD';
 
         // Search is an add-time affordance; editing an existing symbol hides it.
         clearCommoditySearch();
