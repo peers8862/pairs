@@ -196,3 +196,138 @@ def build_sell_entry(date, symbol, qty, unit_price, fee, tax_account,
         cash_postings,
         tags,
     )
+
+
+from datetime import date as _date
+
+from lib.helpers import (
+    load_config, prompt, validate_positive_number, get_active_entity,
+)
+from lib.journal import append_journal, ensure_year_structure, get_generated_dir
+from lib.ui import get_entity_currency, get_entity_journal
+
+
+def _parse_flags(args):
+    """Parse buy/sell flags into a dict."""
+    parsed = {}
+    keys = ('--qty', '--price', '--date', '--account', '--cash', '--fee', '--desc')
+    i = 0
+    while i < len(args):
+        if args[i] in keys and i + 1 < len(args):
+            parsed[args[i].lstrip('-')] = args[i + 1]
+            i += 2
+        else:
+            if not args[i].startswith('--') and 'symbol' not in parsed:
+                parsed['symbol'] = args[i]
+            i += 1
+    return parsed
+
+
+def _resolve_common(opts, commodity):
+    """Fill in date, account, cash, and fee from flags, config, or prompts."""
+    config = load_config()
+    accounts = config.get('accounts', {})
+    tax_account = (opts.get('account')
+                   or commodity.get('tax_account')
+                   or 'taxable').lower()
+    if tax_account not in TAX_ACCOUNTS:
+        raise ValueError(
+            f"Invalid tax account '{tax_account}'. Valid: {', '.join(TAX_ACCOUNTS)}"
+        )
+    return {
+        'date': opts.get('date') or _date.today().strftime('%Y-%m-%d'),
+        'tax_account': tax_account,
+        'cash_account': (opts.get('cash')
+                         or accounts.get('bank', 'Assets:Current:Chequing')),
+        'fee': float(opts.get('fee', 0) or 0),
+        'gains_account': accounts.get(
+            'capital_gains', 'Income:Non-Operating:Capital Gains'
+        ),
+        'registered_gains_account': accounts.get(
+            'registered_gains', 'Income:Non-Operating:Registered Gains'
+        ),
+    }
+
+
+def _write(entry, date_str, label):
+    """Append an entry to generated/<year>/investments.journal."""
+    year = date_str[:4]
+    ensure_year_structure(int(year))
+    path = get_generated_dir() / year / 'investments.journal'
+    append_journal(path, entry)
+    print(f"\n  Recorded: {label}")
+    print(f"  Written to: generated/{year}/investments.journal")
+
+
+def cmd_buy(flags, args):
+    """Record a commodity purchase."""
+    from modules.market import _find_commodity
+
+    opts = _parse_flags(args)
+    symbol = opts.get('symbol') or prompt("  Symbol")
+    commodity, _ = _find_commodity(symbol)
+    if commodity is None:
+        print(f"\n  '{symbol}' is not tracked. Add it first: pair market add {symbol}\n")
+        return
+    symbol = commodity['symbol']
+
+    common = _resolve_common(opts, commodity)
+    entity_currency = get_entity_currency()
+    quote_currency = commodity.get('currency', entity_currency)
+
+    qty = float(opts.get('qty') or prompt("  Quantity", validator=validate_positive_number))
+    unit_price = float(opts.get('price') or prompt(
+        f"  Unit price ({quote_currency})", validator=validate_positive_number))
+
+    fx = 1.0
+    if quote_currency != entity_currency:
+        fx = float(prompt(f"  FX rate {quote_currency}->{entity_currency}",
+                          validator=validate_positive_number))
+
+    entry = build_buy_entry(
+        date=common['date'], symbol=symbol, qty=qty, unit_price=unit_price,
+        quote_currency=quote_currency, fx=fx, fee=common['fee'],
+        tax_account=common['tax_account'], cash_account=common['cash_account'],
+        entity_currency=entity_currency,
+    )
+    _write(entry, common['date'], f"Buy {format_quantity(qty)} {symbol}")
+
+
+def cmd_sell(flags, args):
+    """Record a commodity disposal with ACB-based gain/loss."""
+    from modules.market import _find_commodity
+
+    opts = _parse_flags(args)
+    symbol = opts.get('symbol') or prompt("  Symbol")
+    commodity, _ = _find_commodity(symbol)
+    if commodity is None:
+        print(f"\n  '{symbol}' is not tracked.\n")
+        return
+    symbol = commodity['symbol']
+
+    common = _resolve_common(opts, commodity)
+    entity_currency = get_entity_currency()
+
+    qty = float(opts.get('qty') or prompt("  Quantity", validator=validate_positive_number))
+    unit_price = float(opts.get('price') or prompt(
+        f"  Unit price ({entity_currency})", validator=validate_positive_number))
+
+    events = read_holding_events(
+        get_entity_journal(), common['tax_account'], symbol)
+
+    try:
+        entry = build_sell_entry(
+            date=common['date'], symbol=symbol, qty=qty, unit_price=unit_price,
+            fee=common['fee'], tax_account=common['tax_account'],
+            cash_account=common['cash_account'], entity_currency=entity_currency,
+            events=events, gains_account=common['gains_account'],
+            registered_gains_account=common['registered_gains_account'],
+        )
+    except InsufficientHoldingError as e:
+        print(f"\n  {e}\n")
+        return
+
+    _write(entry, common['date'], f"Sell {format_quantity(qty)} {symbol}")
+    if common['tax_account'] in REGISTERED_ACCOUNTS:
+        print(f"  Gain booked to {common['registered_gains_account']} — "
+              f"{common['tax_account'].upper()} gains are not taxable.")
