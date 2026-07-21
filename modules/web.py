@@ -6,6 +6,7 @@ Starts a local FastAPI server serving the link-mode PWA.
 import sys
 import os
 import subprocess
+import shlex
 import webbrowser
 from pathlib import Path
 from datetime import date
@@ -538,14 +539,18 @@ def create_app():
 
         try:
             cmd = ['hledger', '-f', journal, 'register', '--output-format', 'csv']
+            terms = []
             if query:
+                terms, err = _safe_query_terms(query)
+                if err:
+                    return {'entries': [], 'total': 0, 'error': err}
                 # Bare terms match account names in hledger.
                 # To also match descriptions, we pass both as an OR query.
-                cmd += [query, 'or', 'desc:' + query]
+                cmd += terms + ['or', 'desc:' + query]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 # If OR query fails (older hledger), fall back to simple account match
-                cmd2 = ['hledger', '-f', journal, 'register', '--output-format', 'csv', query]
+                cmd2 = ['hledger', '-f', journal, 'register', '--output-format', 'csv'] + terms
                 result = subprocess.run(cmd2, capture_output=True, text=True)
                 if result.returncode != 0:
                     return {'entries': [], 'total': 0}
@@ -588,6 +593,25 @@ def create_app():
     # Query terms are passed to hledger as argv (never through a shell), so the
     # full query language works verbatim: acct: amt: cur: date: desc: note:
     # payee: code: status: type: tag: depth: real: not: and boolean expr:/any:/all:
+
+    def _safe_query_terms(query):
+        """Split a user query into hledger argv terms. Returns (terms, error).
+
+        Argument injection guard: hledger parses any argv item beginning with
+        '-' as a FLAG, not a query term. Passing args as a list prevents *shell*
+        injection but not this. A smuggled --output-file= turns a read-only
+        report into an arbitrary file write, and -f repoints it at any file on
+        disk. No legitimate query term starts with '-', so reject them.
+        Callers additionally pass '--' before these terms.
+        """
+        try:
+            terms = shlex.split(query) if query else []
+        except ValueError as e:
+            return [], f"Unbalanced quotes: {e}"
+        bad = [t for t in terms if t.startswith('-')]
+        if bad:
+            return [], f"Query terms cannot start with '-': {', '.join(bad)}"
+        return terms, ''
 
     class SearchRequest(BaseModel):
         query: str = ''          # raw hledger query (full parity)
@@ -659,21 +683,20 @@ def create_app():
         hledger's own error is returned verbatim on a malformed query rather
         than silently yielding zero results.
         """
-        import shlex
-
         journal = _get_journal_path()
         if not journal:
             raise HTTPException(status_code=404, detail="No journal found")
 
         query = (req.query or '').strip() or _compose_query(req.fields or {})
 
-        try:
-            terms = shlex.split(query) if query else []
-        except ValueError as e:
-            return {'ok': False, 'query': query, 'error': f"Unbalanced quotes: {e}",
-                    'entries': [], 'total': 0}
+        terms, err = _safe_query_terms(query)
+        if err:
+            return {'ok': False, 'query': query, 'error': err, 'entries': [], 'total': 0}
 
         mode = req.mode if req.mode in ('register', 'print') else 'register'
+        # NB: do not add a '--' separator here. hledger stops parsing prefix:
+        # query syntax after '--', so amt:/type:/expr: silently match nothing.
+        # The leading-dash rejection in _safe_query_terms is the guard.
         cmd = ['hledger', '-f', journal, mode, '--output-format', 'csv'] + terms
 
         try:
@@ -1978,12 +2001,9 @@ def create_app():
                      'equity': ['type:e'], 'income': ['type:r'], 'expenses': ['type:x']}
         q = list(scope_map.get(scope, []))
         if query.strip():
-            try:
-                extra = shlex.split(query)
-            except ValueError:
-                extra = query.split()
-            if any(a.startswith('-') for a in extra):
-                raise HTTPException(status_code=400, detail="Query terms cannot start with '-'")
+            extra, err = _safe_query_terms(query)
+            if err:
+                raise HTTPException(status_code=400, detail=err)
             q += extra
 
         if format == 'csv':
@@ -2331,13 +2351,9 @@ def create_app():
         config = load_config()
         currency = config.get('pair', {}).get('currency', 'CAD')
 
-        try:
-            query_args = shlex.split(q)
-        except ValueError:
-            query_args = q.split()
-        # Block hledger flag injection (e.g. -f /other.journal, -o /path); query terms never start with '-'
-        if any(a.startswith('-') for a in query_args):
-            raise HTTPException(status_code=400, detail="Query terms cannot start with '-'")
+        query_args, err = _safe_query_terms(q)
+        if err:
+            raise HTTPException(status_code=400, detail=err)
 
         cmd = ['hledger', '-f', journal, 'bal'] + query_args + \
               ['-M', '--output-format', 'csv', '--no-elide', '--depth', '3']
