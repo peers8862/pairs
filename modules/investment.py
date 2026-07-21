@@ -201,21 +201,36 @@ def build_sell_entry(date, symbol, qty, unit_price, fee, tax_account,
 from datetime import date as _date
 
 from lib.helpers import (
-    load_config, prompt, validate_positive_number, get_active_entity,
+    load_config, prompt, validate_positive_number,
 )
 from lib.journal import append_journal, ensure_year_structure, get_generated_dir
 from lib.ui import get_entity_currency, get_entity_journal
 
 
+def _to_number(raw, label):
+    """Parse a CLI-supplied number, returning None with a message on bad input."""
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        print(f"\n  Invalid {label}: {raw!r}\n")
+        return None
+    return value
+
+
 def _parse_flags(args):
     """Parse buy/sell flags into a dict."""
     parsed = {}
-    keys = ('--qty', '--price', '--date', '--account', '--cash', '--fee', '--desc')
+    keys = ('--qty', '--price', '--date', '--account', '--cash', '--fee')
     i = 0
     while i < len(args):
-        if args[i] in keys and i + 1 < len(args):
-            parsed[args[i].lstrip('-')] = args[i + 1]
-            i += 2
+        if args[i] in keys:
+            if i + 1 < len(args) and not args[i + 1].startswith('--'):
+                parsed[args[i].lstrip('-')] = args[i + 1]
+                i += 2
+            else:
+                # Flag has no usable value (followed by another flag, or is
+                # the last token) — leave it unset so prompt/default applies.
+                i += 1
         else:
             if not args[i].startswith('--') and 'symbol' not in parsed:
                 parsed['symbol'] = args[i]
@@ -234,12 +249,15 @@ def _resolve_common(opts, commodity):
         raise ValueError(
             f"Invalid tax account '{tax_account}'. Valid: {', '.join(TAX_ACCOUNTS)}"
         )
+    fee = _to_number(opts.get('fee', 0) or 0, 'fee')
+    if fee is None:
+        return None
     return {
         'date': opts.get('date') or _date.today().strftime('%Y-%m-%d'),
         'tax_account': tax_account,
         'cash_account': (opts.get('cash')
                          or accounts.get('bank', 'Assets:Current:Chequing')),
-        'fee': float(opts.get('fee', 0) or 0),
+        'fee': fee,
         'gains_account': accounts.get(
             'capital_gains', 'Income:Non-Operating:Capital Gains'
         ),
@@ -272,12 +290,25 @@ def cmd_buy(flags, args):
     symbol = commodity['symbol']
 
     common = _resolve_common(opts, commodity)
+    if common is None:
+        return
     entity_currency = get_entity_currency()
     quote_currency = commodity.get('currency', entity_currency)
 
-    qty = float(opts.get('qty') or prompt("  Quantity", validator=validate_positive_number))
-    unit_price = float(opts.get('price') or prompt(
-        f"  Unit price ({quote_currency})", validator=validate_positive_number))
+    if opts.get('qty'):
+        qty = _to_number(opts['qty'], 'quantity')
+        if qty is None:
+            return
+    else:
+        qty = float(prompt("  Quantity", validator=validate_positive_number))
+
+    if opts.get('price'):
+        unit_price = _to_number(opts['price'], 'price')
+        if unit_price is None:
+            return
+    else:
+        unit_price = float(prompt(
+            f"  Unit price ({quote_currency})", validator=validate_positive_number))
 
     fx = 1.0
     if quote_currency != entity_currency:
@@ -306,11 +337,24 @@ def cmd_sell(flags, args):
     symbol = commodity['symbol']
 
     common = _resolve_common(opts, commodity)
+    if common is None:
+        return
     entity_currency = get_entity_currency()
 
-    qty = float(opts.get('qty') or prompt("  Quantity", validator=validate_positive_number))
-    unit_price = float(opts.get('price') or prompt(
-        f"  Unit price ({entity_currency})", validator=validate_positive_number))
+    if opts.get('qty'):
+        qty = _to_number(opts['qty'], 'quantity')
+        if qty is None:
+            return
+    else:
+        qty = float(prompt("  Quantity", validator=validate_positive_number))
+
+    if opts.get('price'):
+        unit_price = _to_number(opts['price'], 'price')
+        if unit_price is None:
+            return
+    else:
+        unit_price = float(prompt(
+            f"  Unit price ({entity_currency})", validator=validate_positive_number))
 
     events = read_holding_events(
         get_entity_journal(), common['tax_account'], symbol)
@@ -328,6 +372,7 @@ def cmd_sell(flags, args):
         return
 
     _write(entry, common['date'], f"Sell {format_quantity(qty)} {symbol}")
-    if common['tax_account'] in REGISTERED_ACCOUNTS:
+    if (common['tax_account'] in REGISTERED_ACCOUNTS
+            and common['registered_gains_account'] in entry):
         print(f"  Gain booked to {common['registered_gains_account']} — "
               f"{common['tax_account'].upper()} gains are not taxable.")
