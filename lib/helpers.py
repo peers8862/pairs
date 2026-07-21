@@ -56,6 +56,36 @@ def get_entity_dir():
     return entity_dir_for(active, config)
 
 
+def entity_state(entry):
+    """Lifecycle state of a global.yaml entity entry.
+
+    'active'   — normal, shown everywhere
+    'removed'  — hidden from lists and program references; files untouched
+    'archived' — folder moved to the archive base; kept in the archive list
+
+    Both hidden states are reversible with `pair entity restore`.
+    """
+    if entry.get('archived'):
+        return 'archived'
+    if entry.get('removed'):
+        return 'removed'
+    return 'active'
+
+
+def visible_entities(config=None):
+    """Entities that should appear in lists, dropdowns and lookups."""
+    if config is None:
+        config = load_global_config()
+    return [e for e in (config.get('entities', []) or []) if entity_state(e) == 'active']
+
+
+def hidden_entities(config=None):
+    """Removed + archived entries, for the archive view."""
+    if config is None:
+        config = load_global_config()
+    return [e for e in (config.get('entities', []) or []) if entity_state(e) != 'active']
+
+
 def entity_dir_for(slug, config=None):
     """Return the directory for one entity.
 

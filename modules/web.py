@@ -751,13 +751,12 @@ def create_app():
     @app.get("/api/entities")
     async def entities():
         """List all entities."""
-        from lib.helpers import load_global_config
+        from lib.helpers import load_global_config, visible_entities, hidden_entities
         config = load_global_config()
-        active = config.get('active', '')
-        entity_list = config.get('entities', [])
         return {
-            'active': active,
-            'entities': entity_list,
+            'active': config.get('active', ''),
+            'entities': visible_entities(config),
+            'hidden_count': len(hidden_entities(config)),
         }
 
     class EntityCreateRequest(BaseModel):
@@ -874,6 +873,115 @@ def create_app():
         return {'status': 'ok', 'slug': slug, 'path': str(dest),
                 'registered': registering, 'kind': kind,
                 'message': f"{name} {'registered' if registering else 'created'} at {dest}"}
+
+    class LifecycleRequest(BaseModel):
+        slug: str
+        action: str   # remove | restore | archive | delete
+
+    @app.get("/api/entity/archived")
+    async def entity_archived():
+        """Removed + archived entries, for the web archive panel."""
+        from lib.helpers import load_global_config, hidden_entities, entity_state, entity_dir_for
+        config = load_global_config()
+        items = []
+        for e in hidden_entities(config):
+            items.append({
+                'slug': e.get('slug', ''), 'name': e.get('name', e.get('slug', '')),
+                'kind': e.get('kind', 'entity'), 'state': entity_state(e),
+                'parent': e.get('parent', ''),
+                'path': str(entity_dir_for(e.get('slug', ''), config)),
+            })
+        return {'items': items}
+
+    @app.post("/api/entity/lifecycle")
+    async def entity_lifecycle(req: LifecycleRequest):
+        """remove / restore / archive / delete — same rules as the CLI."""
+        import shutil
+        from modules.entity import ARCHIVE_BASE, ENTITIES_BASE
+        from lib.helpers import (
+            load_global_config, save_global_config, get_active_entity,
+            entity_dir_for, entity_state, expand_path,
+        )
+
+        action = req.action
+        if action not in ('remove', 'restore', 'archive', 'delete'):
+            raise HTTPException(status_code=400, detail=f"Unknown action '{action}'")
+
+        config = load_global_config()
+        entry = next((e for e in config.get('entities', []) or []
+                      if e.get('slug') == req.slug), None)
+        if not entry:
+            raise HTTPException(status_code=404, detail=f"No entity '{req.slug}'")
+
+        if action != 'restore':
+            if req.slug == get_active_entity():
+                raise HTTPException(status_code=400,
+                                    detail=f"'{req.slug}' is active — switch away first")
+            owned = [e for e in config.get('entities', []) or []
+                     if e.get('parent') == req.slug and entity_state(e) == 'active']
+            if owned:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{req.slug}' owns {len(owned)} project(s): "
+                           f"{', '.join(o['slug'] for o in owned)}. Handle those first.")
+
+        folder = entity_dir_for(req.slug, config)
+
+        if action == 'remove':
+            entry['removed'] = True
+            save_global_config(config)
+            return {'status': 'ok', 'message': f"'{req.slug}' removed from lists (files kept)"}
+
+        if action == 'restore':
+            state = entity_state(entry)
+            if state == 'active':
+                return {'status': 'ok', 'message': f"'{req.slug}' is already active"}
+            if state == 'archived':
+                target = expand_path(entry.get('prev_path') or (ENTITIES_BASE / req.slug))
+                if folder.exists():
+                    if target.exists() and any(target.iterdir()):
+                        raise HTTPException(status_code=400,
+                                            detail=f"Destination not empty: {target}")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(folder), str(target))
+                entry['path'] = str(target)
+                entry.pop('prev_path', None)
+                entry.pop('archived', None)
+            else:
+                entry.pop('removed', None)
+            save_global_config(config)
+            return {'status': 'ok', 'message': f"'{req.slug}' restored"}
+
+        if action == 'archive':
+            if entry.get('archived'):
+                return {'status': 'ok', 'message': f"'{req.slug}' is already archived"}
+            dest = (ARCHIVE_BASE / req.slug).resolve()
+            if dest.exists() and any(dest.iterdir()):
+                raise HTTPException(status_code=400, detail=f"Archive slot occupied: {dest}")
+            if folder.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.move(str(folder), str(dest))
+                except Exception as e:
+                    raise HTTPException(status_code=400, detail=f"Archive failed: {e}")
+            entry['prev_path'] = str(folder)
+            entry['path'] = str(dest)
+            entry['archived'] = True
+            save_global_config(config)
+            return {'status': 'ok', 'message': f"'{req.slug}' archived"}
+
+        # delete — permanent
+        count = sum(1 for p in folder.rglob('*') if p.is_file()) if folder.exists() else 0
+        if folder.exists():
+            try:
+                shutil.rmtree(folder)
+            except Exception as e:
+                raise HTTPException(status_code=400,
+                                    detail=f"Delete failed, registration intact: {e}")
+        config['entities'] = [e for e in config.get('entities', []) or []
+                              if e.get('slug') != req.slug]
+        save_global_config(config)
+        return {'status': 'ok', 'message': f"'{req.slug}' deleted ({count} files removed)"}
 
     @app.post("/api/switch")
     async def switch_entity(slug: str):
