@@ -1754,7 +1754,7 @@ def _get_alert_groups():
     return alerts.get('groups', [])
 
 
-def _find_commodity(symbol):
+def _find_commodity_entry(symbol):
     """Find a commodity entry by symbol. Returns dict or None."""
     commodities = _get_commodities()
     for c in commodities:
@@ -2002,7 +2002,7 @@ def cmd_alert_add(flags, args):
                 break
 
     # Check if symbol is in commodities registry
-    commodity = _find_commodity(symbol)
+    commodity = _find_commodity_entry(symbol)
     if not commodity:
         print(f"\n  '{symbol}' is not in your commodities list.")
         if flags.get('batch'):
@@ -2288,7 +2288,7 @@ def _alert_check_once(flags, rules, entity):
             errors += 1
             continue
 
-        commodity = _find_commodity(symbol)
+        commodity = _find_commodity_entry(symbol)
         if not commodity:
             commodity = {'symbol': symbol, 'fetch_pair': symbol, 'currency': 'CAD'}
 
