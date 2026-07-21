@@ -245,13 +245,17 @@ def create_app():
         tag: str = ''
         type: str = ''
 
-    class EntryPreviewRequest(BaseModel):
-        journal_text: str = ''
-        postings: list = []
-
-    class AdvancedEntryRequest(BaseModel):
-        journal_text: str
+    class EntryFields(BaseModel):
+        """Structured entry fields. Serialization happens server-side via
+        lib.entry.serialize_entry so there is exactly one serializer — a JS
+        copy would risk reintroducing the two-space delimiter bug."""
         date: str = ''
+        status: str = ''
+        code: str = ''
+        payee: str = ''
+        note: str = ''
+        tags: str = ''
+        postings: list = []
         pair: str = ''
 
     class BuyRequest(BaseModel):
@@ -1290,14 +1294,25 @@ def create_app():
                 types[name.strip()] = letter[:1].upper()
         return types, ''
 
-    @app.post("/api/entry/preview")
-    async def entry_preview(req: EntryPreviewRequest):
-        """Validate entry text via hledger. Read-only — never writes."""
-        from lib.entry import validate_entry, infer_pair
-        text = req.journal_text or ''
-        if not text.strip():
-            return {'ok': False, 'rendered': '', 'errors': '', 'inferred_pair': ''}
+    def _entry_fields(req):
+        return {
+            'date': (req.date or '').strip() or date.today().strftime('%Y-%m-%d'),
+            'status': req.status, 'code': req.code, 'payee': req.payee,
+            'note': req.note, 'tags': req.tags, 'postings': req.postings or [],
+        }
 
+    @app.post("/api/entry/preview")
+    async def entry_preview(req: EntryFields):
+        """Serialize + validate via hledger. Read-only — never writes."""
+        from lib.entry import validate_entry, infer_pair, serialize_entry
+
+        fields = _entry_fields(req)
+        named = [p for p in fields['postings'] if (p.get('account') or '').strip()]
+        if not named:
+            return {'ok': False, 'rendered': '', 'errors': '', 'journal_text': '',
+                    'inferred_pair': '', 'inference_error': ''}
+
+        text = serialize_entry(fields)
         result = validate_entry(text)
 
         # Infer the pair code from the posting accounts the client is editing.
@@ -1317,43 +1332,38 @@ def create_app():
                 else:
                     inferred = infer_pair(typed)
 
-        return {**result, 'inferred_pair': inferred, 'inference_error': inference_error}
+        return {**result, 'journal_text': text,
+                'inferred_pair': inferred, 'inference_error': inference_error}
 
     @app.post("/api/entry/advanced")
-    async def entry_advanced(req: AdvancedEntryRequest):
-        """Validate then append an advanced entry. Re-validates server-side."""
+    async def entry_advanced(req: EntryFields):
+        """Serialize, validate, then append. Re-validates server-side."""
         import re
-        from lib.entry import validate_entry, record_entry
-        text = (req.journal_text or '').strip()
-        if not text:
-            raise HTTPException(status_code=400, detail="Entry is empty")
+        from lib.entry import validate_entry, record_entry, serialize_entry
 
-        result = validate_entry(text)
-        if not result['ok']:
-            raise HTTPException(status_code=400, detail=result['errors'] or 'Invalid entry')
+        fields = _entry_fields(req)
+        named = [p for p in fields['postings'] if (p.get('account') or '').strip()]
+        if len(named) < 2:
+            raise HTTPException(status_code=400, detail="At least two postings are required")
 
-        entry_date = (req.date or '').strip() or date.today().strftime('%Y-%m-%d')
+        entry_date = fields['date']
         if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', entry_date):
             raise HTTPException(status_code=400, detail=f"Invalid date: {entry_date}")
 
         # Tag the entry so pair-keyed views keep working.
-        tags = ['mode:advanced']
+        extra = ['mode:advanced']
         pair = (req.pair or '').strip()
         if pair:
-            tags.append(f"pair:{pair}")
-        lines = text.splitlines()
-        if '  ; ' in lines[0]:
-            lines[0] = lines[0] + ', ' + ', '.join(tags)
-        else:
-            lines[0] = lines[0] + '  ; ' + ', '.join(tags)
-        tagged = "\n".join(lines).rstrip() + "\n\n"
+            extra.append(f"pair:{pair}")
+        existing = (fields.get('tags') or '').strip()
+        fields['tags'] = f"{existing}, {', '.join(extra)}" if existing else ', '.join(extra)
 
-        # The tags must not break parsing.
-        recheck = validate_entry(tagged)
-        if not recheck['ok']:
-            raise HTTPException(status_code=400, detail=recheck['errors'])
+        text = serialize_entry(fields)
+        result = validate_entry(text)
+        if not result['ok']:
+            raise HTTPException(status_code=400, detail=result['errors'] or 'Invalid entry')
 
-        year = record_entry(tagged, entry_date)
+        year = record_entry(text, entry_date)
         return {'status': 'ok', 'year': year, 'pair': pair,
                 'message': f"Entry written to generated/{year}/entries.journal"}
 
