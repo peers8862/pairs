@@ -71,6 +71,14 @@
 </style>
 </head>
     <style>
+        /* Advanced search field labels */
+        .advs-l { color: var(--fg-dim); font-size: 0.7rem; display: block; margin-bottom: 0.2rem; }
+        #advs-panel .advs-f[type="text"], #advs-panel .advs-f[type="number"], #advs-panel select.advs-f {
+            width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.35rem 0.5rem; color: var(--fg); font-family: inherit; font-size: 0.8rem; box-sizing: border-box;
+        }
+        #advs-panel .advs-n { vertical-align: middle; margin-left: 0.25rem; }
+
         /* Entry view (link mode) */
         .entry-container { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; flex: 1; min-height: 450px; }
         @media (max-width: 700px) { .entry-container { grid-template-columns: 1fr; } }
@@ -442,7 +450,63 @@
             <div style="display:flex;gap:0.5rem;align-items:center;flex:1;min-width:200px;">
                 <input type="text" id="rec-search" placeholder="filter by account, description, amount..." oninput="debounceRecords()" style="flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
                 <span id="rec-count" style="color:var(--fg-dim);font-size:0.75rem;white-space:nowrap;"></span>
+                <button class="btn" onclick="toggleAdvSearch()" id="advs-toggle" title="Full hledger query search"
+                    style="font-size:0.75rem;padding:0.3rem 0.6rem;color:var(--accent);border-color:var(--accent);white-space:nowrap;">Advanced</button>
             </div>
+        </div>
+
+        <!-- Advanced search -->
+        <div id="advs-panel" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.9rem 1rem;margin-bottom:0.75rem;">
+            <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.7rem;">
+                <input type="text" id="advs-query" placeholder="hledger query — e.g. acct:expenses date:2026 amt:'&gt;100' expr:'food OR rent'"
+                    oninput="advsRawEdited()" onkeydown="if(event.key==='Enter'){event.preventDefault();advsRun();}"
+                    style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.45rem 0.7rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
+                <select id="advs-mode" onchange="advsRun()" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.45rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                    <option value="register">postings</option><option value="print">transactions</option>
+                </select>
+                <button class="btn" onclick="advsRun()" style="font-size:0.8rem;padding:0.4rem 0.8rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Search</button>
+                <button class="btn" onclick="advsClear()" style="font-size:0.8rem;padding:0.4rem 0.7rem;">Clear</button>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.5rem;font-size:0.8rem;">
+                <div><label class="advs-l">Account <input type="checkbox" class="advs-n" data-neg="acct" onchange="advsCompose()" title="negate"></label>
+                    <input type="text" class="advs-f" data-f="acct" oninput="advsCompose()" placeholder="expenses:food"></div>
+                <div><label class="advs-l">Description</label>
+                    <input type="text" class="advs-f" data-f="desc" oninput="advsCompose()" placeholder="amazon|amzn"></div>
+                <div><label class="advs-l">Payee</label>
+                    <input type="text" class="advs-f" data-f="payee" oninput="advsCompose()" placeholder="left of |"></div>
+                <div><label class="advs-l">Note</label>
+                    <input type="text" class="advs-f" data-f="note" oninput="advsCompose()" placeholder="right of |"></div>
+                <div><label class="advs-l">Amount</label>
+                    <div style="display:flex;gap:0.3rem;">
+                        <select class="advs-f" data-f="amt_op" onchange="advsCompose()" style="width:70px;"><option value="">=</option><option value="&gt;">&gt;</option><option value="&gt;=">&gt;=</option><option value="&lt;">&lt;</option><option value="&lt;=">&lt;=</option></select>
+                        <input type="text" class="advs-f" data-f="amt" oninput="advsCompose()" placeholder="100" style="flex:1;">
+                    </div></div>
+                <div><label class="advs-l">Commodity</label>
+                    <input type="text" class="advs-f" data-f="cur" oninput="advsCompose()" placeholder="CAD"></div>
+                <div><label class="advs-l">Date (period)</label>
+                    <input type="text" class="advs-f" data-f="date" oninput="advsCompose()" placeholder="2026Q3, thismonth, 2026-01..2026-06"></div>
+                <div><label class="advs-l">Status</label>
+                    <select class="advs-f" data-f="status" onchange="advsCompose()"><option value="">any</option><option value="unmarked">unmarked</option><option value="pending">! pending</option><option value="cleared">* cleared</option></select></div>
+                <div><label class="advs-l">Account types</label>
+                    <input type="text" class="advs-f" data-f="type" oninput="advsCompose()" placeholder="ALERXCVG e.g. XR"></div>
+                <div><label class="advs-l">Tag <input type="checkbox" class="advs-n" data-neg="tag" onchange="advsCompose()" title="negate"></label>
+                    <div style="display:flex;gap:0.3rem;">
+                        <input type="text" class="advs-f" data-f="tag_name" oninput="advsCompose()" placeholder="name" style="flex:1;">
+                        <input type="text" class="advs-f" data-f="tag_value" oninput="advsCompose()" placeholder="value" style="flex:1;">
+                    </div></div>
+                <div><label class="advs-l">Code</label>
+                    <input type="text" class="advs-f" data-f="code" oninput="advsCompose()" placeholder="cheque no."></div>
+                <div><label class="advs-l">Depth</label>
+                    <input type="number" class="advs-f" data-f="depth" min="1" oninput="advsCompose()" placeholder="2"></div>
+                <div><label class="advs-l">Boolean (expr:)</label>
+                    <input type="text" class="advs-f" data-f="expr" oninput="advsCompose()" placeholder="food OR rent"></div>
+                <div style="display:flex;align-items:flex-end;gap:0.4rem;padding-bottom:0.3rem;">
+                    <label class="advs-l" style="margin:0;"><input type="checkbox" class="advs-f" data-f="real" onchange="advsCompose()"> real postings only</label></div>
+            </div>
+
+            <div id="advs-error" style="display:none;color:var(--red);font-size:0.75rem;margin-top:0.6rem;white-space:pre-wrap;"></div>
+            <div id="advs-status" style="color:var(--fg-dim);font-size:0.73rem;margin-top:0.6rem;"></div>
         </div>
         <div id="rec-filters" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;">
             <button class="btn" data-type="Assets" onclick="toggleRecFilter('Assets',this)" style="font-size:0.78rem;padding:0.3rem 0.7rem;">Assets</button>
@@ -4079,6 +4143,115 @@
     }
 
     document.getElementById('trade-modal')?.addEventListener('click', function(e) { if (e.target === this) closeTradeModal(); });
+
+    // ─── Advanced Search ────────────────────────────────────────────────────
+    // Fields compose INTO the query string, which stays visible and editable.
+    // Editing the raw query stops the fields driving it (parsing hledger's
+    // grammar back into fields would need hledger itself and would drift).
+    let advsRawMode = false;
+    let advsTimer = null;
+
+    function toggleAdvSearch() {
+        const p = document.getElementById('advs-panel');
+        const open = p.style.display === 'none';
+        p.style.display = open ? 'block' : 'none';
+        document.getElementById('advs-toggle').style.background = open ? 'var(--accent)' : '';
+        document.getElementById('advs-toggle').style.color = open ? 'var(--bg)' : 'var(--accent)';
+        if (open) document.getElementById('advs-query').focus();
+    }
+
+    function advsFields() {
+        const f = { negate: {} };
+        document.querySelectorAll('#advs-panel .advs-f').forEach(el => {
+            const key = el.dataset.f;
+            f[key] = el.type === 'checkbox' ? el.checked : el.value.trim();
+        });
+        document.querySelectorAll('#advs-panel .advs-n').forEach(el => {
+            if (el.checked) f.negate[el.dataset.neg] = true;
+        });
+        return f;
+    }
+
+    function advsRawEdited() {
+        advsRawMode = true;
+        clearTimeout(advsTimer);
+        advsTimer = setTimeout(advsRun, 400);
+    }
+
+    async function advsCompose() {
+        // A field edit takes back control from a hand-edited query.
+        advsRawMode = false;
+        clearTimeout(advsTimer);
+        advsTimer = setTimeout(advsRun, 350);
+    }
+
+    function advsClear() {
+        document.getElementById('advs-query').value = '';
+        document.querySelectorAll('#advs-panel .advs-f').forEach(el => {
+            if (el.type === 'checkbox') el.checked = false; else el.value = '';
+        });
+        document.querySelectorAll('#advs-panel .advs-n').forEach(el => el.checked = false);
+        advsRawMode = false;
+        document.getElementById('advs-error').style.display = 'none';
+        document.getElementById('advs-status').textContent = '';
+    }
+
+    async function advsRun() {
+        const errEl = document.getElementById('advs-error');
+        const statusEl = document.getElementById('advs-status');
+        const queryEl = document.getElementById('advs-query');
+        const body = {
+            mode: document.getElementById('advs-mode').value,
+            limit: 300,
+            query: advsRawMode ? queryEl.value.trim() : '',
+            fields: advsRawMode ? {} : advsFields(),
+        };
+        statusEl.textContent = 'Searching…';
+        try {
+            const d = await fetch('/api/search', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            }).then(r => r.json());
+
+            // Show the composed query so the field UI teaches the syntax.
+            if (!advsRawMode) queryEl.value = d.query || '';
+
+            if (!d.ok) {
+                errEl.textContent = d.error || 'Search failed';
+                errEl.style.display = 'block';
+                statusEl.textContent = '';
+                return;
+            }
+            errEl.style.display = 'none';
+            advsRender(d);
+            statusEl.textContent = `${d.total} ${d.mode === 'print' ? 'transaction' : 'posting group'}${d.total === 1 ? '' : 's'}` +
+                (d.total > d.entries.length ? ` (showing ${d.entries.length})` : '') +
+                (d.query ? ` · ${d.query}` : ' · whole journal');
+        } catch (e) {
+            errEl.textContent = 'Network error: ' + e.message;
+            errEl.style.display = 'block';
+            statusEl.textContent = '';
+        }
+    }
+
+    function advsRender(d) {
+        const body = document.getElementById('rec-body');
+        if (!body) return;
+        if (!d.entries.length) {
+            body.innerHTML = '<tr><td colspan="3" style="color:var(--fg-dim);padding:0.75rem;">No matches</td></tr>';
+            return;
+        }
+        body.innerHTML = d.entries.map(t => {
+            const postings = (t.postings || []).map(p =>
+                `<div style="display:flex;justify-content:space-between;gap:0.75rem;">
+                    <span style="color:var(--fg-dim)">${esc(p.account)}</span>
+                    <span style="white-space:nowrap">${esc(p.amount)}</span>
+                 </div>`).join('');
+            return `<tr><td style="white-space:nowrap;vertical-align:top;">${esc(t.date)}</td>
+                        <td style="vertical-align:top;">${esc(t.description)}</td>
+                        <td style="font-size:0.8rem;">${postings}</td></tr>`;
+        }).join('');
+    }
 
     // ─── Advanced Entry ─────────────────────────────────────────────────────
     // No serializer here on purpose: the server owns serialize_entry, so the

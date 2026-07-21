@@ -584,6 +584,143 @@ def create_app():
         except Exception as e:
             return {'entries': [], 'total': 0, 'error': str(e)}
 
+    # ─── Advanced search ──────────────────────────────────────────────────
+    # Query terms are passed to hledger as argv (never through a shell), so the
+    # full query language works verbatim: acct: amt: cur: date: desc: note:
+    # payee: code: status: type: tag: depth: real: not: and boolean expr:/any:/all:
+
+    class SearchRequest(BaseModel):
+        query: str = ''          # raw hledger query (full parity)
+        fields: dict = {}        # structured builder fields
+        mode: str = 'register'   # register (postings) | print (transactions)
+        limit: int = 200
+
+    def _compose_query(fields):
+        """Build an hledger query string from structured builder fields.
+
+        One-way by design: fields compose into a query the user can see and
+        then edit by hand. Parsing an arbitrary hledger query back into fields
+        would need hledger's own grammar and would drift.
+        """
+        terms = []
+
+        def add(prefix, value, negate=False):
+            value = (value or '').strip()
+            if not value:
+                return
+            # Quote terms containing spaces so shlex keeps them as one argv item.
+            term = f"{prefix}{value}" if prefix else value
+            if ' ' in value:
+                term = f"{prefix}'{value}'" if prefix else f"'{value}'"
+            terms.append(f"not:{term}" if negate else term)
+
+        neg = fields.get('negate') or {}
+        for key, prefix in (('acct', 'acct:'), ('desc', 'desc:'), ('payee', 'payee:'),
+                            ('note', 'note:'), ('code', 'code:'), ('cur', 'cur:'),
+                            ('date', 'date:'), ('date2', 'date2:')):
+            add(prefix, fields.get(key), bool(neg.get(key)))
+
+        amount = (fields.get('amt') or '').strip()
+        if amount:
+            op = (fields.get('amt_op') or '').strip()
+            terms.append(f"amt:'{op}{amount}'" if op else f"amt:{amount}")
+
+        status = (fields.get('status') or '').strip()
+        if status in ('unmarked', 'pending', 'cleared'):
+            terms.append({'unmarked': 'status:', 'pending': 'status:!', 'cleared': 'status:*'}[status])
+
+        types = ''.join(t for t in (fields.get('type') or '') if t.upper() in 'ALERXCVG')
+        if types:
+            terms.append(f"type:{types.upper()}")
+
+        tag_name = (fields.get('tag_name') or '').strip()
+        if tag_name:
+            tag_value = (fields.get('tag_value') or '').strip()
+            add('tag:', f"{tag_name}={tag_value}" if tag_value else tag_name, bool(neg.get('tag')))
+
+        depth = str(fields.get('depth') or '').strip()
+        if depth.isdigit():
+            terms.append(f"depth:{depth}")
+
+        if fields.get('real'):
+            terms.append('real:')
+
+        expr = (fields.get('expr') or '').strip()
+        if expr:
+            terms.append(f"expr:'{expr}'")
+
+        return ' '.join(terms)
+
+    @app.post("/api/search")
+    async def search(req: SearchRequest):
+        """Run an hledger query. Read-only.
+
+        A raw query wins if given; otherwise the structured fields compose one.
+        hledger's own error is returned verbatim on a malformed query rather
+        than silently yielding zero results.
+        """
+        import shlex
+
+        journal = _get_journal_path()
+        if not journal:
+            raise HTTPException(status_code=404, detail="No journal found")
+
+        query = (req.query or '').strip() or _compose_query(req.fields or {})
+
+        try:
+            terms = shlex.split(query) if query else []
+        except ValueError as e:
+            return {'ok': False, 'query': query, 'error': f"Unbalanced quotes: {e}",
+                    'entries': [], 'total': 0}
+
+        mode = req.mode if req.mode in ('register', 'print') else 'register'
+        cmd = ['hledger', '-f', journal, mode, '--output-format', 'csv'] + terms
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        except FileNotFoundError:
+            return {'ok': False, 'query': query, 'error': 'hledger is not installed',
+                    'entries': [], 'total': 0}
+        except subprocess.TimeoutExpired:
+            return {'ok': False, 'query': query, 'error': 'Search timed out',
+                    'entries': [], 'total': 0}
+
+        if result.returncode != 0:
+            return {'ok': False, 'query': query,
+                    'error': (result.stderr or result.stdout).strip()[:2000],
+                    'entries': [], 'total': 0}
+
+        rows = _parse_csv_rows(result.stdout)
+        entries = _group_search_rows(rows, mode)
+        total = len(entries)
+        return {'ok': True, 'query': query, 'mode': mode, 'error': '',
+                'entries': entries[:req.limit], 'total': total}
+
+    def _parse_csv_rows(text):
+        import csv, io
+        try:
+            return list(csv.DictReader(io.StringIO(text)))
+        except Exception:
+            return []
+
+    def _group_search_rows(rows, mode):
+        """Group hledger CSV output into transactions with their postings."""
+        txns, order = {}, []
+        for row in rows:
+            idx = row.get('txnidx') or row.get('txn') or str(len(order))
+            if idx not in txns:
+                txns[idx] = {'id': idx, 'date': row.get('date', ''),
+                             'description': row.get('description', ''),
+                             'code': row.get('code', ''), 'postings': []}
+                order.append(idx)
+            txns[idx]['postings'].append({
+                'account': row.get('account', ''),
+                'amount': row.get('amount', ''),
+                'total': row.get('total', ''),
+            })
+        order.reverse()
+        return [txns[i] for i in order]
+
     @app.get("/api/entities")
     async def entities():
         """List all entities."""
