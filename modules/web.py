@@ -760,6 +760,121 @@ def create_app():
             'entities': entity_list,
         }
 
+    class EntityCreateRequest(BaseModel):
+        kind: str = 'entity'      # entity | project
+        parent: str = ''          # owned projects only
+        name: str = ''
+        slug: str = ''
+        path: str = ''
+        currency: str = 'CAD'
+        bank: str = 'Chequing'
+
+    @app.get("/api/entity/default-path")
+    async def entity_default_path(kind: str = 'entity', parent: str = '', slug: str = ''):
+        """The default folder for a new entity/project — mirrors the CLI."""
+        from modules.entity import ENTITIES_BASE, PROJECTS_BASE
+        from lib.helpers import entity_dir_for
+        slug = (slug or 'new').strip() or 'new'
+        if kind == 'project' and parent.strip():
+            base = entity_dir_for(parent.strip()) / 'projects' / slug
+        elif kind == 'project':
+            base = PROJECTS_BASE / slug
+        else:
+            base = ENTITIES_BASE / slug
+        return {'path': str(base)}
+
+    @app.get("/api/entity/scan")
+    async def entity_scan(path: str = ''):
+        """Inspect a destination: is there a journal to adopt, which folders exist.
+
+        Powers the registration fork — the same detection the CLI does, so the
+        web and CLI agree on what counts as an existing ledger.
+        """
+        from modules.entity import _find_journal_file, _scan_structure, ENTITY_DIRS
+        from lib.helpers import expand_path
+        raw = (path or '').strip()
+        if not raw:
+            return {'exists': False, 'journal': '', 'found': [], 'missing': ENTITY_DIRS}
+        folder = expand_path(raw)
+        if not folder.exists():
+            return {'exists': False, 'journal': '', 'found': [], 'missing': ENTITY_DIRS}
+        journal = _find_journal_file(folder)
+        found, missing = _scan_structure(folder)
+        return {
+            'exists': True,
+            'journal': str(journal.relative_to(folder)) if journal else '',
+            'found': found,
+            'missing': missing,
+        }
+
+    @app.post("/api/entity/create")
+    async def entity_create(req: EntityCreateRequest):
+        """Create or register an entity/project. Mirrors `pair create`."""
+        import re as _re
+        from modules.entity import (
+            ENTITIES_BASE, PROJECTS_BASE, _find_journal_file,
+            _create_entity_structure, _register_missing,
+        )
+        from lib.helpers import (
+            load_global_config, save_global_config, expand_path, entity_dir_for, slugify,
+        )
+
+        name = (req.name or '').strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required")
+        slug = (req.slug or '').strip() or slugify(name)
+        if not _re.fullmatch(r'[a-z0-9][a-z0-9-]*', slug):
+            raise HTTPException(status_code=400,
+                                detail="Slug must be lowercase letters, digits and hyphens")
+
+        kind = 'project' if req.kind == 'project' else 'entity'
+        parent = (req.parent or '').strip()
+
+        config = load_global_config()
+        entities = config.get('entities', []) or []
+        if any(e.get('slug') == slug for e in entities):
+            raise HTTPException(status_code=400, detail=f"'{slug}' already exists")
+        if parent and not any(e.get('slug') == parent for e in entities):
+            raise HTTPException(status_code=400, detail=f"No entity with slug '{parent}'")
+
+        if req.path.strip():
+            dest = expand_path(req.path.strip())
+        elif kind == 'project' and parent:
+            dest = entity_dir_for(parent) / 'projects' / slug
+        elif kind == 'project':
+            dest = PROJECTS_BASE / slug
+        else:
+            dest = ENTITIES_BASE / slug
+        dest = dest.resolve()
+
+        existing = _find_journal_file(dest)
+        registering = existing is not None
+        journal_file = str(existing) if existing else str(dest / 'include' / 'company.journal')
+        bank_account = f"Assets:Current:{(req.bank or 'Chequing').strip()}"
+        currency = (req.currency or 'CAD').strip()
+
+        try:
+            if registering:
+                _register_missing(dest, name, slug, currency, journal_file, bank_account)
+            else:
+                _create_entity_structure(dest, name, slug, currency, journal_file, bank_account)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not create folder: {e}")
+
+        entry = {'name': name, 'slug': slug, 'currency': currency,
+                 'kind': kind, 'journal_file': journal_file}
+        if parent:
+            entry['parent'] = parent
+        if dest != (BASE_DIR / 'entities' / slug).resolve():
+            entry['path'] = str(dest)
+        entities.append(entry)
+        config['entities'] = entities
+        save_global_config(config)
+
+        return {'status': 'ok', 'slug': slug, 'path': str(dest),
+                'registered': registering, 'kind': kind,
+                'message': f"{name} {'registered' if registering else 'created'} at {dest}"}
+
     @app.post("/api/switch")
     async def switch_entity(slug: str):
         """Switch active entity."""

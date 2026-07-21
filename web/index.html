@@ -37,6 +37,9 @@
         .entity-dropdown .entity-item { padding: 0.5rem 1rem; cursor: pointer; font-size: 0.85rem; }
         .entity-dropdown .entity-item:hover { background: var(--border); color: var(--accent); }
         .entity-dropdown .entity-item.active { color: var(--green); }
+        .entity-dropdown .entity-sep { height: 1px; background: var(--border); margin: 0.35rem 0; }
+        .entity-dropdown .entity-new { padding: 0.5rem 1rem; cursor: pointer; font-size: 0.85rem; color: var(--accent); font-weight: bold; }
+        .entity-dropdown .entity-new:hover { background: var(--border); }
 
         /* Views */
         .view { display: none; flex: 1; padding: 1.5rem; max-width: 1000px; width: 100%; margin: 0 auto; }
@@ -71,6 +74,11 @@
 </style>
 </head>
     <style>
+        /* New entity/project modal fields */
+        .ne-l { color: var(--fg-dim); font-size: 0.72rem; display: block; margin-bottom: 0.2rem; }
+        .ne-f { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+                padding: 0.42rem 0.6rem; color: var(--fg); font-family: inherit; font-size: 0.85rem; box-sizing: border-box; }
+
         /* Advanced search field labels */
         .advs-l { color: var(--fg-dim); font-size: 0.7rem; display: block; margin-bottom: 0.2rem; }
         #advs-panel .advs-f[type="text"], #advs-panel .advs-f[type="number"], #advs-panel select.advs-f {
@@ -675,6 +683,57 @@
         </div>
     </div>
 
+    <!-- New Entity / Project -->
+    <div id="ne-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:75;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:94%;max-width:620px;max-height:92vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="color:var(--accent);font-weight:bold;">New Entity or Project</span>
+                <button onclick="closeNewEntity()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+
+            <!-- Kind -->
+            <div style="display:flex;gap:0.5rem;margin-bottom:0.85rem;">
+                <button class="btn" id="ne-kind-entity" onclick="neSetKind('entity')" style="flex:1;font-size:0.85rem;padding:0.5rem;">Entity</button>
+                <button class="btn" id="ne-kind-project" onclick="neSetKind('project')" style="flex:1;font-size:0.85rem;padding:0.5rem;">Project</button>
+            </div>
+
+            <!-- Parent (projects only) -->
+            <div id="ne-parent-wrap" style="display:none;margin-bottom:0.75rem;">
+                <label class="ne-l">Parent entity <span style="color:var(--fg-dim);">— blank means standalone</span></label>
+                <select id="ne-parent" onchange="neRefreshPath()" class="ne-f"></select>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem;">
+                <div><label class="ne-l">Name</label>
+                    <input type="text" id="ne-name" class="ne-f" oninput="neNameChanged()" placeholder="Acme Consulting"></div>
+                <div><label class="ne-l">Slug</label>
+                    <input type="text" id="ne-slug" class="ne-f" oninput="neSlugEdited()" placeholder="acme-consulting"></div>
+            </div>
+
+            <div style="margin-bottom:0.75rem;">
+                <label class="ne-l">Folder location</label>
+                <input type="text" id="ne-path" class="ne-f" oninput="nePathEdited()" placeholder="~/Documents/Accounting/Entities/…">
+            </div>
+
+            <!-- Registration / scan feedback -->
+            <div id="ne-scan" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.6rem 0.75rem;font-size:0.78rem;margin-bottom:0.75rem;line-height:1.5;"></div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem;">
+                <div><label class="ne-l">Default currency</label>
+                    <input type="text" id="ne-currency" class="ne-f" value="CAD"></div>
+                <div><label class="ne-l">Primary bank account</label>
+                    <input type="text" id="ne-bank" class="ne-f" value="Chequing"></div>
+            </div>
+
+            <div id="ne-error" style="display:none;color:var(--red);font-size:0.78rem;margin-bottom:0.6rem;white-space:pre-wrap;"></div>
+
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+                <button class="btn" onclick="closeNewEntity()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                <button class="btn" id="ne-submit" onclick="neCreate()" style="font-size:0.8rem;padding:0.4rem 0.9rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Create</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Advanced Entry Overlay -->
     <div id="adv-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:70;align-items:center;justify-content:center;">
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:96%;max-width:900px;max-height:92vh;overflow-y:auto;">
@@ -1201,6 +1260,14 @@
             el.onclick = () => switchEntity(e.slug);
             dd.appendChild(el);
         }
+        const sep = document.createElement('div');
+        sep.className = 'entity-sep';
+        dd.appendChild(sep);
+        const nu = document.createElement('div');
+        nu.className = 'entity-new';
+        nu.textContent = '+ NEW';
+        nu.onclick = (ev) => { ev.stopPropagation(); toggleEntityDropdown(); openNewEntity(); };
+        dd.appendChild(nu);
     }
 
     function toggleEntityDropdown() {
@@ -4170,6 +4237,151 @@
     }
 
     document.getElementById('trade-modal')?.addEventListener('click', function(e) { if (e.target === this) closeTradeModal(); });
+
+    // ─── New Entity / Project ───────────────────────────────────────────────
+    // Mirrors `pair create`: kind first, then parent (projects), then the
+    // destination — where an existing hledger journal turns this into a
+    // registration rather than a fresh create.
+    let neKind = 'entity';
+    let neSlugTouched = false;
+    let nePathTouched = false;
+    let neScanTimer = null;
+
+    async function openNewEntity() {
+        neKind = 'entity'; neSlugTouched = false; nePathTouched = false;
+        ['ne-name','ne-slug','ne-path'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('ne-currency').value = 'CAD';
+        document.getElementById('ne-bank').value = 'Chequing';
+        document.getElementById('ne-error').style.display = 'none';
+        document.getElementById('ne-scan').style.display = 'none';
+        document.getElementById('ne-submit').disabled = false;
+
+        // Parent options come from the existing entities.
+        try {
+            const d = await fetch('/api/entities').then(r => r.json());
+            const sel = document.getElementById('ne-parent');
+            sel.innerHTML = '<option value="">— standalone —</option>' +
+                (d.entities || []).filter(e => (e.kind || 'entity') === 'entity')
+                    .map(e => `<option value="${esc(e.slug)}">${esc(e.name || e.slug)}</option>`).join('');
+        } catch (e) { /* parent list is optional */ }
+
+        neSetKind('entity');
+        document.getElementById('ne-modal').style.display = 'flex';
+        document.getElementById('ne-name').focus();
+    }
+    function closeNewEntity() { document.getElementById('ne-modal').style.display = 'none'; }
+
+    function neSetKind(kind) {
+        neKind = kind;
+        for (const k of ['entity', 'project']) {
+            const b = document.getElementById('ne-kind-' + k);
+            const on = k === kind;
+            b.style.background = on ? 'var(--accent)' : '';
+            b.style.color = on ? 'var(--bg)' : '';
+            b.style.borderColor = on ? 'var(--accent)' : '';
+        }
+        document.getElementById('ne-parent-wrap').style.display = kind === 'project' ? 'block' : 'none';
+        neRefreshPath();
+    }
+
+    function neSlugify(text) {
+        return (text || '').toLowerCase().trim()
+            .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    }
+
+    function neNameChanged() {
+        if (!neSlugTouched) document.getElementById('ne-slug').value = neSlugify(document.getElementById('ne-name').value);
+        neRefreshPath();
+    }
+    function neSlugEdited() { neSlugTouched = true; neRefreshPath(); }
+    function nePathEdited() { nePathTouched = true; neScheduleScan(); }
+
+    async function neRefreshPath() {
+        const slug = document.getElementById('ne-slug').value.trim();
+        if (!nePathTouched) {
+            try {
+                const d = await fetch('/api/entity/default-path?kind=' + encodeURIComponent(neKind) +
+                    '&parent=' + encodeURIComponent(document.getElementById('ne-parent').value || '') +
+                    '&slug=' + encodeURIComponent(slug)).then(r => r.json());
+                document.getElementById('ne-path').value = d.path || '';
+            } catch (e) { /* leave as-is */ }
+        }
+        neScheduleScan();
+    }
+
+    function neScheduleScan() {
+        clearTimeout(neScanTimer);
+        neScanTimer = setTimeout(neScan, 350);
+    }
+
+    async function neScan() {
+        const box = document.getElementById('ne-scan');
+        const path = document.getElementById('ne-path').value.trim();
+        if (!path) { box.style.display = 'none'; return; }
+        try {
+            const d = await fetch('/api/entity/scan?path=' + encodeURIComponent(path)).then(r => r.json());
+            if (!d.exists) {
+                box.style.display = 'block';
+                box.innerHTML = `<span style="color:var(--fg-dim)">Folder does not exist yet — it and all standard subfolders will be created.</span>`;
+                document.getElementById('ne-submit').textContent = 'Create';
+                return;
+            }
+            let html = '';
+            if (d.journal) {
+                html += `<div><span style="color:var(--green)">Found an existing hledger journal:</span> ${esc(d.journal)}</div>` +
+                        `<div style="color:var(--fg-dim)">This folder will be <b>registered</b>, not overwritten.</div>`;
+                document.getElementById('ne-submit').textContent = 'Register';
+            } else {
+                html += `<div style="color:var(--fg-dim)">Folder exists, no hledger journal found — a new one will be created.</div>`;
+                document.getElementById('ne-submit').textContent = 'Create';
+            }
+            html += `<div style="margin-top:0.3rem;">Standard folders found: <span style="color:var(--fg)">${d.found.length ? esc(d.found.join(', ')) : '(none)'}</span></div>`;
+            html += d.missing.length
+                ? `<div>Will be created: <span style="color:var(--accent)">${esc(d.missing.join(', '))}</span></div>`
+                : `<div style="color:var(--green)">All standard folders present.</div>`;
+            box.style.display = 'block';
+            box.innerHTML = html;
+        } catch (e) { box.style.display = 'none'; }
+    }
+
+    async function neCreate() {
+        const err = document.getElementById('ne-error');
+        const btn = document.getElementById('ne-submit');
+        const payload = {
+            kind: neKind,
+            parent: neKind === 'project' ? (document.getElementById('ne-parent').value || '') : '',
+            name: document.getElementById('ne-name').value.trim(),
+            slug: document.getElementById('ne-slug').value.trim(),
+            path: document.getElementById('ne-path').value.trim(),
+            currency: document.getElementById('ne-currency').value.trim() || 'CAD',
+            bank: document.getElementById('ne-bank').value.trim() || 'Chequing',
+        };
+        if (!payload.name) { err.textContent = 'Name is required'; err.style.display = 'block'; return; }
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/entity/create', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                err.style.display = 'none';
+                showToast(data.message || 'Created');
+                closeNewEntity();
+                await loadEntities();
+            } else {
+                err.textContent = data.detail || 'Failed';
+                err.style.display = 'block';
+                btn.disabled = false;
+            }
+        } catch (e) {
+            err.textContent = 'Network error: ' + e.message;
+            err.style.display = 'block';
+            btn.disabled = false;
+        }
+    }
+
+    document.getElementById('ne-modal')?.addEventListener('click', function (e) { if (e.target === this) closeNewEntity(); });
 
     // ─── Advanced Search ────────────────────────────────────────────────────
     // Fields compose INTO the query string, which stays visible and editable.
