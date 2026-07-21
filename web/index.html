@@ -255,6 +255,8 @@
                 </div>
                 <span style="color:var(--fg-dim);font-size:0.7rem;" id="quick-step-label">description</span>
                 <span style="color:var(--fg-dim);font-size:0.75rem;" id="quick-balance">bal: 0.00</span>
+                <button class="btn" onclick="openAdvancedEntry()" title="Full journal entry — multiple postings, costs, assertions, tags"
+                    style="font-size:0.72rem;padding:0.2rem 0.5rem;color:var(--accent);border-color:var(--accent);white-space:nowrap;">Advanced</button>
             </div>
             <div id="quick-entry-postings" style="font-size:0.85rem;min-height:1.5rem;"></div>
             <div id="quick-entry-actions" style="margin-top:0.75rem;display:none;gap:0.5rem;">
@@ -605,6 +607,72 @@
             <div style="margin-top:1.25rem;display:flex;gap:0.5rem;justify-content:flex-end;">
                 <button class="btn" onclick="closeTradeModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
                 <button class="btn" id="td-submit" onclick="submitTrade()" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Record</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Advanced Entry Overlay -->
+    <div id="adv-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:70;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:96%;max-width:900px;max-height:92vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.9rem;">
+                <span style="color:var(--accent);font-weight:bold;">Advanced Entry</span>
+                <button onclick="closeAdvancedEntry()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+
+            <!-- Header fields -->
+            <div style="display:grid;grid-template-columns:130px 70px 90px 1fr;gap:0.6rem;margin-bottom:0.6rem;font-size:0.85rem;">
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.7rem;display:block;margin-bottom:0.2rem;">Date</label>
+                    <input type="date" id="adv-date" oninput="advRefresh()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.7rem;display:block;margin-bottom:0.2rem;">Status</label>
+                    <select id="adv-status" onchange="advRefresh()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.3rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        <option value="">—</option><option value="!">! pending</option><option value="*">* cleared</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.7rem;display:block;margin-bottom:0.2rem;">Code</label>
+                    <input type="text" id="adv-code" oninput="advRefresh()" placeholder="123" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.7rem;display:block;margin-bottom:0.2rem;">Payee <span style="color:var(--fg-dim)">|</span> Note</label>
+                    <div style="display:flex;gap:0.4rem;">
+                        <input type="text" id="adv-payee" oninput="advRefresh()" placeholder="payee" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        <input type="text" id="adv-note" oninput="advRefresh()" placeholder="note (optional)" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+            </div>
+            <div style="margin-bottom:0.8rem;">
+                <label style="color:var(--fg-dim);font-size:0.7rem;display:block;margin-bottom:0.2rem;">Tags (k:v, comma-separated)</label>
+                <input type="text" id="adv-tags" oninput="advRefresh()" placeholder="trip:paris, client:acme" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+            </div>
+
+            <!-- Postings -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.35rem;">
+                <span style="color:var(--fg-dim);font-size:0.75rem;">Postings <span style="color:var(--fg-dim);">— leave one amount blank to let hledger infer it</span></span>
+                <button class="btn" onclick="advAddRow()" style="font-size:0.72rem;padding:0.2rem 0.5rem;">+ posting</button>
+            </div>
+            <div id="adv-postings" style="display:grid;gap:0.35rem;margin-bottom:0.8rem;"></div>
+            <datalist id="adv-accounts"></datalist>
+
+            <!-- Live preview -->
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.3rem;">
+                <span style="color:var(--fg-dim);font-size:0.75rem;">hledger sees</span>
+                <span id="adv-status-badge" style="font-size:0.75rem;"></span>
+                <span id="adv-pair" style="color:var(--fg-dim);font-size:0.75rem;margin-left:auto;"></span>
+            </div>
+            <pre id="adv-preview" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.6rem 0.75rem;font-size:0.78rem;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word;min-height:3.5rem;max-height:220px;overflow:auto;"></pre>
+
+            <div style="margin-top:1rem;display:flex;gap:0.5rem;align-items:center;">
+                <div style="display:flex;gap:0.4rem;align-items:center;">
+                    <label style="color:var(--fg-dim);font-size:0.7rem;">Pair</label>
+                    <select id="adv-pair-select" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.3rem 0.4rem;color:var(--fg);font-family:inherit;font-size:0.78rem;"></select>
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-left:auto;">
+                    <button class="btn" onclick="closeAdvancedEntry()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                    <button class="btn" id="adv-write" onclick="advWrite()" disabled style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Write to journal</button>
+                </div>
             </div>
         </div>
     </div>
@@ -4011,6 +4079,155 @@
     }
 
     document.getElementById('trade-modal')?.addEventListener('click', function(e) { if (e.target === this) closeTradeModal(); });
+
+    // ─── Advanced Entry ─────────────────────────────────────────────────────
+    // No serializer here on purpose: the server owns serialize_entry, so the
+    // two-space delimiter rule lives in exactly one place.
+    const PAIR_LABELS = {
+        '0000':'Op Expense / Asset','0001':'Op Expense / Liability',
+        '0010':'Non-Op Expense / Asset','0011':'Non-Op Expense / Liability',
+        '0100':'Op Income / Asset','0101':'Op Income / Liability',
+        '0110':'Non-Op Income / Asset','0111':'Non-Op Income / Liability',
+        '1000':'Asset / Liability','1001':'Asset / Equity','1010':'Liability / Equity',
+        '1011':'Asset / Asset','1100':'Liability / Liability','1101':'Equity / Equity',
+    };
+    let advTimer = null;
+    let advAccounts = [];
+
+    function advRowHtml(i) {
+        const inp = 'background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;box-sizing:border-box;';
+        return `<div class="adv-row" style="display:grid;grid-template-columns:1fr 120px 60px 110px 60px 110px 30px;gap:0.35rem;align-items:center;">
+            <input type="text" class="adv-acct" list="adv-accounts" oninput="advRefresh()" placeholder="account" style="${inp}">
+            <input type="text" class="adv-amt" oninput="advRefresh()" placeholder="amount" style="${inp}">
+            <select class="adv-costtype" onchange="advRefresh()" style="${inp}"><option value="">@</option><option value="@">@</option><option value="@@">@@</option></select>
+            <input type="text" class="adv-cost" oninput="advRefresh()" placeholder="cost" style="${inp}">
+            <select class="adv-asserttype" onchange="advRefresh()" style="${inp}"><option value="">=</option><option value="=">=</option><option value="==">==</option></select>
+            <input type="text" class="adv-assert" oninput="advRefresh()" placeholder="assert bal" style="${inp}">
+            <button class="btn" onclick="this.parentElement.remove();advRefresh()" title="remove" style="font-size:0.75rem;padding:0.2rem 0.35rem;color:var(--red);border-color:var(--red);">✕</button>
+        </div>`;
+    }
+
+    function advAddRow() {
+        document.getElementById('adv-postings').insertAdjacentHTML('beforeend', advRowHtml());
+    }
+
+    function advCollect() {
+        const postings = [];
+        document.querySelectorAll('#adv-postings .adv-row').forEach(row => {
+            const g = c => (row.querySelector(c)?.value || '').trim();
+            postings.push({
+                account: g('.adv-acct'), amount: g('.adv-amt'),
+                cost: g('.adv-cost'), cost_type: g('.adv-costtype') || '@',
+                assertion: g('.adv-assert'), assertion_type: g('.adv-asserttype') || '=',
+            });
+        });
+        const v = id => (document.getElementById(id)?.value || '').trim();
+        return {
+            date: v('adv-date'), status: v('adv-status'), code: v('adv-code'),
+            payee: v('adv-payee'), note: v('adv-note'), tags: v('adv-tags'),
+            postings,
+        };
+    }
+
+    async function openAdvancedEntry() {
+        document.getElementById('adv-date').value = new Date().toISOString().slice(0, 10);
+        ['adv-code','adv-payee','adv-note','adv-tags'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('adv-status').value = '';
+        const box = document.getElementById('adv-postings');
+        box.innerHTML = advRowHtml() + advRowHtml();
+        const sel = document.getElementById('adv-pair-select');
+        sel.innerHTML = '<option value="">— none —</option><option value="compound">compound</option>' +
+            Object.entries(PAIR_LABELS).map(([c, l]) => `<option value="${c}">${c} · ${esc(l)}</option>`).join('');
+        document.getElementById('adv-preview').textContent = '';
+        document.getElementById('adv-status-badge').textContent = '';
+        document.getElementById('adv-pair').textContent = '';
+        document.getElementById('adv-write').disabled = true;
+        document.getElementById('adv-modal').style.display = 'flex';
+        advLoadAccounts();
+        advRefresh();
+    }
+    function closeAdvancedEntry() { document.getElementById('adv-modal').style.display = 'none'; }
+
+    async function advLoadAccounts() {
+        if (advAccounts.length) return;
+        try {
+            const d = await fetch('/api/accounts').then(r => r.json());
+            advAccounts = (d.all || []).map(a => typeof a === 'string' ? a : (a.full || ''));
+            const dl = document.getElementById('adv-accounts');
+            if (dl) dl.innerHTML = advAccounts.filter(Boolean).map(a => `<option value="${esc(a)}">`).join('');
+        } catch (e) { /* autocomplete is a convenience; absence is not an error */ }
+    }
+
+    function advRefresh() {
+        clearTimeout(advTimer);
+        advTimer = setTimeout(advPreview, 250);
+    }
+
+    async function advPreview() {
+        const fields = advCollect();
+        const badge = document.getElementById('adv-status-badge');
+        const pre = document.getElementById('adv-preview');
+        const pairEl = document.getElementById('adv-pair');
+        const writeBtn = document.getElementById('adv-write');
+
+        if (!fields.postings.some(p => p.account)) {
+            pre.textContent = ''; badge.textContent = ''; pairEl.textContent = '';
+            writeBtn.disabled = true; return;
+        }
+        try {
+            const d = await fetch('/api/entry/preview', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(fields),
+            }).then(r => r.json());
+
+            if (d.ok) {
+                badge.innerHTML = '<span style="color:var(--green)">✓ valid</span>';
+                pre.textContent = d.rendered || '';
+                writeBtn.disabled = false;
+            } else {
+                badge.innerHTML = '<span style="color:var(--red)">✗ invalid</span>';
+                pre.textContent = d.errors || '';
+                writeBtn.disabled = true;
+            }
+            if (d.inference_error) {
+                pairEl.innerHTML = `<span style="color:var(--red)">pair inference unavailable</span> — ${esc(d.inference_error)}`;
+            } else if (d.inferred_pair) {
+                pairEl.textContent = 'inferred pair: ' + d.inferred_pair +
+                    (PAIR_LABELS[d.inferred_pair] ? ' · ' + PAIR_LABELS[d.inferred_pair] : '');
+                const sel = document.getElementById('adv-pair-select');
+                if (!sel.dataset.touched) sel.value = d.inferred_pair;
+            } else { pairEl.textContent = ''; }
+        } catch (e) {
+            badge.innerHTML = '<span style="color:var(--red)">✗</span>';
+            pre.textContent = 'Preview failed: ' + e.message;
+            writeBtn.disabled = true;
+        }
+    }
+
+    async function advWrite() {
+        const payload = advCollect();
+        payload.pair = document.getElementById('adv-pair-select').value;
+        const btn = document.getElementById('adv-write');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/entry/advanced', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Entry written');
+                closeAdvancedEntry();
+                if (typeof loadDashboard === 'function') loadDashboard();
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed'), true);
+                btn.disabled = false;
+            }
+        } catch (e) { showToast('Network error: ' + e.message, true); btn.disabled = false; }
+    }
+
+    document.getElementById('adv-pair-select')?.addEventListener('change', function () { this.dataset.touched = '1'; });
+    document.getElementById('adv-modal')?.addEventListener('click', function (e) { if (e.target === this) closeAdvancedEntry(); });
 
     // ─── Export ─────────────────────────────────────────────────────────────
     function downloadExport() {
