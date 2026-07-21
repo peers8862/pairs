@@ -94,8 +94,8 @@ def main():
         cmd_pairs(sys.argv[2:])
     # Explicit entry command (alias for no-arg behavior)
     elif command == 'entry':
-        from modules.pairs import cmd_pair
-        cmd_pair(sys.argv[2:])
+        from modules.pairs import dispatch_pair
+        dispatch_pair(sys.argv[2:])
     # Config
     elif command == 'config':
         from modules.config import cmd_config

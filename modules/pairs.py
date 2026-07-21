@@ -338,7 +338,117 @@ def dispatch_pairs(args):
 
 def dispatch_pair(args):
     """Entry point for 'pair entry'."""
+    if '--advanced' in args or '-a' in args:
+        cmd_pair_advanced([a for a in args if a not in ('--advanced', '-a')])
+        return
     cmd_pair(args)
+
+
+def cmd_pair_advanced(args):
+    """Full journal-grammar entry: N postings, costs, assertions, tags.
+
+    Shares lib.entry with the web overlay, so serialization, pair inference
+    and hledger validation behave identically in both.
+    """
+    import subprocess as _sp
+    from datetime import date as _date
+    from lib.entry import serialize_entry, infer_pair, validate_entry, record_entry
+    from lib.ui import get_entity_journal
+
+    print("\n  Advanced entry — full journal grammar. Blank account ends postings.\n")
+
+    today = _date.today().strftime('%Y-%m-%d')
+    entry_date = prompt("  Date", default=today)
+    status = prompt("  Status (blank / ! pending / * cleared)", default='', required=False)
+    code = prompt("  Code (optional)", default='', required=False)
+    payee = prompt("  Payee/description", required=False)
+    note = prompt("  Note (right of |, optional)", default='', required=False)
+    tags = prompt("  Tags (k:v, comma-separated, optional)", default='', required=False)
+
+    postings = []
+    while True:
+        n = len(postings) + 1
+        account = prompt(f"  [{n}] Account (blank to finish)", default='', required=False)
+        if not account:
+            break
+        amount = prompt(f"  [{n}] Amount (blank = let hledger infer)", default='', required=False)
+        cost = prompt(f"  [{n}] Cost (optional)", default='', required=False)
+        cost_type = '@'
+        if cost:
+            cost_type = prompt(f"  [{n}] Cost type (@ unit / @@ total)", default='@')
+        assertion = prompt(f"  [{n}] Balance assertion (optional)", default='', required=False)
+        assertion_type = '='
+        if assertion:
+            assertion_type = prompt(f"  [{n}] Assertion type (= / ==)", default='=')
+        postings.append({'account': account, 'amount': amount, 'cost': cost,
+                         'cost_type': cost_type, 'assertion': assertion,
+                         'assertion_type': assertion_type})
+
+    if len(postings) < 2:
+        print("\n  Need at least two postings. Cancelled.\n")
+        return
+
+    fields = {'date': entry_date, 'status': status, 'code': code, 'payee': payee,
+              'note': note, 'tags': tags, 'postings': postings}
+
+    # Infer the pair code from hledger's own account types.
+    types = {}
+    try:
+        r = _sp.run(['hledger', '-f', str(get_entity_journal()), 'accounts', '--types'],
+                    capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                if ';' in line:
+                    name, _, tag = line.partition(';')
+                    letter = tag.replace('type:', '').strip()
+                    if name.strip() and letter:
+                        types[name.strip()] = letter[:1].upper()
+        else:
+            print(f"\n  Pair inference unavailable: {(r.stderr or '').strip().splitlines()[0] if r.stderr else 'could not read accounts'}")
+    except Exception as e:
+        print(f"\n  Pair inference unavailable: {e}")
+
+    inferred = ''
+    if types:
+        typed = [{'account': p['account'], 'type': types.get(p['account'], '')} for p in postings]
+        if all(t['type'] for t in typed):
+            inferred = infer_pair(typed)
+        else:
+            unknown = [t['account'] for t in typed if not t['type']]
+            print(f"\n  Pair inference unavailable: unknown account type for {', '.join(unknown)}")
+
+    text = serialize_entry(fields)
+    result = validate_entry(text)
+
+    if not result['ok']:
+        print(f"\n  hledger rejected this entry:\n\n{result['errors']}\n")
+        return
+
+    print("\n  hledger sees:\n")
+    for line in result['rendered'].splitlines():
+        print(f"    {line}")
+
+    pair_code = inferred
+    if inferred:
+        print(f"\n  Inferred pair: {inferred}")
+        override = prompt("  Pair code (Enter to accept, '-' for none)", default=inferred, required=False)
+        pair_code = '' if override == '-' else override
+
+    if not confirm("\n  Write this entry?"):
+        print("  Cancelled.\n")
+        return
+
+    extra = ['mode:advanced'] + ([f"pair:{pair_code}"] if pair_code else [])
+    fields['tags'] = f"{tags}, {', '.join(extra)}" if tags else ', '.join(extra)
+    final = serialize_entry(fields)
+
+    recheck = validate_entry(final)
+    if not recheck['ok']:
+        print(f"\n  Tagging broke the entry, nothing written:\n\n{recheck['errors']}\n")
+        return
+
+    year = record_entry(final, entry_date)
+    print(f"\n  ✓ Written to generated/{year}/entries.journal\n")
 
 
 # ─── cmd_pairs — reference/education display ─────────────────────────────────
