@@ -258,6 +258,10 @@ def create_app():
         tags: str = ''
         postings: list = []
         pair: str = ''
+        # Raw escape hatch, mirroring the search box: hand-edited journal text
+        # wins over the composed fields when raw is set.
+        journal_text: str = ''
+        raw: bool = False
 
     class BuyRequest(BaseModel):
         symbol: str
@@ -1454,6 +1458,11 @@ def create_app():
                 types[name.strip()] = letter[:1].upper()
         return types, ''
 
+    def _count_raw_postings(text):
+        """Posting lines in hand-written journal text (indented, not comments)."""
+        return [l for l in (text or '').splitlines()
+                if l[:1] in (' ', '\t') and l.strip() and not l.strip().startswith(';')]
+
     def _entry_fields(req):
         return {
             'date': (req.date or '').strip() or date.today().strftime('%Y-%m-%d'),
@@ -1473,7 +1482,12 @@ def create_app():
         # posting-less transaction (manual: "Postings are not required"), so a
         # header-only entry previews fine and the user gets feedback from the
         # first keystroke instead of a blank box until an account is typed.
-        text = serialize_entry(fields)
+        raw_text = (req.journal_text or '').strip()
+        if req.raw and raw_text:
+            text = raw_text if raw_text.endswith('\n') else raw_text + '\n\n'
+            named = _count_raw_postings(text)
+        else:
+            text = serialize_entry(fields)
         result = validate_entry(text)
 
         # Valid hledger, but not yet a complete double entry.
@@ -1507,7 +1521,10 @@ def create_app():
         from lib.entry import validate_entry, record_entry, serialize_entry
 
         fields = _entry_fields(req)
-        named = [p for p in fields['postings'] if (p.get('account') or '').strip()]
+        if req.raw and (req.journal_text or '').strip():
+            named = _count_raw_postings(req.journal_text)
+        else:
+            named = [p for p in fields['postings'] if (p.get('account') or '').strip()]
         if len(named) < 2:
             raise HTTPException(status_code=400, detail="At least two postings are required")
 
@@ -1520,10 +1537,20 @@ def create_app():
         pair = (req.pair or '').strip()
         if pair:
             extra.append(f"pair:{pair}")
-        existing = (fields.get('tags') or '').strip()
-        fields['tags'] = f"{existing}, {', '.join(extra)}" if existing else ', '.join(extra)
 
-        text = serialize_entry(fields)
+        raw_text = (req.journal_text or '').strip()
+        if req.raw and raw_text:
+            # Hand-edited text is written as-is apart from the trailing tags,
+            # appended to the first line where hledger expects them.
+            lines = raw_text.splitlines()
+            sep = ', ' if '  ; ' in lines[0] else '  ; '
+            lines[0] = lines[0] + sep + ', '.join(extra)
+            text = "\n".join(lines).rstrip() + "\n\n"
+        else:
+            existing = (fields.get('tags') or '').strip()
+            fields['tags'] = f"{existing}, {', '.join(extra)}" if existing else ', '.join(extra)
+            text = serialize_entry(fields)
+
         result = validate_entry(text)
         if not result['ok']:
             raise HTTPException(status_code=400, detail=result['errors'] or 'Invalid entry')

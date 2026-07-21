@@ -277,7 +277,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;gap:1rem;">
             <div class="section-title" style="margin:0;white-space:nowrap;">Register</div>
             <div style="display:flex;gap:0.5rem;align-items:center;flex:1;">
-                <input type="text" id="register-search" placeholder="filter by account, description, amount..." oninput="debounceRegister()" style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
+                <input type="text" id="register-search" placeholder="hledger query — acct:expenses date:2026 amt:'&gt;100' expr:'a OR b'" oninput="debounceRegister()" style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
                 <span id="register-count" style="color:var(--fg-dim);font-size:0.75rem;white-space:nowrap;"></span>
             </div>
         </div>
@@ -720,13 +720,20 @@
             <div id="adv-postings" style="display:grid;gap:0.35rem;margin-bottom:0.8rem;"></div>
             <datalist id="adv-accounts"></datalist>
 
-            <!-- Live preview -->
+            <!-- Journal text: composed from the fields above, or edit it directly -->
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.3rem;">
-                <span style="color:var(--fg-dim);font-size:0.75rem;">hledger sees</span>
-                <span id="adv-status-badge" style="font-size:0.75rem;"></span>
+                <span style="color:var(--fg-dim);font-size:0.75rem;">journal text</span>
+                <span id="adv-mode-badge" style="color:var(--fg-dim);font-size:0.7rem;">from fields</span>
+                <button class="btn" onclick="advBackToFields()" id="adv-refields" style="display:none;font-size:0.68rem;padding:0.12rem 0.4rem;">↺ back to fields</button>
                 <span id="adv-pair" style="color:var(--fg-dim);font-size:0.75rem;margin-left:auto;"></span>
             </div>
-            <pre id="adv-preview" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.6rem 0.75rem;font-size:0.78rem;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word;min-height:3.5rem;max-height:220px;overflow:auto;"></pre>
+            <textarea id="adv-raw" spellcheck="false" oninput="advRawEdited()" placeholder="composed from the fields above — or type an entry here"
+                style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.6rem 0.75rem;font-family:inherit;font-size:0.78rem;color:var(--fg);box-sizing:border-box;min-height:5rem;resize:vertical;"></textarea>
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.4rem;">
+                <span style="color:var(--fg-dim);font-size:0.75rem;">hledger sees</span>
+                <span id="adv-status-badge" style="font-size:0.75rem;"></span>
+            </div>
+            <pre id="adv-preview" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.6rem 0.75rem;font-size:0.78rem;color:var(--fg);margin:0.3rem 0 0;white-space:pre-wrap;word-break:break-word;min-height:2.5rem;max-height:180px;overflow:auto;"></pre>
 
             <div style="margin-top:1rem;display:flex;gap:0.5rem;align-items:center;">
                 <div style="display:flex;gap:0.4rem;align-items:center;">
@@ -1267,24 +1274,34 @@
         }, 150);
     }
 
-    function filterRegister() {
-        const query = (document.getElementById('register-search')?.value || '').toLowerCase().trim();
+    async function filterRegister() {
+        // Dash and Records now share one search implementation: the query goes
+        // to hledger, so the full query language works here too. A bare term is
+        // just a bare hledger query (an account-name match).
+        const query = (document.getElementById('register-search')?.value || '').trim();
         const tbody = document.getElementById('recent-body');
         const countEl = document.getElementById('register-count');
         const loadMoreBtn = document.getElementById('register-load-more');
 
         tbody.innerHTML = '';
         let filtered = registerAllEntries;
+        let searchError = '';
         if (query) {
-            filtered = registerAllEntries.filter(txn => {
-                if (txn.description.toLowerCase().includes(query)) return true;
-                if (txn.date.includes(query)) return true;
-                for (const p of txn.postings) {
-                    if (p.account.toLowerCase().includes(query)) return true;
-                    if (p.amount.toLowerCase().includes(query)) return true;
+            try {
+                const d = await fetch('/api/search', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ query, mode: 'register', limit: 500 }),
+                }).then(r => r.json());
+                if (d.ok) {
+                    filtered = d.entries || [];
+                } else {
+                    filtered = [];
+                    searchError = d.error || 'Search failed';
                 }
-                return false;
-            });
+            } catch (e) {
+                filtered = [];
+                searchError = 'Network error';
+            }
         }
 
         const showing = filtered.slice(0, 100);
@@ -1304,8 +1321,13 @@
             tbody.appendChild(tr);
         }
 
-        countEl.textContent = query ? filtered.length + ' matching' : filtered.length + ' entries';
-        loadMoreBtn.style.display = filtered.length > 100 ? 'block' : 'none';
+        if (searchError) {
+            countEl.textContent = '';
+            tbody.innerHTML = `<tr><td colspan="3" style="color:var(--red);padding:0.6rem;white-space:pre-wrap;font-size:0.78rem;">${esc(searchError)}</td></tr>`;
+        } else {
+            countEl.textContent = query ? filtered.length + ' matching' : filtered.length + ' entries';
+        }
+        loadMoreBtn.style.display = !query && filtered.length > 100 ? 'block' : 'none';
     }
 
     async function loadRegister(append) {
@@ -4266,6 +4288,24 @@
     };
     let advTimer = null;
     let advAccounts = [];
+    // Same duality as the search box: fields compose the text, but hand-editing
+    // it takes control until you explicitly go back to the fields.
+    let advRawMode = false;
+
+    function advRawEdited() {
+        advRawMode = true;
+        document.getElementById('adv-mode-badge').textContent = 'hand-edited';
+        document.getElementById('adv-refields').style.display = 'inline-block';
+        clearTimeout(advTimer);
+        advTimer = setTimeout(advPreview, 350);
+    }
+
+    function advBackToFields() {
+        advRawMode = false;
+        document.getElementById('adv-mode-badge').textContent = 'from fields';
+        document.getElementById('adv-refields').style.display = 'none';
+        advRefresh();
+    }
 
     function advRowHtml(i) {
         const inp = 'background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;box-sizing:border-box;';
@@ -4312,6 +4352,10 @@
         sel.innerHTML = '<option value="">— none —</option><option value="compound">compound</option>' +
             Object.entries(PAIR_LABELS).map(([c, l]) => `<option value="${c}">${c} · ${esc(l)}</option>`).join('');
         document.getElementById('adv-preview').textContent = '';
+        document.getElementById('adv-raw').value = '';
+        advRawMode = false;
+        document.getElementById('adv-mode-badge').textContent = 'from fields';
+        document.getElementById('adv-refields').style.display = 'none';
         document.getElementById('adv-status-badge').textContent = '';
         document.getElementById('adv-pair').textContent = '';
         document.getElementById('adv-write').disabled = true;
@@ -4332,6 +4376,8 @@
     }
 
     function advRefresh() {
+        // A field edit means the fields drive the text again.
+        if (advRawMode) advBackToFields();
         clearTimeout(advTimer);
         advTimer = setTimeout(advPreview, 250);
     }
@@ -4342,12 +4388,19 @@
         const pre = document.getElementById('adv-preview');
         const pairEl = document.getElementById('adv-pair');
         const writeBtn = document.getElementById('adv-write');
+        const rawEl = document.getElementById('adv-raw');
+
+        fields.raw = advRawMode;
+        fields.journal_text = advRawMode ? rawEl.value : '';
 
         try {
             const d = await fetch('/api/entry/preview', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(fields),
             }).then(r => r.json());
+
+            // When the fields drive it, show what they composed.
+            if (!advRawMode) rawEl.value = (d.journal_text || '').replace(/\n+$/, '');
 
             if (d.ok) {
                 // Valid hledger, but a complete double entry needs 2+ postings.
@@ -4382,6 +4435,8 @@
     async function advWrite() {
         const payload = advCollect();
         payload.pair = document.getElementById('adv-pair-select').value;
+        payload.raw = advRawMode;
+        payload.journal_text = advRawMode ? document.getElementById('adv-raw').value : '';
         const btn = document.getElementById('adv-write');
         btn.disabled = true;
         try {
