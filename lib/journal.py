@@ -121,6 +121,28 @@ def append_journal(path, entry):
             f.write('\n')
 
 
+def ensure_generated_include(year, filename):
+    """Ensure the year aggregator includes generated/<year>/<filename>.
+
+    ensure_year_structure() seeds the aggregator with a fixed list of generated
+    journals. A generated journal introduced later (e.g. investments.journal) is
+    otherwise written but never included — orphaned, invisible to hledger. Call
+    this after ensure_year_structure() so the entries are actually seen.
+    """
+    year_str = str(year)
+    year_include = get_include_dir() / f"{year_str}.journal"
+    include_line = f"include ../generated/{year_str}/{filename}"
+    if not year_include.exists():
+        return
+    content = year_include.read_text()
+    if include_line in content:
+        return
+    with open(year_include, 'a') as f:
+        if content and not content.endswith('\n'):
+            f.write('\n')
+        f.write(include_line + '\n')
+
+
 # ─── Journal entry formatting ────────────────────────────────────────────────
 
 def format_entry(date, description, postings, tags=None):

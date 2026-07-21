@@ -556,6 +556,59 @@
         </div>
     </div>
 
+    <!-- Trade Modal (Buy / Sell) -->
+    <div id="trade-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:60;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:92%;max-width:460px;max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="color:var(--accent);font-weight:bold;" id="trade-modal-title">Buy</span>
+                <button onclick="closeTradeModal()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div style="display:grid;gap:0.75rem;font-size:0.85rem;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Symbol</label>
+                        <input type="text" id="td-symbol" readonly style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--accent);font-family:inherit;font-size:0.85rem;box-sizing:border-box;font-weight:bold;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Account</label>
+                        <select id="td-account" onchange="refreshTradePreview()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="taxable">taxable</option><option value="corporate">corporate</option><option value="tfsa">tfsa</option><option value="rrsp">rrsp</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Quantity</label>
+                        <input type="number" id="td-qty" step="any" min="0" oninput="refreshTradePreview()" placeholder="0" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Unit price <span id="td-price-cur" style="color:var(--fg-dim);"></span></label>
+                        <input type="number" id="td-price" step="any" min="0" oninput="refreshTradePreview()" placeholder="0.00" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div id="td-fx-wrap" style="display:none;">
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">FX <span id="td-fx-label" style="color:var(--fg-dim);"></span></label>
+                        <input type="number" id="td-fx" step="any" min="0" value="1" oninput="refreshTradePreview()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Fee <span id="td-fee-cur" style="color:var(--fg-dim);"></span></label>
+                        <input type="number" id="td-fee" step="any" min="0" value="0" oninput="refreshTradePreview()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Date</label>
+                    <input type="date" id="td-date" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div id="td-preview" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.6rem 0.75rem;font-size:0.78rem;color:var(--fg-dim);line-height:1.5;"></div>
+            </div>
+            <div style="margin-top:1.25rem;display:flex;gap:0.5rem;justify-content:flex-end;">
+                <button class="btn" onclick="closeTradeModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                <button class="btn" id="td-submit" onclick="submitTrade()" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Record</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Taxes View -->
     <div class="view" id="view-taxes">
         <div class="section-title">Taxes — HST/GST</div>
@@ -1848,11 +1901,11 @@
             const data = await fetch('/api/commodities').then(r => r.json());
             const items = data.items || [];
             if (!items.length) { content.innerHTML = '<div class="empty">No commodities configured</div>'; return; }
-            let html = '<table><thead><tr><th>Symbol</th><th>Name</th><th>Source</th><th style="text-align:right">Latest Price</th><th>Date</th><th>Tags</th></tr></thead><tbody>';
+            let html = '<table><thead><tr><th>Symbol</th><th>Name</th><th>Source</th><th style="text-align:right">Latest Price</th><th>Date</th><th>Tags</th><th style="text-align:right">Trade</th></tr></thead><tbody>';
             for (const item of items) {
                 const price = item.latest_price ? `${item.currency} ${item.latest_price.toFixed(2)}` : '—';
                 const tags = (item.tags || []).map(t => `<span style="background:var(--border);padding:0.1rem 0.4rem;border-radius:3px;font-size:0.7rem;margin-right:0.25rem;">${esc(t)}</span>`).join('');
-                html += `<tr class="commodity-row" data-tags="${esc((item.tags||[]).join(',').toLowerCase())}" style="cursor:pointer;" onclick='openCommodityModal(${JSON.stringify(item).replace(/'/g,"&#39;")})'><td style="color:var(--accent);font-weight:bold;">${esc(item.symbol)}</td><td>${esc(item.name)}</td><td style="color:var(--fg-dim)">${esc(item.source)}</td><td style="text-align:right">${price}</td><td style="color:var(--fg-dim)">${esc(item.latest_date)}</td><td>${tags}</td></tr>`;
+                html += `<tr class="commodity-row" data-tags="${esc((item.tags||[]).join(',').toLowerCase())}" style="cursor:pointer;" onclick='openCommodityModal(${JSON.stringify(item).replace(/'/g,"&#39;")})'><td style="color:var(--accent);font-weight:bold;">${esc(item.symbol)}</td><td>${esc(item.name)}</td><td style="color:var(--fg-dim)">${esc(item.source)}</td><td style="text-align:right">${price}</td><td style="color:var(--fg-dim)">${esc(item.latest_date)}</td><td>${tags}</td><td style="text-align:right;white-space:nowrap;"><button class="btn" onclick='event.stopPropagation();openTradeModal(&quot;buy&quot;,&quot;${esc(item.symbol)}&quot;,&quot;${esc(item.currency||"")}&quot;,&quot;${esc(item.tax_account||"")}&quot;)' style="font-size:0.7rem;padding:0.15rem 0.45rem;color:var(--accent);border-color:var(--accent);">Buy</button> <button class="btn" onclick='event.stopPropagation();openTradeModal(&quot;sell&quot;,&quot;${esc(item.symbol)}&quot;,&quot;${esc(item.currency||"")}&quot;,&quot;${esc(item.tax_account||"")}&quot;)' style="font-size:0.7rem;padding:0.15rem 0.45rem;">Sell</button></td></tr>`;
             }
             html += '</tbody></table>';
             content.innerHTML = html;
@@ -2298,11 +2351,11 @@
             const data = await fetch('/api/commodities').then(r => r.json());
             const items = data.items || [];
             if (!items.length) { container.innerHTML = '<div class="empty">No commodities configured</div>'; return; }
-            let html = '<table><thead><tr><th>Symbol</th><th>Name</th><th>Source</th><th style="text-align:right">Latest Price</th><th>Date</th><th>Tags</th></tr></thead><tbody>';
+            let html = '<table><thead><tr><th>Symbol</th><th>Name</th><th>Source</th><th style="text-align:right">Latest Price</th><th>Date</th><th>Tags</th><th style="text-align:right">Trade</th></tr></thead><tbody>';
             for (const item of items) {
                 const price = item.latest_price ? item.currency + ' ' + item.latest_price.toFixed(2) : '—';
                 const tags = (item.tags || []).map(t => '<span style="background:var(--border);padding:0.1rem 0.4rem;border-radius:3px;font-size:0.7rem;margin-right:0.25rem;">' + esc(t) + '</span>').join('');
-                html += '<tr class="commodity-row" data-tags="' + esc((item.tags||[]).join(',').toLowerCase()) + '" style="cursor:pointer;" onclick=\'openCommodityModal(' + JSON.stringify(item).replace(/'/g,"&#39;") + ')\'><td style="color:var(--accent);font-weight:bold;">' + esc(item.symbol) + '</td><td>' + esc(item.name) + '</td><td style="color:var(--fg-dim)">' + esc(item.source) + '</td><td style="text-align:right">' + price + '</td><td style="color:var(--fg-dim)">' + esc(item.latest_date) + '</td><td>' + tags + '</td></tr>';
+                html += '<tr class="commodity-row" data-tags="' + esc((item.tags||[]).join(',').toLowerCase()) + '" style="cursor:pointer;" onclick=\'openCommodityModal(' + JSON.stringify(item).replace(/'/g,"&#39;") + ')\'><td style="color:var(--accent);font-weight:bold;">' + esc(item.symbol) + '</td><td>' + esc(item.name) + '</td><td style="color:var(--fg-dim)">' + esc(item.source) + '</td><td style="text-align:right">' + price + '</td><td style="color:var(--fg-dim)">' + esc(item.latest_date) + '</td><td>' + tags + '</td>' + '<td style="text-align:right;white-space:nowrap;">' + '<button class="btn" onclick="event.stopPropagation();openTradeModal(&quot;buy&quot;,&quot;' + esc(item.symbol) + '&quot;,&quot;' + esc(item.currency||'') + '&quot;,&quot;' + esc(item.tax_account||'') + '&quot;)" style="font-size:0.7rem;padding:0.15rem 0.45rem;color:var(--accent);border-color:var(--accent);">Buy</button> ' + '<button class="btn" onclick="event.stopPropagation();openTradeModal(&quot;sell&quot;,&quot;' + esc(item.symbol) + '&quot;,&quot;' + esc(item.currency||'') + '&quot;,&quot;' + esc(item.tax_account||'') + '&quot;)" style="font-size:0.7rem;padding:0.15rem 0.45rem;">Sell</button>' + '</td></tr>';
             }
             container.innerHTML = html + '</tbody></table>';
             return;
@@ -3861,6 +3914,103 @@
 
     // Close commodity modal on backdrop click
     document.getElementById('commodity-modal')?.addEventListener('click', function(e) { if (e.target === this) closeCommodityModal(); });
+
+    // ─── Trade (Buy / Sell) ─────────────────────────────────────────────────
+    let tradeState = { side: 'buy', symbol: '', quoteCurrency: '', entityCurrency: 'CAD' };
+
+    function openTradeModal(side, symbol, currency, taxAccount) {
+        tradeState = { side, symbol, quoteCurrency: currency || '', entityCurrency: state.currency || 'CAD' };
+        document.getElementById('trade-modal-title').textContent = (side === 'buy' ? 'Buy ' : 'Sell ') + symbol;
+        document.getElementById('td-symbol').value = symbol;
+        document.getElementById('td-account').value = taxAccount || 'taxable';
+        document.getElementById('td-qty').value = '';
+        document.getElementById('td-price').value = '';
+        document.getElementById('td-fee').value = '0';
+        document.getElementById('td-fx').value = '1';
+        document.getElementById('td-date').value = new Date().toISOString().slice(0, 10);
+        document.getElementById('td-submit').textContent = side === 'buy' ? 'Record Buy' : 'Record Sell';
+
+        // FX only matters for a buy of a foreign-currency commodity; sells are
+        // recorded in entity currency (proceeds already land in the bank).
+        const foreign = tradeState.quoteCurrency && tradeState.quoteCurrency !== tradeState.entityCurrency;
+        document.getElementById('td-fx-wrap').style.display = (side === 'buy' && foreign) ? 'block' : 'none';
+        document.getElementById('td-fx-label').textContent = foreign ? `(${tradeState.quoteCurrency}→${tradeState.entityCurrency})` : '';
+        document.getElementById('td-price-cur').textContent = (side === 'buy' && foreign) ? `(${tradeState.quoteCurrency})` : `(${tradeState.entityCurrency})`;
+        document.getElementById('td-fee-cur').textContent = `(${tradeState.entityCurrency})`;
+
+        document.getElementById('td-preview').innerHTML = '';
+        document.getElementById('trade-modal').style.display = 'flex';
+        refreshTradePreview();
+    }
+    function closeTradeModal() { document.getElementById('trade-modal').style.display = 'none'; }
+
+    function tradeInputs() {
+        return {
+            qty: parseFloat(document.getElementById('td-qty').value) || 0,
+            price: parseFloat(document.getElementById('td-price').value) || 0,
+            fee: parseFloat(document.getElementById('td-fee').value) || 0,
+            fx: parseFloat(document.getElementById('td-fx').value) || 1,
+            account: document.getElementById('td-account').value,
+            date: document.getElementById('td-date').value,
+        };
+    }
+
+    async function refreshTradePreview() {
+        const box = document.getElementById('td-preview');
+        const { qty, price, fee, fx, account } = tradeInputs();
+        const cur = tradeState.entityCurrency;
+        const foreign = tradeState.side === 'buy' && tradeState.quoteCurrency && tradeState.quoteCurrency !== cur;
+
+        if (tradeState.side === 'buy') {
+            if (!qty || !price) { box.innerHTML = 'Enter quantity and price.'; return; }
+            const total = qty * price * (foreign ? fx : 1) + fee;
+            box.innerHTML = `Total cost <span style="color:var(--fg);">${cur} ${total.toFixed(2)}</span>` +
+                (foreign ? ` <span style="color:var(--fg-dim)">(${tradeState.quoteCurrency} ${(qty*price).toFixed(2)} × ${fx})</span>` : '') +
+                (fee ? ` <span style="color:var(--fg-dim)">incl. ${cur} ${fee.toFixed(2)} fee</span>` : '');
+            return;
+        }
+
+        // Sell: fetch current ACB and show the gain/loss live.
+        box.innerHTML = 'Loading position…';
+        let h;
+        try {
+            h = await fetch('/api/market/holding?symbol=' + encodeURIComponent(tradeState.symbol) + '&account=' + encodeURIComponent(account)).then(r => r.json());
+        } catch (e) { box.innerHTML = 'Could not load position.'; return; }
+        const held = h.quantity || 0, avg = h.average || 0;
+        let html = `Held: <span style="color:var(--fg);">${held} @ ${cur} ${avg.toFixed(4)}</span> avg`;
+        if (qty && price) {
+            if (qty > held + 1e-9) {
+                html += `<br><span style="color:var(--red);">Only ${held} held — cannot sell ${qty}.</span>`;
+            } else {
+                const basis = qty * avg, proceeds = qty * price - fee, gain = proceeds - basis;
+                const gc = gain >= 0 ? 'var(--green)' : 'var(--red)';
+                html += `<br>Proceeds ${cur} ${proceeds.toFixed(2)} − basis ${cur} ${basis.toFixed(2)} = ` +
+                        `<span style="color:${gc};">${gain >= 0 ? 'gain' : 'loss'} ${cur} ${Math.abs(gain).toFixed(2)}</span>`;
+                if (h.account === 'tfsa' || h.account === 'rrsp') html += ` <span style="color:var(--fg-dim)">(not taxable)</span>`;
+            }
+        }
+        box.innerHTML = html;
+    }
+
+    async function submitTrade() {
+        const { qty, price, fee, fx, account, date } = tradeInputs();
+        if (!qty || !price) { showToast('Quantity and price required', true); return; }
+        const btn = document.getElementById('td-submit');
+        btn.disabled = true;
+        const payload = { symbol: tradeState.symbol, qty, price, fee, account, date };
+        if (tradeState.side === 'buy') payload.fx = fx;
+        try {
+            const res = await fetch('/api/market/' + tradeState.side, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok) { showToast(data.message || 'Recorded'); closeTradeModal(); loadCommoditiesView(); }
+            else { showToast('Error: ' + (data.detail || 'Failed'), true); }
+        } catch (e) { showToast('Network error: ' + e.message, true); }
+        finally { btn.disabled = false; }
+    }
+
+    document.getElementById('trade-modal')?.addEventListener('click', function(e) { if (e.target === this) closeTradeModal(); });
 
     // ─── Export ─────────────────────────────────────────────────────────────
     function downloadExport() {

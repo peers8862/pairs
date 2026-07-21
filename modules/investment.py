@@ -203,7 +203,9 @@ from datetime import date as _date
 from lib.helpers import (
     load_config, prompt, validate_positive_number,
 )
-from lib.journal import append_journal, ensure_year_structure, get_generated_dir
+from lib.journal import (
+    append_journal, ensure_year_structure, ensure_generated_include, get_generated_dir,
+)
 from lib.ui import get_entity_currency, get_entity_journal
 
 
@@ -267,12 +269,23 @@ def _resolve_common(opts, commodity):
     }
 
 
-def _write(entry, date_str, label):
-    """Append an entry to generated/<year>/investments.journal."""
+def record_investment_entry(entry, date_str):
+    """Append an investment entry to generated/<year>/investments.journal.
+
+    Non-printing write path shared by the CLI (_write) and the web endpoints.
+    Returns the year written to.
+    """
     year = date_str[:4]
     ensure_year_structure(int(year))
+    ensure_generated_include(year, 'investments.journal')
     path = get_generated_dir() / year / 'investments.journal'
     append_journal(path, entry)
+    return year
+
+
+def _write(entry, date_str, label):
+    """Append an entry to generated/<year>/investments.journal (CLI: prints)."""
+    year = record_investment_entry(entry, date_str)
     print(f"\n  Recorded: {label}")
     print(f"  Written to: generated/{year}/investments.journal")
 

@@ -245,6 +245,23 @@ def create_app():
         tag: str = ''
         type: str = ''
 
+    class BuyRequest(BaseModel):
+        symbol: str
+        qty: float
+        price: float
+        account: str = ''
+        fee: float = 0.0
+        fx: float = 1.0
+        date: str = ''
+
+    class SellRequest(BaseModel):
+        symbol: str
+        qty: float
+        price: float
+        account: str = ''
+        fee: float = 0.0
+        date: str = ''
+
     # ─── Routes ──────────────────────────────────────────────────────────
 
     @app.get("/")
@@ -980,6 +997,7 @@ def create_app():
                 'name': c.get('name', sym),
                 'source': c.get('source', ''),
                 'currency': c.get('currency', currency),
+                'tax_account': c.get('tax_account', ''),
                 'tags': c.get('tags', []),
                 'latest_price': latest.get('price'),
                 'latest_date': latest.get('date', ''),
@@ -1124,6 +1142,112 @@ def create_app():
             return {'status': 'error', 'output': 'Fetch timed out after 180s.'}
         except Exception as e:
             return {'status': 'error', 'output': str(e)}
+
+    def _resolve_trade_commodity(symbol):
+        """Find a tracked commodity by symbol, or raise 404."""
+        from modules.market import _find_commodity
+        commodity, _ = _find_commodity(symbol)
+        if commodity is None:
+            raise HTTPException(status_code=404, detail=f"'{symbol}' is not tracked")
+        return commodity
+
+    def _trade_accounts(commodity, requested):
+        """Resolve tax account and cash/gains accounts for a trade."""
+        from modules.investment import TAX_ACCOUNTS
+        accounts = load_config().get('accounts', {})
+        tax_account = (requested or commodity.get('tax_account') or 'taxable').lower()
+        if tax_account not in TAX_ACCOUNTS:
+            raise HTTPException(status_code=400,
+                                detail=f"Invalid account '{tax_account}'. Valid: {', '.join(TAX_ACCOUNTS)}")
+        return {
+            'tax_account': tax_account,
+            'cash_account': accounts.get('bank', 'Assets:Current:Chequing'),
+            'gains_account': accounts.get('capital_gains', 'Income:Non-Operating:Capital Gains'),
+            'registered_gains_account': accounts.get('registered_gains', 'Income:Non-Operating:Registered Gains'),
+        }
+
+    @app.get("/api/market/holding")
+    async def market_holding(symbol: str, account: str = ''):
+        """Current quantity and ACB average for a holding — powers the sell preview."""
+        from modules.investment import read_holding_events, compute_acb_from_events
+        commodity = _resolve_trade_commodity(symbol)
+        acct = _trade_accounts(commodity, account)
+        try:
+            events = read_holding_events(get_entity_journal(), acct['tax_account'], commodity['symbol'])
+        except Exception:
+            events = []
+        qty, cost, average = compute_acb_from_events(events)
+        return {
+            'symbol': commodity['symbol'],
+            'account': acct['tax_account'],
+            'quantity': qty,
+            'cost': round(cost, 2),
+            'average': round(average, 4),
+            'currency': get_entity_currency(),
+        }
+
+    @app.post("/api/market/buy")
+    async def market_buy(req: BuyRequest):
+        """Record a purchase (ACB tracked). Reuses the CLI's build_buy_entry."""
+        from modules.investment import build_buy_entry, record_investment_entry
+        if req.qty <= 0 or req.price <= 0:
+            raise HTTPException(status_code=400, detail="Quantity and price must be positive")
+        commodity = _resolve_trade_commodity(req.symbol)
+        acct = _trade_accounts(commodity, req.account)
+        entity_currency = get_entity_currency()
+        quote_currency = commodity.get('currency', entity_currency)
+        fx = req.fx if quote_currency != entity_currency else 1.0
+        date_str = req.date.strip() or date.today().strftime('%Y-%m-%d')
+        try:
+            entry = build_buy_entry(
+                date=date_str, symbol=commodity['symbol'], qty=req.qty, unit_price=req.price,
+                quote_currency=quote_currency, fx=fx, fee=req.fee,
+                tax_account=acct['tax_account'], cash_account=acct['cash_account'],
+                entity_currency=entity_currency)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        record_investment_entry(entry, date_str)
+        total = round(req.qty * req.price * fx + req.fee, 2)
+        return {'status': 'ok', 'total': total, 'currency': entity_currency,
+                'message': f"Bought {req.qty:g} {commodity['symbol']} for {entity_currency} {total:.2f}"}
+
+    @app.post("/api/market/sell")
+    async def market_sell(req: SellRequest):
+        """Record a disposal with ACB gain/loss. Reuses the CLI's build_sell_entry."""
+        from modules.investment import (
+            build_sell_entry, record_investment_entry, read_holding_events,
+            compute_acb_from_events, InsufficientHoldingError)
+        if req.qty <= 0 or req.price <= 0:
+            raise HTTPException(status_code=400, detail="Quantity and price must be positive")
+        commodity = _resolve_trade_commodity(req.symbol)
+        acct = _trade_accounts(commodity, req.account)
+        entity_currency = get_entity_currency()
+        date_str = req.date.strip() or date.today().strftime('%Y-%m-%d')
+        try:
+            events = read_holding_events(get_entity_journal(), acct['tax_account'], commodity['symbol'])
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not read holdings: {e}")
+        _, _, average = compute_acb_from_events(events)
+        try:
+            entry = build_sell_entry(
+                date=date_str, symbol=commodity['symbol'], qty=req.qty, unit_price=req.price,
+                fee=req.fee, tax_account=acct['tax_account'], cash_account=acct['cash_account'],
+                entity_currency=entity_currency, events=events,
+                gains_account=acct['gains_account'],
+                registered_gains_account=acct['registered_gains_account'])
+        except InsufficientHoldingError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        record_investment_entry(entry, date_str)
+        basis = round(req.qty * average, 2)
+        proceeds = round(req.qty * req.price - req.fee, 2)
+        gain = round(proceeds - basis, 2)
+        registered = acct['tax_account'] in ('tfsa', 'rrsp')
+        return {'status': 'ok', 'basis': basis, 'proceeds': proceeds, 'gain': gain,
+                'registered': registered, 'currency': entity_currency,
+                'message': f"Sold {req.qty:g} {commodity['symbol']} — "
+                           f"{'gain' if gain >= 0 else 'loss'} {entity_currency} {abs(gain):.2f}"}
 
     @app.get("/api/payroll")
     async def payroll_list():
