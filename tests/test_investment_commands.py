@@ -1,4 +1,6 @@
 import pytest
+import shutil
+import subprocess
 
 from modules.investment import build_buy_entry
 
@@ -174,3 +176,38 @@ def test_sell_transaction_balances_to_zero():
         elif "@@ CAD " in line:
             amounts.append(-float(line.split("@@ CAD ")[1].strip()))
     assert sum(amounts) == pytest.approx(0.0, abs=0.01)
+
+
+@pytest.mark.skipif(shutil.which("hledger") is None, reason="hledger not installed")
+def test_buy_then_sell_reports_correct_position(tmp_path):
+    """A buy followed by a partial sell must leave hledger reporting the
+    remaining quantity, and the whole file must parse."""
+    buy = build_buy_entry(
+        date="2026-07-20", symbol="TSLA", qty=10, unit_price=372.73,
+        quote_currency="USD", fx=1.3660, fee=9.95,
+        tax_account="taxable", cash_account="Assets:Current:Business Chequing",
+        entity_currency="CAD",
+    )
+    sell = build_sell_entry(
+        date="2026-07-25", symbol="TSLA", qty=6, unit_price=586.6667,
+        fee=9.95, tax_account="taxable",
+        cash_account="Assets:Current:Business Chequing",
+        entity_currency="CAD", events=[("buy", 10, 5101.44)],
+        gains_account="Income:Non-Operating:Capital Gains",
+    )
+    journal = tmp_path / "e2e.journal"
+    journal.write_text(buy + sell)
+
+    parsed = subprocess.run(
+        ["hledger", "-f", str(journal), "print"],
+        capture_output=True, text=True,
+    )
+    assert parsed.returncode == 0, parsed.stderr
+
+    balance = subprocess.run(
+        ["hledger", "-f", str(journal), "bal",
+         "Assets:Investments:Taxable:TSLA", "--no-total"],
+        capture_output=True, text=True,
+    )
+    assert balance.returncode == 0, balance.stderr
+    assert "4 TSLA" in balance.stdout
