@@ -53,7 +53,27 @@ def get_entity_dir():
     active = config.get('active')
     if not active:
         return BASE_DIR
-    return BASE_DIR / 'entities' / active
+    return entity_dir_for(active, config)
+
+
+def entity_dir_for(slug, config=None):
+    """Return the directory for one entity.
+
+    An entity's folder normally lives at BASE_DIR/entities/<slug>, but an entry
+    in global.yaml may carry an explicit `path` (set by `pair entity move` or
+    `pair entity path`) pointing anywhere on disk — an external drive, a synced
+    folder, outside the repo. Everything resolves through here so relocating an
+    entity is a single change rather than 27.
+    """
+    if config is None:
+        config = load_global_config()
+    for entry in config.get('entities', []) or []:
+        if entry.get('slug') == slug:
+            custom = (entry.get('path') or '').strip()
+            if custom:
+                return expand_path(custom)
+            break
+    return BASE_DIR / 'entities' / slug
 
 
 # Backward compat alias
