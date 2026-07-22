@@ -1356,7 +1356,8 @@ def create_app():
             raise HTTPException(status_code=404, detail=f"No recurring entry '{req.slug}'")
 
         allowed = {'name', 'frequency', 'day', 'amount', 'currency', 'description',
-                   'tags', 'reminder_days', 'start_date', 'end_date'}
+                   'tags', 'reminder_days', 'start_date', 'end_date',
+                   'debit_account', 'credit_account', 'pair', 'notes'}
         for key, value in (req.fields or {}).items():
             if key not in allowed:
                 continue

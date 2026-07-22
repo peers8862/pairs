@@ -692,7 +692,7 @@
     <div id="rn-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:79;align-items:center;justify-content:center;">
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:94%;max-width:640px;max-height:92vh;overflow-y:auto;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-                <span style="color:var(--accent);font-weight:bold;">New Recurring Entry</span>
+                <span style="color:var(--accent);font-weight:bold;" id="rn-title">New Recurring Entry</span>
                 <button onclick="closeRecurringNew()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;margin-bottom:0.6rem;">
@@ -720,8 +720,10 @@
                 <input type="text" id="rn-tags" class="ne-f" placeholder="utility, division:ops"></div>
             <div style="margin-bottom:0.6rem;"><label class="ne-l">Description</label>
                 <input type="text" id="rn-description" class="ne-f" placeholder="Variable hydro bill"></div>
+            <div id="rn-history" style="display:none;margin-bottom:0.6rem;"></div>
             <div id="rn-error" style="display:none;color:var(--red);font-size:0.78rem;margin-bottom:0.6rem;"></div>
-            <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end;align-items:center;">
+                <button class="btn" id="rn-pay" onclick="rnPay()" style="display:none;font-size:0.8rem;padding:0.4rem 0.75rem;margin-right:auto;">Pay…</button>
                 <button class="btn" onclick="closeRecurringNew()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
                 <button class="btn" id="rn-submit" onclick="submitRecurringNew()" style="font-size:0.8rem;padding:0.4rem 0.9rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Create</button>
             </div>
@@ -4389,7 +4391,7 @@
                 + recCell(it.slug, 'description', it.description || '', {dim:true})
                 + `<td style="white-space:nowrap;text-align:right;">
                      <button class="btn" style="font-size:0.7rem;padding:0.15rem 0.45rem;color:var(--accent);border-color:var(--accent);" onclick="event.stopPropagation();openPay('${esc(it.slug)}')">Pay</button>
-                     <button class="btn" style="font-size:0.7rem;padding:0.15rem 0.45rem;" onclick="event.stopPropagation();openRecurringModal('${esc(it.slug)}')">⋯</button>
+                     <button class="btn" style="font-size:0.85rem;padding:0.1rem 0.4rem;line-height:1;" title="Edit all fields" onclick="event.stopPropagation();openRecurringEdit('${esc(it.slug)}')">✎</button>
                    </td>`
                 + '</tr>';
         }
@@ -4401,7 +4403,17 @@
     const RN_FIELDS = ['name','slug','frequency','amount','currency','start_date','end_date',
                        'day','reminder_days','tags','debit_account','credit_account','pair','description'];
 
+    let rnMode = 'create';
+    let rnSlug = '';
+
     function openRecurringNew() {
+        rnMode = 'create'; rnSlug = '';
+        document.getElementById('rn-title').textContent = 'New Recurring Entry';
+        document.getElementById('rn-submit').textContent = 'Create';
+        document.getElementById('rn-slug').readOnly = false;
+        document.getElementById('rn-pay').style.display = 'none';
+        document.getElementById('rn-history').style.display = 'none';
+        delete document.getElementById('rn-slug').dataset.touched;
         RN_FIELDS.forEach(f => { const e = document.getElementById('rn-' + f); if (e) e.value = ''; });
         document.getElementById('rn-frequency').value = 'monthly';
         document.getElementById('rn-pair').value = '0000';
@@ -4426,15 +4438,68 @@
         return { ok: res.ok, data };
     }
 
+    // Editing reuses the same form as creating, so the two can't diverge.
+    function openRecurringEdit(slug) {
+        const it = recurringItems.find(i => i.slug === slug);
+        if (!it) return;
+        openRecurringNew();
+        rnMode = 'edit'; rnSlug = slug;
+        document.getElementById('rn-title').textContent = 'Edit — ' + (it.name || slug);
+        document.getElementById('rn-submit').textContent = 'Save';
+        document.getElementById('rn-slug').readOnly = true;
+        document.getElementById('rn-pay').style.display = 'inline-block';
+
+        RN_FIELDS.forEach(f => {
+            const e = document.getElementById('rn-' + f);
+            if (!e) return;
+            let v = it[f];
+            if (f === 'tags') v = (it.tags || []).join(', ');
+            e.value = v == null ? '' : String(v);
+        });
+
+        const hist = it.history || [];
+        const box = document.getElementById('rn-history');
+        if (hist.length) {
+            let h = '<div style="color:var(--fg-dim);font-size:0.72rem;margin-bottom:0.25rem;">Payment history</div>'
+                  + '<table><thead><tr><th>Date</th><th style="text-align:right">Paid</th><th style="text-align:right">Expected</th><th style="text-align:right">Variance</th></tr></thead><tbody>';
+            for (const r of hist.slice().reverse()) {
+                const up = (r.variance||0) > 0;
+                h += `<tr><td>${esc(r.date)}</td><td style="text-align:right">${(r.amount||0).toFixed(2)}</td>`
+                   + `<td style="text-align:right;color:var(--fg-dim)">${(r.expected||0).toFixed(2)}</td>`
+                   + `<td style="text-align:right;color:${r.variance ? (up?'var(--red)':'var(--green)') : 'var(--fg-dim)'}">${r.variance ? (up?'+':'') + r.variance.toFixed(2) : '—'}</td></tr>`;
+            }
+            box.innerHTML = h + '</tbody></table>';
+            box.style.display = 'block';
+        } else { box.style.display = 'none'; }
+
+        document.getElementById('rn-modal').style.display = 'flex';
+    }
+
+    function rnPay() { const s = rnSlug; closeRecurringNew(); openPay(s); }
+
     async function submitRecurringNew() {
         const payload = {};
         RN_FIELDS.forEach(f => { const e = document.getElementById('rn-' + f); if (e) payload[f] = e.value.trim(); });
-        payload.amount = parseFloat(payload.amount) || 0;
         const err = document.getElementById('rn-error');
         const btn = document.getElementById('rn-submit');
         btn.disabled = true;
-        const { ok, data } = await createRecurring(payload);
-        if (ok) { showToast(data.message || 'Added'); closeRecurringNew(); await recRefresh(document.querySelector('#dash-manage-data')); }
+
+        let ok, data;
+        if (rnMode === 'edit') {
+            const fields = {...payload};
+            delete fields.slug;
+            const res = await fetch('/api/recurring/update', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ slug: rnSlug, fields }),
+            });
+            data = await res.json(); ok = res.ok;
+            if (ok) data.message = 'Saved';
+        } else {
+            payload.amount = parseFloat(payload.amount) || 0;
+            ({ ok, data } = await createRecurring(payload));
+        }
+
+        if (ok) { showToast(data.message || 'Done'); closeRecurringNew(); await recRefresh(document.querySelector('#dash-manage-data')); }
         else { err.textContent = data.detail || 'Failed'; err.style.display = 'block'; btn.disabled = false; }
     }
 
