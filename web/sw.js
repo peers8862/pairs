@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pairs-v2';
+const CACHE_NAME = 'pairs-v3';
 const ASSETS = [
     '/',
     '/manifest.json',
