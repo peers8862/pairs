@@ -12,15 +12,36 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
-            --bg: #282c34; --bg-alt: #21252b; --fg: #abb2bf; --fg-dim: #5c6370;
+            /* Default: warm "lively grey" — a neutral grey lit from behind by a
+               soft yellow. The hue lives in --bg itself; --glow adds the light. */
+            --bg: #35332d; --bg-alt: #2c2a25; --fg: #b9b4ac; --fg-dim: #6b665c;
             --accent: #61afef; --green: #98c379; --red: #e06c75; --yellow: #e5c07b;
-            --border: #3e4452; --radius: 8px;
+            --border: #4a463b; --radius: 8px;
+            --glow: rgba(229, 192, 123, 0.14);
         }
         body {
             font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
-            background: var(--bg); color: var(--fg);
+            background:
+                radial-gradient(130% 95% at 50% -12%, var(--glow), transparent 72%),
+                var(--bg);
+            background-attachment: fixed;
+            color: var(--fg);
             min-height: 100vh; display: flex; flex-direction: column;
         }
+
+        /* Background colour picker (nav, right of the entity box) */
+        .theme-switcher { position: relative; margin-left: 0.5rem; }
+        .theme-swatch {
+            width: 26px; height: 26px; border: 1px solid var(--border);
+            border-radius: 4px; cursor: pointer; background: var(--bg);
+        }
+        .theme-swatch:hover { border-color: var(--accent); }
+        .theme-menu {
+            display: none; position: absolute; top: 100%; right: 0;
+            margin-top: 0.4rem; flex-direction: column; gap: 0.3rem; z-index: 60;
+        }
+        .theme-menu.open { display: flex; }
+        .theme-menu .theme-swatch.sel { border-color: var(--accent); }
 
         /* Nav */
         nav { display: flex; align-items: center; padding: 0.75rem 1.5rem; background: var(--bg-alt); border-bottom: 1px solid var(--border); }
@@ -160,7 +181,6 @@
     <!-- Nav -->
     <nav>
         <span class="brand" id="brand-icon" onclick="toggleLauncher()" title="Switch tool" style="border:2px solid var(--accent);padding:0.2rem 0.5rem;border-radius:3px;font-size:0.9rem;cursor:pointer;">&gt;&lt;</span>
-        <span id="app-name" style="display:none;color:var(--accent);font-size:0.85rem;margin-left:0.5rem;white-space:nowrap;"></span>
         <div class="launcher" id="launcher">
             <div class="launcher-icon" onclick="enterApp('commodities')" title="Commodities">
                 <span>◈</span><small>Commodities</small>
@@ -179,7 +199,6 @@
             <span class="tab" onclick="switchView('records')">Records</span>
             <span class="tab" onclick="switchView('accounts')">Accounts</span>
             <span class="tab" onclick="switchView('contacts')">Contacts</span>
-            <span class="tab" onclick="switchView('commodities')">Commodities</span>
             <span class="tab" onclick="switchView('charts')">Charts</span>
             <span class="tab" onclick="switchView('reports')">Reports</span>
             <span class="tab" onclick="switchView('taxes')">Taxes</span>
@@ -189,6 +208,10 @@
             <button class="entity-btn" onclick="openSettings()" title="Entity settings" style="margin-right:0.4rem;padding:0.3rem 0.55rem;">⚙</button>
             <button class="entity-btn" id="entity-btn" onclick="toggleEntityDropdown()">...</button>
             <div class="entity-dropdown" id="entity-dropdown"></div>
+        </div>
+        <div class="theme-switcher">
+            <div class="theme-swatch" id="theme-swatch" onclick="toggleThemeMenu()" title="Background colour"></div>
+            <div class="theme-menu" id="theme-menu"></div>
         </div>
     </nav>
 
@@ -1441,7 +1464,51 @@
     // Close dropdown on outside click
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.entity-switcher')) document.getElementById('entity-dropdown').classList.remove('open');
+        if (!e.target.closest('.theme-switcher')) document.getElementById('theme-menu').classList.remove('open');
     });
+
+    // ─── Background colour ──────────────────────────────────────────────────
+    // Seven muted, dark-leaning backgrounds. Only the surface variables change;
+    // text and accent colours stay fixed so contrast holds across all of them.
+    const THEMES = [
+        { name: 'Lively grey',  bg: '#35332d', alt: '#2c2a25', border: '#4a463b', glow: 'rgba(229,192,123,0.14)' },
+        { name: 'Slate',        bg: '#282c34', alt: '#21252b', border: '#3e4452', glow: 'rgba(229,192,123,0.07)' },
+        { name: 'Olive',        bg: '#2f3329', alt: '#272a22', border: '#454a3a', glow: 'rgba(229,192,123,0.12)' },
+        { name: 'Charcoal',     bg: '#2b2b2b', alt: '#232323', border: '#414141', glow: 'rgba(229,192,123,0.09)' },
+        { name: 'Deep teal',    bg: '#24302f', alt: '#1e2827', border: '#384645', glow: 'rgba(229,192,123,0.08)' },
+        { name: 'Plum',         bg: '#302a33', alt: '#28232b', border: '#463e4a', glow: 'rgba(229,192,123,0.09)' },
+        { name: 'Umber',        bg: '#3a332a', alt: '#302a23', border: '#514738', glow: 'rgba(229,192,123,0.16)' },
+    ];
+
+    function applyTheme(i) {
+        const t = THEMES[i] || THEMES[0];
+        const r = document.documentElement.style;
+        r.setProperty('--bg', t.bg);
+        r.setProperty('--bg-alt', t.alt);
+        r.setProperty('--border', t.border);
+        r.setProperty('--glow', t.glow);
+        localStorage.setItem('pairs-theme', String(i));
+        renderThemeMenu(i);
+    }
+
+    function renderThemeMenu(sel) {
+        const menu = document.getElementById('theme-menu');
+        menu.innerHTML = THEMES.map((t, i) =>
+            `<div class="theme-swatch${i === sel ? ' sel' : ''}" style="background:${t.bg};"` +
+            ` title="${t.name}" onclick="pickTheme(${i})"></div>`
+        ).join('');
+    }
+
+    function pickTheme(i) {
+        applyTheme(i);
+        document.getElementById('theme-menu').classList.remove('open');
+    }
+
+    function toggleThemeMenu() {
+        document.getElementById('theme-menu').classList.toggle('open');
+    }
+
+    applyTheme(parseInt(localStorage.getItem('pairs-theme') || '0', 10) || 0);
 
     // ─── Dashboard ──────────────────────────────────────────────────────────
     let dashPeriod = 'ytd';  // 'ytd', '1m', '2m', '3m'
@@ -4731,9 +4798,6 @@
         currentApp = key;
         document.getElementById('brand-icon').innerHTML = app.icon;
         document.getElementById('brand-icon').title = 'Back to Pairs';
-        const nameEl = document.getElementById('app-name');
-        nameEl.textContent = app.name;
-        nameEl.style.display = 'inline';
         document.getElementById('main-tabs').style.display = 'none';
         document.getElementById(app.tabs).style.display = 'flex';
         commSwitch(app.start);
@@ -4743,7 +4807,6 @@
         currentApp = null;
         document.getElementById('brand-icon').innerHTML = '&gt;&lt;';
         document.getElementById('brand-icon').title = 'Switch tool';
-        document.getElementById('app-name').style.display = 'none';
         document.getElementById('comm-tabs').style.display = 'none';
         document.getElementById('main-tabs').style.display = 'flex';
         switchView('dashboard');
