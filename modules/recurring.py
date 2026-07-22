@@ -38,6 +38,10 @@ def dispatch(args):
         cmd_list(flags, action_args)
     elif action == 'generate':
         cmd_generate(flags, action_args)
+    elif action == 'pay':
+        cmd_pay(flags, action_args)
+    elif action == 'due':
+        cmd_due(flags, action_args)
     elif action == 'remove':
         cmd_remove(flags, action_args)
     else:
@@ -53,6 +57,8 @@ Actions:
   add                 Define a new recurring entry
   list                List all recurring entries
   generate            Generate pending entries through a date
+  pay [SLUG] [--amount N]  Record a payment at its real amount
+  due                      Upcoming items + active reminders
   remove <slug>       Remove a recurring entry definition
 
 Flags for 'generate':
@@ -210,6 +216,13 @@ def cmd_generate(flags, args):
                 'pair': entry.get('pair', '0000'),
                 'recurring': slug,
             }
+            # User-assigned tags ride along on every generated entry.
+            for t in entry.get('tags', []) or []:
+                if isinstance(t, str) and ':' in t:
+                    k, _, v = t.partition(':')
+                    tags[k.strip()] = v.strip()
+                elif isinstance(t, str) and t.strip():
+                    tags[t.strip()] = ''
 
             journal_entry = format_entry(
                 current.strftime("%Y-%m-%d"),
@@ -290,3 +303,166 @@ def _next_occurrence(current_date, frequency):
         from datetime import timedelta
         return current_date + timedelta(weeks=2)
     return current_date
+
+
+# ─── Due dates, reminders, and variable-amount payment ───────────────────────
+
+def due_info(entry, today=None):
+    """Next due date, days until, and whether a reminder is active.
+
+    Variable bills (utilities, telecom) are the reason `reminder_days` exists:
+    you want warning before the charge lands so the real amount can be entered.
+    """
+    from datetime import date as _d, timedelta
+    today = today or _d.today()
+    day = int(entry.get('day') or 1)
+
+    def _on(year, month):
+        # Clamp to month length (a 31st becomes the 30th/28th where needed).
+        import calendar
+        return _d(year, month, min(day, calendar.monthrange(year, month)[1]))
+
+    freq = (entry.get('frequency') or 'monthly').lower()
+    nxt = _on(today.year, today.month)
+    if nxt < today:
+        if freq == 'monthly':
+            nxt = _on(today.year + (today.month // 12), (today.month % 12) + 1)
+        elif freq in ('yearly', 'annual', 'annually'):
+            nxt = _on(today.year + 1, today.month)
+        elif freq == 'weekly':
+            nxt = today + timedelta(days=7)
+        else:
+            nxt = _on(today.year + (today.month // 12), (today.month % 12) + 1)
+
+    days_until = (nxt - today).days
+    reminder = entry.get('reminder_days')
+    return {
+        'next_due': nxt.strftime('%Y-%m-%d'),
+        'days_until': days_until,
+        'reminder_days': reminder,
+        'reminder_active': reminder is not None and days_until <= int(reminder),
+    }
+
+
+def apply_amount_policy(entry, actual, policy):
+    """Return the new expected amount for a recurring entry after a payment.
+
+    policy: 'adopt'   — the actual becomes the new expected
+            'average' — mean of previous expected and actual
+            'anomaly' — keep the previous expected (default)
+    """
+    expected = float(entry.get('amount') or 0)
+    actual = float(actual)
+    if policy == 'adopt':
+        return round(actual, 2)
+    if policy == 'average':
+        return round((expected + actual) / 2, 2)
+    return round(expected, 2)
+
+
+def record_payment(slug, actual, pay_date=None, policy='anomaly', note=''):
+    """Record a payment at its real amount and update the expected amount.
+
+    Returns a dict describing the variance so callers (CLI and web) can report
+    it identically.
+    """
+    from datetime import date as _d
+    entry = load_entity(MODULE, slug)
+    if not entry:
+        return None
+
+    expected = float(entry.get('amount') or 0)
+    actual = float(actual)
+    diff = round(actual - expected, 2)
+    pay_date = pay_date or _d.today().strftime('%Y-%m-%d')
+
+    history = entry.get('history', []) or []
+    history.append({'date': pay_date, 'amount': round(actual, 2),
+                    'expected': round(expected, 2), 'variance': diff,
+                    'policy': policy, **({'note': note} if note else {})})
+    entry['history'] = history[-24:]
+
+    new_amount = apply_amount_policy(entry, actual, policy)
+    entry['amount'] = new_amount
+    entry['last_paid'] = pay_date
+    save_entity(MODULE, slug, entry)
+
+    return {
+        'slug': slug, 'date': pay_date,
+        'expected': round(expected, 2), 'actual': round(actual, 2),
+        'variance': diff,
+        'pct': round((diff / expected * 100), 1) if expected else 0.0,
+        'policy': policy, 'new_amount': new_amount,
+        'changed': new_amount != round(expected, 2),
+    }
+
+
+def cmd_pay(flags, args):
+    """Record a payment at its real amount, then report the variance."""
+    slug = args[0] if args else prompt("  Recurring slug")
+    entry = load_entity(MODULE, slug)
+    if not entry:
+        print(f"\n  No recurring entry '{slug}'\n")
+        return
+
+    expected = float(entry.get('amount') or 0)
+    currency = entry.get('currency', 'CAD')
+    print(f"\n  {entry.get('name', slug)} — expected {currency} {expected:.2f}")
+
+    actual_raw = None
+    for i, a in enumerate(args):
+        if a == '--amount' and i + 1 < len(args):
+            actual_raw = args[i + 1]
+    if actual_raw is None:
+        actual_raw = prompt(f"  Actual amount", default=f"{expected:.2f}")
+    try:
+        actual = float(str(actual_raw).replace(',', ''))
+    except ValueError:
+        print(f"\n  Invalid amount: {actual_raw!r}\n")
+        return
+
+    diff = round(actual - expected, 2)
+    # Report the variance before asking what to do about it.
+    if diff == 0:
+        print(f"  Matches the expected amount.")
+        policy = 'anomaly'
+    else:
+        sign = '+' if diff > 0 else ''
+        pct = f" ({sign}{diff / expected * 100:.1f}%)" if expected else ''
+        print(f"  Difference: {sign}{currency} {diff:.2f}{pct} vs expected {currency} {expected:.2f}")
+        print("\n    a) adopt   — use this amount going forward")
+        print("    v) average — average of expected and actual")
+        print("    k) keep    — anomaly, keep the previous amount")
+        choice = prompt("  Choose (a/v/k)", default='k').strip().lower()[:1]
+        policy = {'a': 'adopt', 'v': 'average'}.get(choice, 'anomaly')
+
+    result = record_payment(slug, actual, policy=policy)
+    print(f"\n  ✓ Recorded {currency} {result['actual']:.2f} on {result['date']}")
+    if result['changed']:
+        print(f"  Expected amount updated to {currency} {result['new_amount']:.2f} ({policy})")
+    else:
+        print(f"  Expected amount unchanged at {currency} {result['new_amount']:.2f}")
+    print()
+
+
+def cmd_due(flags, args):
+    """Show upcoming recurring items and active reminders."""
+    slugs = list_entities(MODULE)
+    if not slugs:
+        print("\n  No recurring entries.\n")
+        return
+    rows = []
+    for slug in slugs:
+        e = load_entity(MODULE, slug)
+        if not e:
+            continue
+        rows.append((due_info(e), e, slug))
+    rows.sort(key=lambda r: r[0]['days_until'])
+
+    print("\n  Upcoming recurring items:\n")
+    for info, e, slug in rows:
+        bell = ' 🔔' if info['reminder_active'] else ''
+        cur = e.get('currency', 'CAD')
+        print(f"    {info['next_due']}  in {info['days_until']:>3}d  "
+              f"{cur} {float(e.get('amount') or 0):>10.2f}  {e.get('name', slug)}{bell}")
+    print()
