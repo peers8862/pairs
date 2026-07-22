@@ -195,7 +195,7 @@
         </div>
         <div class="tabs" id="main-tabs">
             <span class="tab" onclick="switchView('entry')">Pairs</span>
-            <span class="tab active" onclick="switchView('dashboard')">Dash</span>
+            <span class="tab active" id="tab-dashboard" onclick="switchView('dashboard')">Dash</span>
             <span class="tab" onclick="switchView('records')">Records</span>
             <span class="tab" onclick="switchView('accounts')">Accounts</span>
             <span class="tab" onclick="switchView('contacts')">Contacts</span>
@@ -270,12 +270,9 @@
                 <button class="btn" onclick="dashLoadManage('assets')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Assets</button>
                 <button class="btn" onclick="dashLoadManage('liabilities')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Liabilities</button>
                 <button class="btn" onclick="dashLoadManage('equity')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Equity</button>
-                <button class="btn" onclick="dashLoadManage('income')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Income</button>
-                <button class="btn" onclick="dashLoadManage('expenses')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Expenses</button>
+                <button class="btn" onclick="dashLoadManage('contracts')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Contracts</button>
                 <button class="btn" onclick="dashLoadManage('payroll')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Payroll</button>
                 <button class="btn" onclick="dashLoadManage('recurring')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Recurring</button>
-                <button class="btn" onclick="dashLoadManage('contracts')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Contracts</button>
-                <button class="btn" onclick="dashLoadManage('transfers')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Transfers</button>
             </div>
             <div id="dash-time-btns" style="display:flex;gap:0.3rem;">
                 <button class="btn active" onclick="setDashPeriod('ytd')" style="font-size:0.7rem;padding:0.25rem 0.5rem;">YTD</button>
@@ -506,6 +503,27 @@
 
     <!-- Records View -->
     <div class="view" id="view-records">
+        <!-- Manage shortcuts — same modules as Dash, plus the flow accounts -->
+        <div id="rec-manage-btns" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+            <button class="btn" onclick="recLoadManage('assets')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Assets</button>
+            <button class="btn" onclick="recLoadManage('liabilities')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Liabilities</button>
+            <button class="btn" onclick="recLoadManage('equity')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Equity</button>
+            <button class="btn" onclick="recLoadManage('income')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Income</button>
+            <button class="btn" onclick="recLoadManage('expenses')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Expenses</button>
+            <button class="btn" onclick="recLoadManage('transfers')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Transfers</button>
+            <button class="btn" onclick="recLoadManage('payroll')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Payroll</button>
+            <button class="btn" onclick="recLoadManage('recurring')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Recurring</button>
+        </div>
+        <!-- Manage content (shown when a manage button is clicked) -->
+        <div id="rec-manage-content" style="display:none;">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
+                <button class="btn" onclick="recShowMain()" style="font-size:0.8rem;padding:0.3rem 0.6rem;">← Records</button>
+                <span id="rec-manage-title" style="color:var(--accent);font-size:0.9rem;font-weight:bold;"></span>
+            </div>
+            <div id="rec-manage-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
+            <div id="rec-manage-data"></div>
+        </div>
+        <div id="rec-main-content">
         <div id="records-entry-slot"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;gap:1rem;flex-wrap:wrap;">
             <div class="section-title" style="margin:0;white-space:nowrap;">Records</div>
@@ -588,6 +606,7 @@
         <div id="rec-load-more" style="text-align:center;padding:0.75rem;display:none;">
             <button class="btn" onclick="loadMoreRecords()" style="font-size:0.8rem;padding:0.4rem 1rem;">Load more</button>
         </div>
+        </div><!-- /rec-main-content -->
     </div>
 
     <!-- Commodity Modal -->
@@ -1037,6 +1056,9 @@
 
     <div class="toast" id="toast"></div>
 
+    <!-- Shared account suggestions for every account input in the app -->
+    <datalist id="account-list"></datalist>
+
     <!-- Asset Modal -->
     <div id="asset-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:60;align-items:center;justify-content:center;">
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:92%;max-width:540px;max-height:90vh;overflow-y:auto;">
@@ -1051,14 +1073,15 @@
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
                     <div>
-                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Category</label>
-                        <select id="asset-category" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Account</label>
+                        <select id="asset-category" onchange="updateAssetAccountHint()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
                             <option value="equipment">Equipment</option>
                             <option value="vehicle">Vehicle</option>
                             <option value="furniture">Furniture</option>
                             <option value="software">Software</option>
                             <option value="other">Other</option>
                         </select>
+                        <div id="asset-account-hint" style="color:var(--fg-dim);font-size:0.7rem;margin-top:0.25rem;"></div>
                     </div>
                     <div>
                         <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Purchase Date</label>
@@ -1109,11 +1132,18 @@
                     <div id="asset-monthly-amort" style="color:var(--green);font-size:0.8rem;text-align:right;padding:0.3rem 0;"></div>
                 </div>
                 <div>
-                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Payment Method</label>
-                    <select id="asset-payment" onchange="toggleLinkedLiability()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
-                        <option value="cash">Cash</option>
-                        <option value="financed">Financed</option>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">How it was acquired</label>
+                    <select id="asset-acquisition" onchange="updateAssetAcquisition()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        <option value="cash">Paid for — cost comes out of an account</option>
+                        <option value="financed">Financed — owed against a liability</option>
+                        <option value="contributed">Given by the owner — equity contribution</option>
+                        <option value="recognized">Already the business's — recognized into the books</option>
                     </select>
+                </div>
+                <div id="asset-credit-group">
+                    <label id="asset-credit-label" style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Paid from account</label>
+                    <input type="text" id="asset-credit" list="account-list" placeholder="Assets:Current:Chequing" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    <div id="asset-credit-hint" style="color:var(--fg-dim);font-size:0.7rem;margin-top:0.25rem;"></div>
                 </div>
                 <div id="asset-liability-group" style="display:none;">
                     <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Linked Liability (slug)</label>
@@ -1204,6 +1234,27 @@
                     <div>
                         <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Lender (contact slug)</label>
                         <input type="text" id="liab-lender" placeholder="optional, e.g. maple-leaf-bank" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <!-- Account wiring: naming these once makes every later payment
+                     or balance change recordable without re-picking accounts. -->
+                <div style="border-top:1px solid var(--border);padding-top:0.75rem;">
+                    <div style="color:var(--accent);font-size:0.75rem;margin-bottom:0.5rem;">Accounts</div>
+                    <div style="display:grid;gap:0.6rem;">
+                        <div>
+                            <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Liability account <span style="color:var(--fg-dim);">(the balance that fluctuates)</span></label>
+                            <input type="text" id="liab-account" list="account-list" placeholder="auto — Liabilities:Long-Term:&lt;name&gt;" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                            <div>
+                                <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Paid from</label>
+                                <input type="text" id="liab-payment-account" list="account-list" placeholder="Assets:Current:Chequing" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            </div>
+                            <div>
+                                <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Interest expense</label>
+                                <input type="text" id="liab-interest-account" list="account-list" placeholder="Expenses:Non-Operating:Interest Expense" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div>
@@ -1388,7 +1439,7 @@
         const status = await fetch('/api/status').then(r => r.json());
         state.currency = status.currency;
         state.today = status.today;
-        document.getElementById('entity-btn').textContent = status.name || 'no entity';
+        setEntityName(status.name);
         document.getElementById('preview-date').textContent = status.today;
 
         allPairs = await fetch('/api/pairs').then(r => r.json());
@@ -1404,10 +1455,16 @@
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
         document.getElementById('view-' + view).classList.add('active');
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        if (event && event.target) event.target.classList.add('active');
+        // event.target only exists for a click; fall back to the tab that routes
+        // here so programmatic navigation still highlights the right one.
+        const tabEl = (event && event.target && event.target.classList.contains('tab'))
+            ? event.target
+            : [...document.querySelectorAll('#main-tabs .tab')]
+                .find(t => (t.getAttribute('onclick') || '').includes("'" + view + "'"));
+        if (tabEl) tabEl.classList.add('active');
         if (view === 'entry') document.getElementById('expr-field').focus();
         if (view === 'dashboard') { mountQuickEntry('dash-entry-slot'); quickClear(); dashShowMain(); loadDashboard(); }
-        if (view === 'records') { mountQuickEntry('records-entry-slot'); quickClear(); loadRecords(); }
+        if (view === 'records') { mountQuickEntry('records-entry-slot'); quickClear(); recShowMain(); loadRecords(); }
         if (view === 'data') loadData('assets');
         if (view === 'contacts') loadContactsView();
         if (view === 'commodities') loadCommoditiesView();
@@ -1418,6 +1475,14 @@
     }
 
     // ─── Entity Switcher ────────────────────────────────────────────────────
+    // The Dash tab is named after whatever entity or project is loaded, so the
+    // nav always says which books you are looking at.
+    function setEntityName(name) {
+        const label = name || 'no entity';
+        document.getElementById('entity-btn').textContent = label;
+        document.getElementById('tab-dashboard').textContent = label;
+    }
+
     async function loadEntities() {
         const data = await fetch('/api/entities').then(r => r.json());
         const dd = document.getElementById('entity-dropdown');
@@ -1453,7 +1518,7 @@
     async function switchEntity(slug) {
         const data = await fetch('/api/switch?slug=' + encodeURIComponent(slug), {method:'POST'}).then(r => r.json());
         if (data.ok) {
-            document.getElementById('entity-btn').textContent = data.name;
+            setEntityName(data.name);
             document.getElementById('entity-dropdown').classList.remove('open');
             showToast('Switched to ' + data.name);
             loadDashboard();
@@ -1771,10 +1836,19 @@
     // Steps: description -> account -> amount -> (repeat) -> balance -> tags -> date -> write
     let quickState = { postings: [], step: 'description', currentAccount: '', description: '', tags: '', entryDate: '', allAccounts: [], selectedIdx: -1, pendingBalance: null };
 
+    // One datalist backs every account input (assets, liabilities, …) so they
+    // all suggest the same real chart of accounts.
+    function populateAccountDatalist(accounts) {
+        const dl = document.getElementById('account-list');
+        if (!dl) return;
+        dl.innerHTML = (accounts || []).map(a => `<option value="${esc(a.full)}"></option>`).join('');
+    }
+
     async function initQuickEntry() {
         try {
             const data = await fetch('/api/accounts').then(r => r.json());
             quickState.allAccounts = data.all || [];
+            populateAccountDatalist(quickState.allAccounts);
             quickState.entryDate = state.today;
             // Show account count in balance area briefly
             document.getElementById('quick-balance').textContent = quickState.allAccounts.length + ' accounts';
@@ -2696,8 +2770,7 @@
 
     function setPayrollPane(pane) {
         payrollPane = pane;
-        const dashManage = document.getElementById('dash-manage-content');
-        if (dashManage && dashManage.style.display !== 'none') dashLoadManageByName('payroll');
+        if (manageActiveScope()) manageRefresh('payroll');
         else loadData('payroll');
     }
 
@@ -2740,57 +2813,61 @@
         showToast('Use CLI: ' + (cmdMap[type] || 'pair ' + type + ' add'));
     }
 
-    // ─── Dashboard Manage Inline ──────────────────────────────────────────
-    function dashLoadManage(type) {
-        const main = document.getElementById('dash-main-content');
-        const manage = document.getElementById('dash-manage-content');
-        const title = document.getElementById('dash-manage-title');
-        const form = document.getElementById('dash-manage-form');
-        const content = document.getElementById('dash-manage-data');
+    // ─── Manage panels ────────────────────────────────────────────────────
+    // Dash and Records both host manage modules. One implementation, two mount
+    // points: a module is the same form (showAddForm) and the same table
+    // (loadDataInto) wherever it is opened — only the container differs.
+    const MANAGE_SCOPES = {
+        dash: { main: 'dash-main-content', panel: 'dash-manage-content', title: 'dash-manage-title',
+                form: 'dash-manage-form', data: 'dash-manage-data', btns: 'dash-manage-btns' },
+        rec:  { main: 'rec-main-content',  panel: 'rec-manage-content',  title: 'rec-manage-title',
+                form: 'rec-manage-form',  data: 'rec-manage-data',  btns: 'rec-manage-btns' },
+    };
 
-        main.style.display = 'none';
-        manage.style.display = 'block';
-        title.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-
-        // Highlight active button
-        document.querySelectorAll('#dash-manage-btns .btn').forEach(b => b.classList.remove('active'));
-        if (event && event.target) event.target.classList.add('active');
-
-        // Load add form
-        showAddForm(type, form);
-
-        // Load content
-        content.innerHTML = '<div class="empty">Loading...</div>';
-        loadDataInto(type, content);
-    }
-
-    function dashLoadManageByName(type) {
-        // Programmatic version (no event.target)
-        const main = document.getElementById('dash-main-content');
-        const manage = document.getElementById('dash-manage-content');
-        const title = document.getElementById('dash-manage-title');
-        const form = document.getElementById('dash-manage-form');
-        const content = document.getElementById('dash-manage-data');
-
-        main.style.display = 'none';
-        manage.style.display = 'block';
-        title.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-
-        // Highlight matching button
-        document.querySelectorAll('#dash-manage-btns .btn').forEach(b => {
-            b.classList.toggle('active', b.textContent.toLowerCase() === type);
+    function manageOpen(scope, type) {
+        const s = MANAGE_SCOPES[scope];
+        document.getElementById(s.main).style.display = 'none';
+        document.getElementById(s.panel).style.display = 'block';
+        document.getElementById(s.title).textContent = type.charAt(0).toUpperCase() + type.slice(1);
+        // Highlight by name, not by event.target — this must behave the same
+        // whether a click or a post-save refresh opened the panel.
+        document.querySelectorAll('#' + s.btns + ' .btn').forEach(b => {
+            b.classList.toggle('active', b.textContent.trim().toLowerCase() === type);
         });
-
-        showAddForm(type, form);
+        showAddForm(type, document.getElementById(s.form));
+        const content = document.getElementById(s.data);
         content.innerHTML = '<div class="empty">Loading...</div>';
-        loadDataInto(type, content);
+        return loadDataInto(type, content);
     }
 
-    function dashShowMain() {
-        document.getElementById('dash-main-content').style.display = '';
-        document.getElementById('dash-manage-content').style.display = 'none';
-        document.querySelectorAll('#dash-manage-btns .btn').forEach(b => b.classList.remove('active'));
+    function manageClose(scope) {
+        const s = MANAGE_SCOPES[scope];
+        document.getElementById(s.main).style.display = '';
+        document.getElementById(s.panel).style.display = 'none';
+        document.querySelectorAll('#' + s.btns + ' .btn').forEach(b => b.classList.remove('active'));
     }
+
+    function manageActiveScope() {
+        for (const k of Object.keys(MANAGE_SCOPES)) {
+            const p = document.getElementById(MANAGE_SCOPES[k].panel);
+            // Only a panel in the view the user is actually looking at counts.
+            if (p && p.style.display !== 'none' && p.closest('.view.active')) return k;
+        }
+        return null;
+    }
+
+    // Re-render `type` in whichever panel is open, so a save updates the list
+    // the user is actually looking at — Dash or Records.
+    function manageRefresh(type) {
+        const scope = manageActiveScope();
+        return scope ? manageOpen(scope, type) : Promise.resolve();
+    }
+
+    function dashLoadManage(type) { return manageOpen('dash', type); }
+    function dashLoadManageByName(type) { return manageOpen('dash', type); }
+    function dashShowMain() { manageClose('dash'); }
+    function recLoadManage(type) { return manageOpen('rec', type); }
+    function recShowMain() { manageClose('rec'); }
 
     async function loadDataInto(type, container) {
         // Reuse the loadData rendering logic but target a specific container
@@ -3227,7 +3304,8 @@
             document.getElementById('asset-method').value = item.amortization_method || 'straight-line';
             document.getElementById('asset-rate').value = item.rate || 0.30;
             document.getElementById('asset-life').value = item.useful_life_months || 12;
-            document.getElementById('asset-payment').value = item.payment_method || 'cash';
+            document.getElementById('asset-acquisition').value = item.acquisition || item.payment_method || 'cash';
+            document.getElementById('asset-credit').value = (item.accounts || {}).credit || '';
             document.getElementById('asset-liability').value = item.linked_liability || '';
             document.getElementById('asset-desc').value = item.description || '';
             deleteBtn.style.display = 'inline-block';
@@ -3243,14 +3321,16 @@
             document.getElementById('asset-method').value = 'straight-line';
             document.getElementById('asset-rate').value = '0.30';
             document.getElementById('asset-life').value = '12';
-            document.getElementById('asset-payment').value = 'cash';
+            document.getElementById('asset-acquisition').value = 'cash';
+            document.getElementById('asset-credit').value = '';
             document.getElementById('asset-liability').value = '';
             document.getElementById('asset-desc').value = '';
             deleteBtn.style.display = 'none';
         }
 
         toggleDecliningRate();
-        toggleLinkedLiability();
+        updateAssetAcquisition();
+        updateAssetAccountHint();
         updateLifeCalc();
         modal.style.display = 'flex';
     }
@@ -3265,9 +3345,42 @@
         document.getElementById('asset-rate-group').style.display = method === 'declining-balance' ? 'block' : 'none';
     }
 
-    function toggleLinkedLiability() {
-        const payment = document.getElementById('asset-payment').value;
-        document.getElementById('asset-liability-group').style.display = payment === 'financed' ? 'block' : 'none';
+    // Mirrors modules/asset.py DEFAULT_ACCOUNTS so the form can show which
+    // account an asset will actually land in before it is saved.
+    const ASSET_ACCOUNTS = {
+        equipment: 'Assets:Fixed:Equipment',
+        vehicle:   'Assets:Fixed:Vehicles',
+        furniture: 'Assets:Fixed:Furniture',
+        software:  'Assets:Fixed:Intellectual Property',
+        other:     'Assets:Fixed:Other',
+    };
+
+    // What the acquisition entry credits, per mode: the label for the account
+    // field, its default, and whether it is the user's to choose at all.
+    const ACQUISITION_CREDIT = {
+        cash:        { label: 'Paid from account',      placeholder: 'Assets:Current:Chequing',   show: true  },
+        financed:    { label: 'Owed to account',        placeholder: 'from the linked liability', show: true  },
+        contributed: { label: 'Credited to equity',     placeholder: 'Equity:Owner Contributions', show: true },
+        recognized:  { label: 'Credited to equity',     placeholder: 'Equity:Opening Balances',   show: true  },
+    };
+
+    function updateAssetAccountHint() {
+        const cat = document.getElementById('asset-category').value;
+        const hint = document.getElementById('asset-account-hint');
+        if (hint) hint.textContent = ASSET_ACCOUNTS[cat] || '';
+        updateAssetAcquisition();
+    }
+
+    function updateAssetAcquisition() {
+        const mode = document.getElementById('asset-acquisition').value;
+        const spec = ACQUISITION_CREDIT[mode] || ACQUISITION_CREDIT.cash;
+        document.getElementById('asset-liability-group').style.display = mode === 'financed' ? 'block' : 'none';
+        document.getElementById('asset-credit-group').style.display = spec.show ? 'block' : 'none';
+        document.getElementById('asset-credit-label').textContent = spec.label;
+        document.getElementById('asset-credit').placeholder = spec.placeholder;
+        document.getElementById('asset-credit-hint').textContent =
+            'Debit ' + (ASSET_ACCOUNTS[document.getElementById('asset-category').value] || 'the asset account')
+            + ' · credit this account';
     }
 
     function setLife(months) {
@@ -3323,7 +3436,8 @@
             rate: parseFloat(document.getElementById('asset-rate').value) || 0.30,
             salvage_value: parseFloat(document.getElementById('asset-salvage').value) || 0,
             description: document.getElementById('asset-desc').value.trim(),
-            payment_method: document.getElementById('asset-payment').value,
+            acquisition: document.getElementById('asset-acquisition').value,
+            credit_account: document.getElementById('asset-credit').value.trim(),
             linked_liability: document.getElementById('asset-liability').value.trim(),
         };
 
@@ -3431,6 +3545,10 @@
             document.getElementById('liab-payment').value = item.payment_amount || '';
             document.getElementById('liab-lender').value = item.lender || '';
             document.getElementById('liab-desc').value = item.notes || '';
+            const la = item.accounts || {};
+            document.getElementById('liab-account').value = la.liability || '';
+            document.getElementById('liab-payment-account').value = la.payment_source || '';
+            document.getElementById('liab-interest-account').value = la.interest_expense || '';
             // Keep the stored payment unless the user changes an input
             liabPmtManual = !!item.payment_amount;
             deleteBtn.style.display = 'inline-block';
@@ -3447,6 +3565,9 @@
             document.getElementById('liab-payment').value = '';
             document.getElementById('liab-lender').value = '';
             document.getElementById('liab-desc').value = '';
+            document.getElementById('liab-account').value = '';
+            document.getElementById('liab-payment-account').value = '';
+            document.getElementById('liab-interest-account').value = '';
             liabPmtManual = false;
             deleteBtn.style.display = 'none';
         }
@@ -3461,8 +3582,7 @@
 
     // Refresh whichever liabilities view is currently visible
     function refreshLiabilities() {
-        const dashManage = document.getElementById('dash-manage-content');
-        if (dashManage && dashManage.style.display !== 'none') dashLoadManageByName('liabilities');
+        if (manageActiveScope()) manageRefresh('liabilities');
         else loadData('liabilities');
     }
 
@@ -3484,6 +3604,9 @@
             payment_amount: parseFloat(document.getElementById('liab-payment').value) || 0,
             lender: document.getElementById('liab-lender').value.trim(),
             description: document.getElementById('liab-desc').value.trim(),
+            liability_account: document.getElementById('liab-account').value.trim(),
+            payment_account: document.getElementById('liab-payment-account').value.trim(),
+            interest_account: document.getElementById('liab-interest-account').value.trim(),
         };
 
         try {
@@ -4081,8 +4204,12 @@
             const pad = 0.4 + depth * 1.1;
             const caret = hasKids ? (open ? '▾' : '▸') : '·';
             const color = hasKids ? 'var(--fg)' : 'var(--fg-dim)';
-            html += `<div onclick="toggleAcct('${path.replace(/'/g,"\\'")}',event)" style="padding:0.2rem 0.4rem;padding-left:${pad}rem;cursor:${hasKids?'pointer':'default'};color:${color};border-radius:3px;">`
-                 + `<span style="color:var(--fg-dim);display:inline-block;width:1rem;">${caret}</span>${esc(key)}</div>`;
+            const q = path.replace(/'/g, "\\'");
+            // Caret toggles the branch; the name itself opens the account's
+            // records, so every account in the chart is a link to its history.
+            html += `<div style="padding:0.2rem 0.4rem;padding-left:${pad}rem;color:${color};border-radius:3px;">`
+                 + `<span onclick="toggleAcct('${q}',event)" style="color:var(--fg-dim);display:inline-block;width:1rem;cursor:${hasKids?'pointer':'default'};">${caret}</span>`
+                 + `<span onclick="openAccountRecords('${q}')" title="Show records for ${esc(path)}" style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px;">${esc(key)}</span></div>`;
             if (hasKids && open) html += renderAcctNodes(kids, depth + 1);
         }
         return html;
@@ -4159,8 +4286,7 @@
             if (res.ok) {
                 showToast(data.message || 'Transfer recorded');
                 ['tr-amount','tr-from','tr-to','tr-desc'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-                const dash = document.getElementById('dash-manage-content');
-                if (dash && dash.style.display !== 'none') dashLoadManageByName('transfers');
+                manageRefresh('transfers');
             } else {
                 showToast('Error: ' + (data.detail || 'Failed'), true);
             }
@@ -4605,7 +4731,7 @@
             ({ ok, data } = await createRecurring(payload));
         }
 
-        if (ok) { showToast(data.message || 'Done'); closeRecurringNew(); await recRefresh(document.querySelector('#dash-manage-data')); }
+        if (ok) { showToast(data.message || 'Done'); closeRecurringNew(); await recRefresh(null); }
         else { err.textContent = data.detail || 'Failed'; err.style.display = 'block'; btn.disabled = false; }
     }
 
@@ -4618,19 +4744,19 @@
         if (ok) {
             showToast(data.message || 'Added');
             ['rq-name','rq-amount','rq-day','rq-tags'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
-            await recRefresh(document.querySelector('#dash-manage-data'));
+            await recRefresh(null);
         } else { showToast('Error: ' + (data.detail || 'Failed'), true); }
     }
 
     document.getElementById('rn-slug')?.addEventListener('input', function(){ this.dataset.touched = '1'; });
     document.getElementById('rn-modal')?.addEventListener('click', function(e){ if (e.target===this) closeRecurringNew(); });
 
-    // The recurring table renders in two places (Records and Dash > Recurring).
-    // Refresh whichever one the edited cell actually lives in.
+    // The recurring table renders in a manage panel (Dash or Records) or in
+    // the Data view. Refresh whichever one the edited cell actually lives in.
     function recRefresh(node) {
-        if (node && node.closest && node.closest('#dash-manage-data')) {
-            return dashLoadManage('recurring');
-        }
+        if (node && node.closest && node.closest('#dash-manage-data')) return manageOpen('dash', 'recurring');
+        if (node && node.closest && node.closest('#rec-manage-data')) return manageOpen('rec', 'recurring');
+        if (manageActiveScope()) return manageRefresh('recurring');
         return loadData('recurring');
     }
 
@@ -4735,7 +4861,7 @@
                 ? `Paid ${d.actual.toFixed(2)} (${sign}${d.variance.toFixed(2)}) — expected now ${d.new_amount.toFixed(2)}`
                 : `Paid ${d.actual.toFixed(2)}`);
             closePay();
-            await recRefresh(document.querySelector('#dash-manage-data tr.rec-row') ? document.getElementById('dash-manage-data') : null);
+            await recRefresh(null);
         } catch (e) { showToast('Network error', true); }
     }
 
@@ -5067,6 +5193,21 @@
     // grammar back into fields would need hledger itself and would drift).
     let advsRawMode = false;
     let advsTimer = null;
+
+    // Follow an account from the chart of accounts to its records.
+    // acct: is an unanchored regex in hledger, so a parent account brings its
+    // children along — which is what clicking a branch should mean.
+    function openAccountRecords(path) {
+        switchView('records');
+        recShowMain();
+        const panel = document.getElementById('advs-panel');
+        if (panel.style.display === 'none') toggleAdvSearch();
+        advsClear();
+        const f = document.querySelector('#advs-panel .advs-f[data-f="acct"]');
+        if (f) f.value = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        advsRawMode = false;
+        advsRun();
+    }
 
     function toggleAdvSearch() {
         const p = document.getElementById('advs-panel');

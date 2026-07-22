@@ -216,6 +216,32 @@ def cmd_add(flags, args):
     print(f"\n  Run 'pair asset amort' to generate amortization entries.")
 
 
+# How an asset came into the business decides what the acquisition entry
+# credits, and therefore the pair code. 'cash' and 'financed' are the classic
+# purchase paths; 'contributed' is the owner putting property in (equity), and
+# 'recognized' books property the business already holds against opening equity.
+ACQUISITION_PAIRS = {
+    'cash': '1011',          # Assets ↔ Assets
+    'financed': '1000',      # Assets ↔ Liabilities
+    'contributed': '1001',   # Assets ↔ Equity
+    'recognized': '1001',    # Assets ↔ Equity
+}
+ACQUISITION_DEFAULT_CREDIT = {
+    'contributed': 'Equity:Owner Contributions',
+    'recognized': 'Equity:Opening Balances',
+}
+
+
+def acquisition_mode(asset):
+    """Normalize an asset's acquisition mode.
+
+    `acquisition` is the current field; `payment_method` is what older YAML
+    files carry, so both are read and 'cash' is the fallback either way.
+    """
+    mode = asset.get('acquisition') or asset.get('payment_method') or 'cash'
+    return mode if mode in ACQUISITION_PAIRS else 'cash'
+
+
 def _write_acquisition_entry(asset, config):
     """Write the acquisition journal entry."""
     currency = asset['currency']
@@ -226,32 +252,30 @@ def _write_acquisition_entry(asset, config):
     slug = asset['slug']
     asset_account = asset['accounts']['asset']
 
-    if asset.get('payment_method') == 'financed' and asset.get('linked_liability'):
-        # Financed: debit asset, credit liability
-        pair = '1000'
-        # Look up liability account
-        from lib.yaml_store import load_entity as load_liab
-        liab = load_liab('liabilities', asset['linked_liability'])
-        if liab and 'accounts' in liab:
-            credit_account = liab['accounts'].get('liability', 'Liabilities:Long-Term:Loan')
-        else:
+    mode = acquisition_mode(asset)
+    pair = ACQUISITION_PAIRS[mode]
+    tags = {
+        'pair': pair,
+        'source': f'assets/{slug}.yaml',
+        'category': asset['category'],
+        'acquisition': mode,
+    }
+
+    # An explicit credit account always wins — it is what the user picked.
+    credit_account = (asset.get('accounts', {}).get('credit') or '').strip()
+
+    if mode == 'financed':
+        if asset.get('linked_liability'):
+            tags['liability'] = asset['linked_liability']
+            if not credit_account:
+                from lib.yaml_store import load_entity as load_liab
+                liab = load_liab('liabilities', asset['linked_liability'])
+                credit_account = (liab or {}).get('accounts', {}).get('liability', '')
+        if not credit_account:
             credit_account = 'Liabilities:Long-Term:Loan'
-        tags = {
-            'pair': pair,
-            'source': f'assets/{slug}.yaml',
-            'category': asset['category'],
-            'liability': asset['linked_liability'],
-        }
-    else:
-        # Cash: debit asset, credit bank
-        pair = '1011'
-        bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
-        credit_account = bank
-        tags = {
-            'pair': pair,
-            'source': f'assets/{slug}.yaml',
-            'category': asset['category'],
-        }
+    elif not credit_account:
+        credit_account = ACQUISITION_DEFAULT_CREDIT.get(
+            mode, config.get('accounts', {}).get('bank', 'Assets:Current:Chequing'))
 
     postings = [
         (asset_account, currency, float(cost)),
