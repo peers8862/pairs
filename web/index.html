@@ -539,12 +539,12 @@
         <div id="advs-panel" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.9rem 1rem;margin-bottom:0.75rem;">
             <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.7rem;">
                 <input type="text" id="advs-query" placeholder="hledger query — e.g. acct:expenses date:2026 amt:'&gt;100' expr:'food OR rent'"
-                    oninput="advsRawEdited()" onkeydown="if(event.key==='Enter'){event.preventDefault();advsRun();}"
+                    oninput="advsRawEdited()" onkeydown="if(event.key==='Enter'){event.preventDefault();advsRun(true);}"
                     style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.45rem 0.7rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
                 <select id="advs-mode" onchange="advsRun()" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.45rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
                     <option value="register">postings</option><option value="print">transactions</option>
                 </select>
-                <button class="btn" onclick="advsRun()" style="font-size:0.8rem;padding:0.4rem 0.8rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Search</button>
+                <button class="btn" onclick="advsRun(true)" style="font-size:0.8rem;padding:0.4rem 0.8rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Search</button>
                 <button class="btn" onclick="advsClear()" style="font-size:0.8rem;padding:0.4rem 0.7rem;">Clear</button>
             </div>
 
@@ -588,6 +588,14 @@
             <div id="advs-error" style="display:none;color:var(--red);font-size:0.75rem;margin-top:0.6rem;white-space:pre-wrap;"></div>
             <div id="advs-status" style="color:var(--fg-dim);font-size:0.73rem;margin-top:0.6rem;"></div>
         </div>
+        <!-- Query stamp: the running query printed where the results start, so
+             scrolling here shows what was asked and the answer together. -->
+        <div id="rec-query-stamp" style="display:none;background:var(--bg-alt);border:1px solid var(--accent);border-radius:var(--radius);padding:0.5rem 0.75rem;margin-bottom:0.75rem;align-items:center;gap:0.6rem;flex-wrap:wrap;">
+            <span style="color:var(--fg-dim);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;">Query</span>
+            <code id="rec-query-stamp-text" style="color:var(--accent);font-size:0.85rem;word-break:break-all;"></code>
+            <span id="rec-query-stamp-count" style="color:var(--fg-dim);font-size:0.75rem;margin-left:auto;white-space:nowrap;"></span>
+            <button class="btn" onclick="advsClear();advsRun();" title="Clear the query" style="font-size:0.7rem;padding:0.15rem 0.45rem;">✕</button>
+        </div>
         <div id="rec-filters" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;">
             <button class="btn" data-type="Assets" onclick="toggleRecFilter('Assets',this)" style="font-size:0.78rem;padding:0.3rem 0.7rem;">Assets</button>
             <button class="btn" data-type="Liabilities" onclick="toggleRecFilter('Liabilities',this)" style="font-size:0.78rem;padding:0.3rem 0.7rem;">Liabilities</button>
@@ -606,6 +614,9 @@
         <div id="rec-load-more" style="text-align:center;padding:0.75rem;display:none;">
             <button class="btn" onclick="loadMoreRecords()" style="font-size:0.8rem;padding:0.4rem 1rem;">Load more</button>
         </div>
+        <!-- Grown as needed so the query stamp can always scroll to the top,
+             even when the results are short or empty. -->
+        <div id="rec-bottom-space" style="height:2rem;"></div>
         </div><!-- /rec-main-content -->
     </div>
 
@@ -1527,6 +1538,8 @@
     }
 
     // Close dropdown on outside click
+    window.addEventListener('resize', growStampScrollRoom);
+
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.entity-switcher')) document.getElementById('entity-dropdown').classList.remove('open');
         if (!e.target.closest('.theme-switcher')) document.getElementById('theme-menu').classList.remove('open');
@@ -5206,7 +5219,7 @@
         const f = document.querySelector('#advs-panel .advs-f[data-f="acct"]');
         if (f) f.value = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         advsRawMode = false;
-        advsRun();
+        advsRun(true);
     }
 
     function toggleAdvSearch() {
@@ -5252,9 +5265,46 @@
         advsRawMode = false;
         document.getElementById('advs-error').style.display = 'none';
         document.getElementById('advs-status').textContent = '';
+        setQueryStamp('');
     }
 
-    async function advsRun() {
+    // The stamp reprints the query down where the results begin, so the user
+    // can be jumped straight to it and still see what was asked.
+    function setQueryStamp(query, count, scroll) {
+        const stamp = document.getElementById('rec-query-stamp');
+        if (!stamp) return;
+        if (!query) {
+            stamp.style.display = 'none';
+            document.getElementById('rec-bottom-space').style.height = '2rem';
+            return;
+        }
+        document.getElementById('rec-query-stamp-text').textContent = query;
+        document.getElementById('rec-query-stamp-count').textContent = count || '';
+        stamp.style.display = 'flex';
+        // Keep the room right on every render, not just when we scroll — a
+        // narrowed result set shrinks the page under the user.
+        growStampScrollRoom();
+        if (scroll) {
+            requestAnimationFrame(() => window.scrollTo({
+                top: stamp.getBoundingClientRect().top + window.scrollY,
+                behavior: 'smooth',
+            }));
+        }
+    }
+
+    // Pad the bottom of Records so the stamp can sit at the very top of the
+    // viewport. Without this a two-row result leaves nothing to scroll.
+    function growStampScrollRoom() {
+        const stamp = document.getElementById('rec-query-stamp');
+        const spacer = document.getElementById('rec-bottom-space');
+        if (!stamp || !spacer || stamp.style.display === 'none') return;
+        spacer.style.height = '2rem';
+        const stampTop = stamp.getBoundingClientRect().top + window.scrollY;
+        const shortfall = stampTop + window.innerHeight - document.documentElement.scrollHeight;
+        if (shortfall > 0) spacer.style.height = (shortfall + 32) + 'px';
+    }
+
+    async function advsRun(scroll) {
         const errEl = document.getElementById('advs-error');
         const statusEl = document.getElementById('advs-status');
         const queryEl = document.getElementById('advs-query');
@@ -5282,9 +5332,10 @@
             }
             errEl.style.display = 'none';
             advsRender(d);
-            statusEl.textContent = `${d.total} ${d.mode === 'print' ? 'transaction' : 'posting group'}${d.total === 1 ? '' : 's'}` +
-                (d.total > d.entries.length ? ` (showing ${d.entries.length})` : '') +
-                (d.query ? ` · ${d.query}` : ' · whole journal');
+            const count = `${d.total} ${d.mode === 'print' ? 'transaction' : 'posting group'}${d.total === 1 ? '' : 's'}` +
+                (d.total > d.entries.length ? ` (showing ${d.entries.length})` : '');
+            statusEl.textContent = count + (d.query ? ` · ${d.query}` : ' · whole journal');
+            setQueryStamp(d.query, count, scroll);
         } catch (e) {
             errEl.textContent = 'Network error: ' + e.message;
             errEl.style.display = 'block';
