@@ -194,6 +194,8 @@ def create_app():
         salvage_value: float = 0
         description: str = ''
         payment_method: str = 'cash'
+        acquisition: str = ''      # cash | financed | contributed | recognized
+        credit_account: str = ''   # what the acquisition entry credits
         linked_liability: str = ''
 
     class LiabilityRequest(BaseModel):
@@ -208,6 +210,11 @@ def create_app():
         payment_amount: float = 0
         lender: str = ''
         description: str = ''
+        # Explicit account wiring, so payments and balance changes can be
+        # recorded semi-automatically instead of being re-typed each time.
+        liability_account: str = ''
+        payment_account: str = ''
+        interest_account: str = ''
 
     class TransferRequest(BaseModel):
         amount: float
@@ -1093,9 +1100,23 @@ def create_app():
             },
         }
 
+        from modules.asset import ACQUISITION_PAIRS, ACQUISITION_DEFAULT_CREDIT
+
         category = req.category if req.category in DEFAULT_ACCOUNTS else 'other'
-        accounts = DEFAULT_ACCOUNTS[category]
+        accounts = DEFAULT_ACCOUNTS[category].copy()
         purchase_date = req.purchase_date or date.today().isoformat()
+
+        # How the asset came in decides the credit side of the acquisition entry.
+        acquisition = req.acquisition or req.payment_method or 'cash'
+        if acquisition not in ACQUISITION_PAIRS:
+            acquisition = 'cash'
+        credit_account = req.credit_account.strip()
+        if not credit_account and acquisition in ACQUISITION_DEFAULT_CREDIT:
+            credit_account = ACQUISITION_DEFAULT_CREDIT[acquisition]
+        if not credit_account and acquisition == 'cash':
+            credit_account = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
+        if credit_account:
+            accounts['credit'] = credit_account
 
         asset_data = {
             'name': req.name,
@@ -1107,7 +1128,11 @@ def create_app():
             'amortization_method': req.amortization_method,
             'salvage_value': req.salvage_value,
             'currency': currency,
-            'accounts': accounts.copy(),
+            'accounts': accounts,
+            'acquisition': acquisition,
+            # payment_method is kept in step with acquisition so CLI code and
+            # older YAML readers still see a value they understand.
+            'payment_method': 'financed' if acquisition == 'financed' else 'cash',
         }
 
         if req.description:
@@ -1115,12 +1140,8 @@ def create_app():
         if req.amortization_method == 'declining-balance' and req.rate > 0:
             asset_data['rate'] = req.rate
             asset_data['declining_balance_rate'] = req.rate
-        if req.payment_method == 'financed':
-            asset_data['payment_method'] = 'financed'
-            if req.linked_liability:
-                asset_data['linked_liability'] = req.linked_liability
-        else:
-            asset_data['payment_method'] = 'cash'
+        if acquisition == 'financed' and req.linked_liability:
+            asset_data['linked_liability'] = req.linked_liability
 
         # Save
         save_entity('assets', slug, asset_data)
@@ -1200,6 +1221,13 @@ def create_app():
         else:
             accounts['liability'] = f"Liabilities:Current:{req.name}"
         accounts['payment_source'] = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
+        # Explicit choices override the type-derived defaults.
+        if req.liability_account.strip():
+            accounts['liability'] = req.liability_account.strip()
+        if req.payment_account.strip():
+            accounts['payment_source'] = req.payment_account.strip()
+        if req.interest_account.strip():
+            accounts['interest_expense'] = req.interest_account.strip()
 
         is_new = not entity_exists('liabilities', slug)
         existing = load_entity('liabilities', slug) or {} if not is_new else {}
