@@ -1280,6 +1280,73 @@ def create_app():
                 pass
         return {'items': items}
 
+    class RecurringCreate(BaseModel):
+        name: str
+        slug: str = ''
+        frequency: str = 'monthly'
+        amount: float = 0.0
+        currency: str = ''
+        start_date: str = ''
+        end_date: str = ''
+        day: str = ''
+        reminder_days: str = ''
+        tags: str = ''
+        debit_account: str = ''
+        credit_account: str = ''
+        pair: str = '0000'
+        description: str = ''
+
+    @app.post("/api/recurring/create")
+    async def recurring_create(req: RecurringCreate):
+        """Create a recurring entry with the full CLI field set."""
+        import re as _re
+        from lib.yaml_store import save_entity, entity_exists
+        from lib.helpers import slugify
+
+        name = (req.name or '').strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required")
+        slug = (req.slug or '').strip() or slugify(name)
+        if not _re.fullmatch(r'[a-z0-9][a-z0-9-]*', slug):
+            raise HTTPException(status_code=400,
+                                detail="Slug must be lowercase letters, digits and hyphens")
+        if entity_exists('recurring', slug):
+            raise HTTPException(status_code=400, detail=f"'{slug}' already exists")
+        if req.amount <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be positive")
+
+        config = load_config()
+        currency = (req.currency or '').strip() or config.get('pair', {}).get('currency', 'CAD')
+        bank = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
+
+        entry = {
+            'name': name, 'slug': slug,
+            'frequency': (req.frequency or 'monthly').strip(),
+            'amount': float(req.amount),
+            'currency': currency,
+            'start_date': (req.start_date or '').strip() or date.today().strftime('%Y-%m-%d'),
+            'debit_account': (req.debit_account or '').strip() or 'Expenses:Operating:Rent',
+            'credit_account': (req.credit_account or '').strip() or bank,
+            'pair': (req.pair or '0000').strip(),
+            'last_generated': None,
+        }
+        for key, raw in (('day', req.day), ('reminder_days', req.reminder_days)):
+            val = str(raw or '').strip()
+            if val:
+                if not val.isdigit():
+                    raise HTTPException(status_code=400, detail=f"{key} must be a whole number")
+                entry[key] = int(val)
+        tags = [t.strip() for t in (req.tags or '').split(',') if t.strip()]
+        if tags:
+            entry['tags'] = tags
+        if (req.end_date or '').strip():
+            entry['end_date'] = req.end_date.strip()
+        if (req.description or '').strip():
+            entry['description'] = req.description.strip()
+
+        save_entity('recurring', slug, entry)
+        return {'status': 'ok', 'slug': slug, 'message': f"{name} added"}
+
     @app.post("/api/recurring/update")
     async def recurring_update(req: RecurringUpdate):
         """Patch individual fields — powers per-cell editing in the table."""

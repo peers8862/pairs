@@ -688,6 +688,46 @@
         </div>
     </div>
 
+    <!-- Recurring: new (full form) -->
+    <div id="rn-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:79;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:94%;max-width:640px;max-height:92vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="color:var(--accent);font-weight:bold;">New Recurring Entry</span>
+                <button onclick="closeRecurringNew()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;margin-bottom:0.6rem;">
+                <div><label class="ne-l">Name</label><input type="text" id="rn-name" class="ne-f" oninput="rnNameChanged()" placeholder="Hydro bill"></div>
+                <div><label class="ne-l">Slug</label><input type="text" id="rn-slug" class="ne-f" placeholder="hydro-bill"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0.6rem;margin-bottom:0.6rem;">
+                <div><label class="ne-l">Frequency</label>
+                    <select id="rn-frequency" class="ne-f"><option>monthly</option><option>weekly</option><option>biweekly</option><option>quarterly</option><option>yearly</option></select></div>
+                <div><label class="ne-l">Amount</label><input type="number" step="any" id="rn-amount" class="ne-f" placeholder="120.00"></div>
+                <div><label class="ne-l">Currency</label><input type="text" id="rn-currency" class="ne-f" placeholder="CAD"></div>
+                <div><label class="ne-l">Day of month</label><input type="text" id="rn-day" class="ne-f" placeholder="15"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.6rem;margin-bottom:0.6rem;">
+                <div><label class="ne-l">Start date</label><input type="date" id="rn-start_date" class="ne-f"></div>
+                <div><label class="ne-l">End date <span style="color:var(--fg-dim)">(optional)</span></label><input type="date" id="rn-end_date" class="ne-f"></div>
+                <div><label class="ne-l">Remind (days before)</label><input type="text" id="rn-reminder_days" class="ne-f" placeholder="5"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 90px;gap:0.6rem;margin-bottom:0.6rem;">
+                <div><label class="ne-l">Debit account</label><input type="text" id="rn-debit_account" class="ne-f" list="adv-accounts" placeholder="Expenses:Operating:Utilities"></div>
+                <div><label class="ne-l">Credit account</label><input type="text" id="rn-credit_account" class="ne-f" list="adv-accounts" placeholder="Assets:Current:Chequing"></div>
+                <div><label class="ne-l">Pair</label><input type="text" id="rn-pair" class="ne-f" value="0000"></div>
+            </div>
+            <div style="margin-bottom:0.6rem;"><label class="ne-l">Tags (comma-separated)</label>
+                <input type="text" id="rn-tags" class="ne-f" placeholder="utility, division:ops"></div>
+            <div style="margin-bottom:0.6rem;"><label class="ne-l">Description</label>
+                <input type="text" id="rn-description" class="ne-f" placeholder="Variable hydro bill"></div>
+            <div id="rn-error" style="display:none;color:var(--red);font-size:0.78rem;margin-bottom:0.6rem;"></div>
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+                <button class="btn" onclick="closeRecurringNew()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                <button class="btn" id="rn-submit" onclick="submitRecurringNew()" style="font-size:0.8rem;padding:0.4rem 0.9rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Create</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Recurring: Pay -->
     <div id="pay-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:78;align-items:center;justify-content:center;">
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:94%;max-width:460px;">
@@ -2358,12 +2398,16 @@
                     <button class="btn" onclick="openPayrollSettings()" style="font-size:1.1rem;padding:0.25rem 0.6rem;color:var(--fg-dim);" tabindex="13" title="Deduction rate settings">⚙</button>
                 </div>
             </div>`,
-            recurring: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                <span style="color:var(--accent);font-size:0.8rem;">+ Recurring</span>
-                <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <input type="text" id="add-freq" placeholder="monthly" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <input type="text" id="add-amount" placeholder="amount" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
-                <button class="btn" onclick="addItem('recurring')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            recurring: `<div style="display:grid;grid-template-columns:auto 1fr;gap:0.4rem 0.5rem;align-items:center;">
+                <button class="btn" onclick="openRecurringNew()" style="font-size:0.8rem;padding:0.35rem 0.6rem;color:var(--accent);border-color:var(--accent);" title="Full form">+ Recurring</button>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="rq-name" placeholder="name" style="flex:2;min-width:110px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                    <input type="text" id="rq-freq" placeholder="monthly" value="monthly" style="width:90px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                    <input type="text" id="rq-amount" placeholder="amount" style="width:90px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
+                    <input type="text" id="rq-day" placeholder="day" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                    <input type="text" id="rq-tags" placeholder="tags" style="width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
+                    <button class="btn" onclick="quickAddRecurring()" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+                </div>
             </div>`,
             contracts: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
                 <span style="color:var(--accent);font-size:0.8rem;">+ Contract</span>
@@ -4351,6 +4395,64 @@
         }
         return html + '</tbody></table>';
     }
+
+
+    // ── New recurring: full form mirrors the CLI's `pair recurring add` ──
+    const RN_FIELDS = ['name','slug','frequency','amount','currency','start_date','end_date',
+                       'day','reminder_days','tags','debit_account','credit_account','pair','description'];
+
+    function openRecurringNew() {
+        RN_FIELDS.forEach(f => { const e = document.getElementById('rn-' + f); if (e) e.value = ''; });
+        document.getElementById('rn-frequency').value = 'monthly';
+        document.getElementById('rn-pair').value = '0000';
+        document.getElementById('rn-start_date').value = new Date().toISOString().slice(0,10);
+        document.getElementById('rn-error').style.display = 'none';
+        document.getElementById('rn-submit').disabled = false;
+        advLoadAccounts();
+        document.getElementById('rn-modal').style.display = 'flex';
+        document.getElementById('rn-name').focus();
+    }
+    function closeRecurringNew() { document.getElementById('rn-modal').style.display = 'none'; }
+    function rnNameChanged() {
+        const slug = document.getElementById('rn-slug');
+        if (!slug.dataset.touched) slug.value = neSlugify(document.getElementById('rn-name').value);
+    }
+
+    async function createRecurring(payload, onDone) {
+        const res = await fetch('/api/recurring/create', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        return { ok: res.ok, data };
+    }
+
+    async function submitRecurringNew() {
+        const payload = {};
+        RN_FIELDS.forEach(f => { const e = document.getElementById('rn-' + f); if (e) payload[f] = e.value.trim(); });
+        payload.amount = parseFloat(payload.amount) || 0;
+        const err = document.getElementById('rn-error');
+        const btn = document.getElementById('rn-submit');
+        btn.disabled = true;
+        const { ok, data } = await createRecurring(payload);
+        if (ok) { showToast(data.message || 'Added'); closeRecurringNew(); await recRefresh(document.querySelector('#dash-manage-data')); }
+        else { err.textContent = data.detail || 'Failed'; err.style.display = 'block'; btn.disabled = false; }
+    }
+
+    async function quickAddRecurring() {
+        const v = id => (document.getElementById(id)?.value || '').trim();
+        const payload = { name: v('rq-name'), frequency: v('rq-freq') || 'monthly',
+                          amount: parseFloat(v('rq-amount')) || 0, day: v('rq-day'), tags: v('rq-tags') };
+        if (!payload.name) { showToast('Name required', true); return; }
+        const { ok, data } = await createRecurring(payload);
+        if (ok) {
+            showToast(data.message || 'Added');
+            ['rq-name','rq-amount','rq-day','rq-tags'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+            await recRefresh(document.querySelector('#dash-manage-data'));
+        } else { showToast('Error: ' + (data.detail || 'Failed'), true); }
+    }
+
+    document.getElementById('rn-slug')?.addEventListener('input', function(){ this.dataset.touched = '1'; });
+    document.getElementById('rn-modal')?.addEventListener('click', function(e){ if (e.target===this) closeRecurringNew(); });
 
     // The recurring table renders in two places (Records and Dash > Recurring).
     // Refresh whichever one the edited cell actually lives in.
