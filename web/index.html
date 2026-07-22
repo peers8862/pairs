@@ -195,18 +195,16 @@
         </div>
         <div class="tabs" id="main-tabs">
             <span class="tab" onclick="switchView('entry')">Pairs</span>
-            <span class="tab active" id="tab-dashboard" onclick="switchView('dashboard')">Dash</span>
+            <span class="tab active" id="tab-dashboard" onclick="switchView('dashboard')" style="font-weight:bold;">Dash</span>
             <span class="tab" onclick="switchView('records')">Records</span>
             <span class="tab" onclick="switchView('accounts')">Accounts</span>
             <span class="tab" onclick="switchView('contacts')">Contacts</span>
             <span class="tab" onclick="switchView('charts')">Charts</span>
-            <span class="tab" onclick="switchView('reports')">Reports</span>
-            <span class="tab" onclick="switchView('taxes')">Taxes</span>
             <span class="tab" onclick="switchView('pairs')">Codes</span>
         </div>
         <div class="entity-switcher">
             <button class="entity-btn" onclick="openSettings()" title="Entity settings" style="margin-right:0.4rem;padding:0.3rem 0.55rem;">⚙</button>
-            <button class="entity-btn" id="entity-btn" onclick="toggleEntityDropdown()">...</button>
+            <button class="entity-btn" id="entity-btn" onclick="toggleEntityDropdown()" title="Switch entity or project">SWITCH</button>
             <div class="entity-dropdown" id="entity-dropdown"></div>
         </div>
         <div class="theme-switcher">
@@ -310,6 +308,8 @@
                 <div style="position:relative;height:36px;"><canvas id="spark-profit"></canvas></div>
             </div>
         </div>
+        <!-- Tax totals sit above the entry box on the entity page -->
+        <div id="dash-tax-slot"></div>
         <!-- Quick Entry -->
         <div id="dash-entry-slot">
         <div id="quick-entry-box" style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1.5rem;">
@@ -333,17 +333,9 @@
         </div>
         </div><!-- /dash-entry-slot -->
 
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;gap:1rem;">
-            <div class="section-title" style="margin:0;white-space:nowrap;">Register</div>
-            <div style="display:flex;gap:0.5rem;align-items:center;flex:1;">
-                <input type="text" id="register-search" placeholder="hledger query — acct:expenses date:2026 amt:'&gt;100' expr:'a OR b'" oninput="debounceRegister()" style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
-                <span id="register-count" style="color:var(--fg-dim);font-size:0.75rem;white-space:nowrap;"></span>
-            </div>
-        </div>
-        <table id="recent-table"><thead><tr><th>Date</th><th>Description</th><th>Postings</th></tr></thead><tbody id="recent-body"></tbody></table>
-        <div id="register-load-more" style="text-align:center;padding:0.75rem;display:none;">
-            <button class="btn" onclick="loadMoreRegister()" style="font-size:0.8rem;padding:0.4rem 1rem;">Load more</button>
-        </div>
+        <!-- Reports live here on the entity page; records are under Records. -->
+        <div id="dash-reports-slot"></div>
+        <div id="dash-bottom-space" class="bottom-space" style="height:2rem;"></div>
         </div><!-- /dash-main-content -->
         <!-- Manage content (shown when a manage button is clicked) -->
         <div id="dash-manage-content" style="display:none;">
@@ -433,7 +425,9 @@
     </div>
 
     <!-- Reports View -->
-    <div class="view" id="view-reports">
+    <!-- Reports block — moved between the entity page and the Reports tab, so
+         there is one implementation wherever it is shown. -->
+    <div id="reports-block">
         <div class="report-controls">
             <button class="btn active" onclick="loadReport('bs')">Balance Sheet</button>
             <button class="btn" onclick="loadReport('is')">Income Statement</button>
@@ -513,6 +507,7 @@
             <button class="btn" onclick="recLoadManage('transfers')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Transfers</button>
             <button class="btn" onclick="recLoadManage('payroll')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Payroll</button>
             <button class="btn" onclick="recLoadManage('recurring')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Recurring</button>
+            <button class="btn" onclick="recLoadManage('taxes')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Taxes</button>
         </div>
         <!-- Manage content (shown when a manage button is clicked) -->
         <div id="rec-manage-content" style="display:none;">
@@ -616,7 +611,7 @@
         </div>
         <!-- Grown as needed so the query stamp can always scroll to the top,
              even when the results are short or empty. -->
-        <div id="rec-bottom-space" style="height:2rem;"></div>
+        <div id="rec-bottom-space" class="bottom-space" style="height:2rem;"></div>
         </div><!-- /rec-main-content -->
     </div>
 
@@ -1011,15 +1006,18 @@
         <div id="commapp-content"></div>
     </div>
 
-    <!-- Taxes View -->
-    <div class="view" id="view-taxes">
-        <div class="section-title">Taxes — HST/GST</div>
+    <!-- Taxes, split in two: the totals show on the entity page, the entry
+         module under Records > Taxes. Both are moved, never copied. -->
+    <div id="tax-summary-block">
+        <div id="tax-summary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1rem;"></div>
+    </div>
+
+    <div id="tax-entry-block">
         <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;">
             <span style="color:var(--fg-dim);font-size:0.8rem;">Period</span>
             <input type="text" id="tax-period" placeholder="e.g. 2026Q2, 2026-04..2026-07, or blank = all" onchange="loadTaxes()" style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.85rem;">
             <button class="btn" onclick="loadTaxes()" style="font-size:0.8rem;padding:0.4rem 0.85rem;">Refresh</button>
         </div>
-        <div id="tax-summary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.25rem;"></div>
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.85rem 1rem;">
             <div style="color:var(--accent);font-size:0.85rem;margin-bottom:0.6rem;">Record remittance to CRA</div>
             <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
@@ -1066,6 +1064,10 @@
     </div>
 
     <div class="toast" id="toast"></div>
+
+    <!-- Where movable blocks wait while not mounted. Without a parking spot an
+         innerHTML reset on their host would destroy them outright. -->
+    <div id="block-parking" style="display:none;"></div>
 
     <!-- Shared account suggestions for every account input in the app -->
     <datalist id="account-list"></datalist>
@@ -1474,7 +1476,7 @@
                 .find(t => (t.getAttribute('onclick') || '').includes("'" + view + "'"));
         if (tabEl) tabEl.classList.add('active');
         if (view === 'entry') document.getElementById('expr-field').focus();
-        if (view === 'dashboard') { mountQuickEntry('dash-entry-slot'); quickClear(); dashShowMain(); loadDashboard(); }
+        if (view === 'dashboard') { mountQuickEntry('dash-entry-slot'); mountReports('dash-reports-slot'); mountBlock('tax-summary-block', 'dash-tax-slot'); quickClear(); dashShowMain(); loadDashboard(); }
         if (view === 'records') { mountQuickEntry('records-entry-slot'); quickClear(); recShowMain(); loadRecords(); }
         if (view === 'data') loadData('assets');
         if (view === 'contacts') loadContactsView();
@@ -1482,16 +1484,14 @@
         if (view === 'charts') loadChart('networth');
         if (view === 'pairs') loadPairsRef();
         if (view === 'accounts') loadAccounts();
-        if (view === 'taxes') loadTaxes();
     }
 
     // ─── Entity Switcher ────────────────────────────────────────────────────
     // The Dash tab is named after whatever entity or project is loaded, so the
     // nav always says which books you are looking at.
+    // The nav button just says SWITCH — the name itself is the Dash tab.
     function setEntityName(name) {
-        const label = name || 'no entity';
-        document.getElementById('entity-btn').textContent = label;
-        document.getElementById('tab-dashboard').textContent = label;
+        document.getElementById('tab-dashboard').textContent = name || 'no entity';
     }
 
     async function loadEntities() {
@@ -1625,110 +1625,31 @@
         // Sparklines
         loadSparklines();
 
-        // Register
-        registerOffset = 0;
-        loadRegister(false);
+        // The entity page always opens on the balance sheet.
+        loadReport('bs', false);
+        loadTaxes();
+
       } catch(e) { console.error('loadDashboard error:', e); }
     }
 
-    // ─── Register ────────────────────────────────────────────────────────────
-    let registerOffset = 0;
-    let registerDebounceTimer = null;
-    let registerAllEntries = [];  // cached full set
-    let registerTotal = 0;
-
-    function debounceRegister() {
-        clearTimeout(registerDebounceTimer);
-        registerDebounceTimer = setTimeout(() => {
-            filterRegister();
-        }, 150);
-    }
-
-    async function filterRegister() {
-        // Dash and Records now share one search implementation: the query goes
-        // to hledger, so the full query language works here too. A bare term is
-        // just a bare hledger query (an account-name match).
-        const query = (document.getElementById('register-search')?.value || '').trim();
-        const tbody = document.getElementById('recent-body');
-        const countEl = document.getElementById('register-count');
-        const loadMoreBtn = document.getElementById('register-load-more');
-
-        tbody.innerHTML = '';
-        let filtered = registerAllEntries;
-        let searchError = '';
-        if (query) {
-            try {
-                const d = await fetch('/api/search', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ query, mode: 'register', limit: 500 }),
-                }).then(r => r.json());
-                if (d.ok) {
-                    filtered = d.entries || [];
-                } else {
-                    filtered = [];
-                    searchError = d.error || 'Search failed';
-                }
-            } catch (e) {
-                filtered = [];
-                searchError = 'Network error';
-            }
-        }
-
-        const showing = filtered.slice(0, 100);
-        for (const txn of showing) {
-            const tr = document.createElement('tr');
-            tr.style.cursor = 'pointer';
-            tr.onclick = () => openEntryModal(txn);
-
-            let postingsHtml = '';
-            for (const p of txn.postings) {
-                const leaf = p.account.split(':').pop();
-                const amtClass = p.amount && p.amount.includes('-') ? 'amt-neg' : 'amt-pos';
-                postingsHtml += `<div style="display:flex;justify-content:space-between;gap:1rem;"><span style="color:var(--fg-dim)">${esc(leaf)}</span><span class="${amtClass}" style="white-space:nowrap;">${esc(p.amount)}</span></div>`;
-            }
-
-            tr.innerHTML = `<td style="vertical-align:top;white-space:nowrap;">${esc(txn.date)}</td><td style="vertical-align:top;">${esc(txn.description)}</td><td style="min-width:250px;">${postingsHtml}</td>`;
-            tbody.appendChild(tr);
-        }
-
-        if (searchError) {
-            countEl.textContent = '';
-            tbody.innerHTML = `<tr><td colspan="3" style="color:var(--red);padding:0.6rem;white-space:pre-wrap;font-size:0.78rem;">${esc(searchError)}</td></tr>`;
-        } else {
-            countEl.textContent = query ? filtered.length + ' matching' : filtered.length + ' entries';
-        }
-        loadMoreBtn.style.display = !query && filtered.length > 100 ? 'block' : 'none';
-    }
-
-    async function loadRegister(append) {
-        const limit = 500;
-        const url = '/api/recent?limit=' + limit + '&offset=' + registerOffset;
-
-        try {
-            const data = await fetch(url).then(r => r.json());
-            if (!append) registerAllEntries = [];
-            registerAllEntries = registerAllEntries.concat(data.entries || []);
-            registerTotal = data.total || registerAllEntries.length;
-            filterRegister();
-
-            const loadMoreBtn = document.getElementById('register-load-more');
-            loadMoreBtn.style.display = registerAllEntries.length < registerTotal ? 'block' : 'none';
-        } catch(e) {
-            console.error('loadRegister error:', e);
-        }
-    }
-
-    function loadMoreRegister() {
-        registerOffset += 500;
-        loadRegister(true);
-    }
 
     // ─── Records (register + type filters + shared entry box) ────────────────
-    function mountQuickEntry(slotId) {
-        const box = document.getElementById('quick-entry-box');
+    // Blocks are moved between hosts, never duplicated — one DOM node means
+    // one set of ids and no second copy to keep in step.
+    function mountBlock(blockId, slotId) {
+        const box = document.getElementById(blockId);
         const slot = document.getElementById(slotId);
         if (box && slot && box.parentElement !== slot) slot.appendChild(box);
     }
+
+    function mountQuickEntry(slotId) { mountBlock('quick-entry-box', slotId); }
+
+    // The reports block lives on the entity page. Kept mountable rather than
+    // inlined so it can be hosted elsewhere without being duplicated.
+    function mountReports(slotId) { mountBlock('reports-block', slotId); }
+    mountReports('dash-reports-slot');            // the entity page is the initial view
+    mountBlock('tax-summary-block', 'dash-tax-slot');
+    mountBlock('tax-entry-block', 'block-parking');  // until Records > Taxes asks for it
 
     let recEntries = [];
     let recOffset = 0;
@@ -1827,22 +1748,50 @@
     }
 
     // ─── Reports ────────────────────────────────────────────────────────────
-    async function loadReport(cmd) {
-        // Update active button
-        document.querySelectorAll('.report-controls .btn').forEach(b => b.classList.remove('active'));
-        event.target.classList.add('active');
+    // How many monospace characters fit across the report panel. hledger lays
+    // its output out in columns, so it needs a column count, not pixels —
+    // without this the register elides account names to fit 80.
+    let monoCharWidth = 0;
+    function reportColumns(el) {
+        if (!el) return 0;
+        if (!monoCharWidth) {
+            const probe = document.createElement('span');
+            probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;';
+            probe.style.font = getComputedStyle(el).font;
+            probe.textContent = '0'.repeat(100);
+            document.body.appendChild(probe);
+            monoCharWidth = probe.getBoundingClientRect().width / 100;
+            probe.remove();
+        }
+        if (!monoCharWidth) return 0;
+        const cs = getComputedStyle(el);
+        const inner = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        return Math.max(60, Math.floor(inner / monoCharWidth));
+    }
+
+    async function loadReport(cmd, scroll = true) {
+        // Highlight by name rather than event.target — this is also called
+        // programmatically, and the block moves between views.
+        const controls = document.querySelector('#reports-block .report-controls');
+        controls.querySelectorAll('.btn').forEach(b => {
+            b.classList.toggle('active', (b.getAttribute('onclick') || '').includes("'" + cmd + "'"));
+        });
 
         const period = document.getElementById('report-period').value;
-        let url = '/api/report?cmd=' + cmd;
+        const output = document.getElementById('report-output');
+        let url = '/api/report?cmd=' + cmd + '&width=' + reportColumns(output);
         if (period) url += '&period=' + encodeURIComponent(period);
 
+        output.textContent = 'Running…';
+
         const data = await fetch(url).then(r => r.json());
-        const output = document.getElementById('report-output');
-        if (data.error) {
-            output.textContent = data.error;
-        } else {
-            output.textContent = data.output || '(no output)';
-        }
+        output.textContent = data.error ? data.error : (data.output || '(no output)');
+        // Put the report's own tab row at the top of the window — the same jump
+        // the Records query stamp makes. After the output lands, so the page
+        // height it is measured against is the final one. Not on the automatic
+        // first load, which would scroll the page out from under the user.
+        if (scroll) scrollToTopOf(controls, activeSpacer());
+        else makeRoomBelow(controls, activeSpacer());
     }
 
     // ─── Quick Entry (dashboard) ────────────────────────────────────────────
@@ -2648,7 +2597,11 @@
                 <datalist id="acct-datalist"></datalist>
             </div>`,
         };
+        // Park any movable block before wiping the container, or innerHTML
+        // would delete it rather than displace it.
+        mountBlock('tax-entry-block', 'block-parking');
         container.innerHTML = forms[type] || '';
+        if (type === 'taxes' && container.id) mountBlock('tax-entry-block', container.id);
         if (type === 'transfers') {
             setTimeout(() => {
                 const d = document.getElementById('tr-date'); if (d && state.today) d.value = state.today;
@@ -2656,7 +2609,7 @@
                 const a = document.getElementById('tr-amount'); if (a) a.focus();
             }, 50);
         }
-        container.style.display = forms[type] ? 'block' : 'none';
+        container.style.display = (forms[type] || type === 'taxes') ? 'block' : 'none';
         // Autofocus first input and set defaults for quick entry
         if (type === 'assets') {
             setTimeout(() => {
@@ -2883,6 +2836,27 @@
     function recShowMain() { manageClose('rec'); }
 
     async function loadDataInto(type, container) {
+        if (type === 'taxes') {
+            // The tax accounts' own postings — the records behind the totals.
+            const d = await fetch('/api/search', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ mode: 'print', limit: 200, query: '', fields: { acct: 'HST' } }),
+            }).then(r => r.json()).catch(() => null);
+            if (!d || !d.ok) {
+                container.innerHTML = '<div class="empty">' + esc((d && d.error) || 'Unable to load tax records') + '</div>';
+                return;
+            }
+            if (!d.entries.length) { container.innerHTML = '<div class="empty">No HST records yet</div>'; return; }
+            container.innerHTML = '<table><thead><tr><th>Date</th><th>Description</th><th>Postings</th></tr></thead><tbody>'
+                + d.entries.map(t => {
+                    const postings = (t.postings || []).map(pp =>
+                        `<div style="display:flex;justify-content:space-between;gap:0.75rem;"><span style="color:var(--fg-dim)">${esc(pp.account)}</span><span style="white-space:nowrap">${esc(pp.amount)}</span></div>`).join('');
+                    return `<tr><td style="white-space:nowrap;vertical-align:top;">${esc(t.date)}</td><td style="vertical-align:top;">${esc(t.description)}</td><td style="font-size:0.8rem;">${postings}</td></tr>`;
+                }).join('')
+                + '</tbody></table>';
+            return;
+        }
+
         // Reuse the loadData rendering logic but target a specific container
         if (type === 'commodities') {
             const data = await fetch('/api/commodities').then(r => r.json());
@@ -5284,24 +5258,52 @@
         // Keep the room right on every render, not just when we scroll — a
         // narrowed result set shrinks the page under the user.
         growStampScrollRoom();
-        if (scroll) {
-            requestAnimationFrame(() => window.scrollTo({
-                top: stamp.getBoundingClientRect().top + window.scrollY,
-                behavior: 'smooth',
-            }));
-        }
+        if (scroll) scrollToTopOf(stamp, document.getElementById('rec-bottom-space'));
     }
 
-    // Pad the bottom of Records so the stamp can sit at the very top of the
-    // viewport. Without this a two-row result leaves nothing to scroll.
+    // ─── Scrolling something to the top of the window ─────────────────────
+    // scrollTo can only lift an element to the top if the page is long enough
+    // below it, so each view carries a .bottom-space that grows to the
+    // shortfall. A short or empty result would otherwise have nothing to
+    // scroll and the element would stay stranded mid-screen.
+    function activeSpacer() {
+        return document.querySelector('.view.active .bottom-space');
+    }
+
+    function makeRoomBelow(el, spacer) {
+        if (!el || !spacer) return;
+        // Shrinking the spacer can clamp the scroll position. Restore it in the
+        // same task, before any paint, so resizing is never visible as a jump.
+        const keepScroll = window.scrollY;
+        spacer.style.height = '2rem';
+        // Iterate: body is a flex column with min-height:100vh, so on a short
+        // page the first growth is swallowed by the view's spare space and the
+        // document gets no taller. Re-measure until the shortfall is gone.
+        for (let i = 0; i < 4; i++) {
+            const top = el.getBoundingClientRect().top + window.scrollY;
+            const shortfall = top + window.innerHeight - document.documentElement.scrollHeight;
+            if (shortfall <= 1) break;
+            const current = parseFloat(getComputedStyle(spacer).height) || 0;
+            spacer.style.height = (current + shortfall + 8) + 'px';
+        }
+        if (window.scrollY !== keepScroll) window.scrollTo(window.scrollX, keepScroll);
+    }
+
+    function scrollToTopOf(el, spacer) {
+        if (!el) return;
+        makeRoomBelow(el, spacer);
+        // Already there: re-scrolling reads as an accidental nudge.
+        if (Math.abs(el.getBoundingClientRect().top) <= 4) return;
+        requestAnimationFrame(() => window.scrollTo({
+            top: el.getBoundingClientRect().top + window.scrollY,
+            behavior: 'smooth',
+        }));
+    }
+
     function growStampScrollRoom() {
         const stamp = document.getElementById('rec-query-stamp');
-        const spacer = document.getElementById('rec-bottom-space');
-        if (!stamp || !spacer || stamp.style.display === 'none') return;
-        spacer.style.height = '2rem';
-        const stampTop = stamp.getBoundingClientRect().top + window.scrollY;
-        const shortfall = stampTop + window.innerHeight - document.documentElement.scrollHeight;
-        if (shortfall > 0) spacer.style.height = (shortfall + 32) + 'px';
+        if (!stamp || stamp.style.display === 'none') return;
+        makeRoomBelow(stamp, document.getElementById('rec-bottom-space'));
     }
 
     async function advsRun(scroll) {
@@ -5700,8 +5702,8 @@
             <p>Your at-a-glance home. <strong>Net worth</strong>, assets and liabilities with live sparklines, and period toggles (<code>YTD</code>, <code>&lt;1/&lt;2/&lt;3</code> trailing months).</p>
             <ul style="margin:0.5rem 0 0 1.1rem;">
                 <li><strong>Quick-entry box</strong> — type a description, pairs shorthand (<code>&lt;. &lt; &gt;</code>…), or a tab name to jump.</li>
-                <li><strong>Manage shortcuts</strong> — inline Assets, Liabilities, Equity, Income, Expenses, Payroll, Recurring, Contracts without leaving the page.</li>
-                <li><strong>Register</strong> — recent transactions; click any row to edit.</li>
+                <li><strong>Manage shortcuts</strong> — inline Assets, Liabilities, Equity, Contracts, Payroll, Recurring without leaving the page.</li>
+                <li><strong>Reports</strong> — Balance Sheet, Income Statement, Cash Flow and Register, right under the entry box. Transactions themselves live under <strong>Records</strong>.</li>
             </ul>`,
         'Records': `
             <p>The full transaction register with the same quick-entry box on top.</p>

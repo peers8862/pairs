@@ -1015,7 +1015,7 @@ def create_app():
         return {'ok': True, 'active': slug, 'name': name}
 
     @app.get("/api/report")
-    async def report(cmd: str = 'bs', period: str = '', args: str = ''):
+    async def report(cmd: str = 'bs', period: str = '', args: str = '', width: int = 0):
         """Run hledger report and return output."""
         journal = _get_journal_path()
         if not journal:
@@ -1030,6 +1030,11 @@ def create_app():
         hledger_cmd = ['hledger', '-f', journal, cmd]
         if period:
             hledger_cmd += ['-p', period]
+        # register elides account names to fit 80 columns by default, which is
+        # narrower than the browser's panel. Only register takes --width;
+        # balancesheet and friends reject the flag outright.
+        if cmd == 'register' and width:
+            hledger_cmd += ['--width=%d' % max(40, min(int(width), 400))]
         if args:
             arg_list = args.split()
             if any(a.startswith('-') for a in arg_list):
