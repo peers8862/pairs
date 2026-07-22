@@ -91,6 +91,11 @@
         .report-controls .btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
         .report-controls input { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.75rem; color: var(--fg); font-family: inherit; font-size: 0.8rem; width: 120px; }
         .report-controls input::placeholder { color: var(--fg-dim); }
+        /* Reports break out of the 1000px reading column. hledger lays its
+           output out to the width it is given and abbreviates account names
+           first, so the register is markedly more readable wide. min() keeps
+           the breakout at zero on viewports narrower than the column. */
+        #reports-block { margin-left: min(0px, calc(500px - 50vw + 1.5rem)); margin-right: min(0px, calc(500px - 50vw + 1.5rem)); }
         .report-output { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; overflow-x: auto; white-space: pre; font-size: 0.8rem; flex: 1; min-height: 300px; }
 </style>
 </head>
