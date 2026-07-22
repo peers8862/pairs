@@ -121,6 +121,25 @@ def append_journal(path, entry):
             f.write('\n')
 
 
+
+def ensure_invoice_placeholder(year):
+    """Keep at least one file matching invoices/<year>-*.journal.
+
+    The year aggregator includes that glob, and hledger fails hard when a glob
+    matches no files ("No files were matched by: ../invoices/2026-*.journal"),
+    which breaks every report and chart until the first invoice is written.
+    """
+    from lib.helpers import get_entity_dir
+    year_str = str(year)
+    invoices_dir = get_entity_dir() / 'invoices'
+    ensure_dir(invoices_dir)
+    if any(invoices_dir.glob(f"{year_str}-*.journal")):
+        return
+    placeholder = invoices_dir / f"{year_str}-000-none.journal"
+    write_journal_atomic(placeholder,
+                         f"; Placeholder so include ../invoices/{year_str}-*.journal matches.\n"
+                         f"; Safe to delete once a real invoice exists for {year_str}.\n")
+
 def ensure_generated_include(year, filename):
     """Ensure the year aggregator includes generated/<year>/<filename>.
 
@@ -268,6 +287,11 @@ def ensure_year_structure(year):
             gpath = generated_dir / year_str / f"{name}.journal"
             if not gpath.exists():
                 write_journal_atomic(gpath, "")
+
+    # hledger errors on a glob that matches nothing, so the invoices include
+    # would break every report until the first invoice exists. Keep one empty
+    # file matching the pattern.
+    ensure_invoice_placeholder(year_str)
 
     # Update company.journal to include this year
     update_company_journal()
