@@ -74,6 +74,19 @@
 </style>
 </head>
     <style>
+        /* Tool launcher */
+        nav { position: relative; }
+        .launcher { display: none; position: absolute; top: 100%; left: 0; margin-top: 0.5rem;
+                    background: var(--bg-alt); border: 1px solid var(--border); border-radius: 4px;
+                    padding: 0.75rem; gap: 0.75rem; z-index: 60; }
+        .launcher.open { display: flex; }
+        .launcher-icon { border: 2px solid var(--accent); border-radius: 3px; padding: 0.6rem 0.75rem;
+                         cursor: pointer; text-align: center; min-width: 78px; color: var(--accent); }
+        .launcher-icon:hover { background: var(--accent); color: var(--bg); }
+        .launcher-icon span { display: block; font-size: 1.1rem; line-height: 1.4; }
+        .launcher-icon small { display: block; font-size: 0.62rem; color: var(--fg-dim); margin-top: 0.2rem; }
+        .launcher-icon:hover small { color: var(--bg); }
+
         /* Recurring: per-cell edit bubbles */
         .rec-cell { cursor: pointer; }
         .rec-bubble { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 10px; border: 1px solid transparent; }
@@ -146,8 +159,21 @@
 
     <!-- Nav -->
     <nav>
-        <span class="brand" onclick="openInfo()" title="About Pairs — guide" style="border:2px solid var(--accent);padding:0.2rem 0.5rem;border-radius:3px;font-size:0.9rem;cursor:pointer;">&gt;&lt;</span>
-        <div class="tabs">
+        <span class="brand" id="brand-icon" onclick="toggleLauncher()" title="Switch tool" style="border:2px solid var(--accent);padding:0.2rem 0.5rem;border-radius:3px;font-size:0.9rem;cursor:pointer;">&gt;&lt;</span>
+        <span id="app-name" style="display:none;color:var(--accent);font-size:0.85rem;margin-left:0.5rem;white-space:nowrap;"></span>
+        <div class="launcher" id="launcher">
+            <div class="launcher-icon" onclick="enterApp('commodities')" title="Commodities">
+                <span>◈</span><small>Commodities</small>
+            </div>
+            <div class="launcher-icon" onclick="closeLauncher();openInfo()" title="About Pairs — guide">
+                <span>&gt;&lt;</span><small>Guide</small>
+            </div>
+        </div>
+        <div class="tabs" id="comm-tabs" style="display:none;">
+            <span class="tab active" onclick="commSwitch('main')">Commodities</span>
+            <span class="tab" onclick="commSwitch('board')">Board</span>
+        </div>
+        <div class="tabs" id="main-tabs">
             <span class="tab" onclick="switchView('entry')">Pairs</span>
             <span class="tab active" onclick="switchView('dashboard')">Dash</span>
             <span class="tab" onclick="switchView('records')">Records</span>
@@ -917,6 +943,19 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Commodities app: Commodities tab (blank for now) -->
+    <div class="view" id="view-commapp-main">
+        <div class="section-title">Commodities</div>
+        <div class="empty" style="padding:3rem;text-align:center;color:var(--fg-dim);">Nothing here yet.</div>
+    </div>
+
+    <!-- Commodities app: Board tab (mirrors the Commodities screen) -->
+    <div class="view" id="view-commapp-board">
+        <div class="section-title">Board</div>
+        <div id="commapp-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
+        <div id="commapp-content"></div>
     </div>
 
     <!-- Taxes View -->
@@ -4669,6 +4708,71 @@
 
     document.getElementById('pay-modal')?.addEventListener('click', function(e){ if (e.target===this) closePay(); });
     document.getElementById('rm-modal')?.addEventListener('click', function(e){ if (e.target===this) closeRecurringModal(); });
+
+
+    // ─── Tool launcher / app modes ──────────────────────────────────────────
+    // The brand used to open the guide directly. It now opens a launcher of
+    // tools; the guide is still there, parked as one of them.
+    const APPS = {
+        commodities: { icon: '◈', name: 'Commodities', tabs: 'comm-tabs', start: 'board' },
+    };
+    let currentApp = null;
+
+    function toggleLauncher() {
+        if (currentApp) { exitApp(); return; }
+        document.getElementById('launcher').classList.toggle('open');
+    }
+    function closeLauncher() { document.getElementById('launcher').classList.remove('open'); }
+
+    function enterApp(key) {
+        const app = APPS[key];
+        if (!app) return;
+        closeLauncher();
+        currentApp = key;
+        document.getElementById('brand-icon').innerHTML = app.icon;
+        document.getElementById('brand-icon').title = 'Back to Pairs';
+        const nameEl = document.getElementById('app-name');
+        nameEl.textContent = app.name;
+        nameEl.style.display = 'inline';
+        document.getElementById('main-tabs').style.display = 'none';
+        document.getElementById(app.tabs).style.display = 'flex';
+        commSwitch(app.start);
+    }
+
+    function exitApp() {
+        currentApp = null;
+        document.getElementById('brand-icon').innerHTML = '&gt;&lt;';
+        document.getElementById('brand-icon').title = 'Switch tool';
+        document.getElementById('app-name').style.display = 'none';
+        document.getElementById('comm-tabs').style.display = 'none';
+        document.getElementById('main-tabs').style.display = 'flex';
+        switchView('dashboard');
+    }
+
+    function commSwitch(which) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.querySelectorAll('#comm-tabs .tab').forEach(t => t.classList.remove('active'));
+        const idx = which === 'board' ? 1 : 0;
+        document.querySelectorAll('#comm-tabs .tab')[idx].classList.add('active');
+        if (which === 'board') {
+            document.getElementById('view-commapp-board').classList.add('active');
+            loadCommAppBoard();
+        } else {
+            document.getElementById('view-commapp-main').classList.add('active');
+        }
+    }
+
+    async function loadCommAppBoard() {
+        const form = document.getElementById('commapp-form');
+        const content = document.getElementById('commapp-content');
+        showAddForm('commodities', form);
+        content.innerHTML = '<div class="empty">Loading...</div>';
+        await loadDataInto('commodities', content);
+    }
+
+    document.addEventListener('click', e => {
+        if (!e.target.closest('#launcher') && !e.target.closest('#brand-icon')) closeLauncher();
+    });
 
     // ─── Entity Archive ─────────────────────────────────────────────────────
     async function openArchive() {
