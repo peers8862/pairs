@@ -2722,11 +2722,10 @@
             }
             container.innerHTML = html + '</tbody></table>';
         } else if (type === 'recurring') {
-            let html = '<table><thead><tr><th>Name</th><th>Frequency</th><th>Amount</th><th>Description</th></tr></thead><tbody>';
-            for (const item of items) {
-                html += '<tr><td>' + esc(item.name||'') + '</td><td>' + esc(item.frequency||'') + '</td><td>' + (item.currency||'CAD') + ' ' + (item.amount||0).toFixed(2) + '</td><td>' + esc(item.description||'') + '</td></tr>';
-            }
-            container.innerHTML = html + '</tbody></table>';
+            // Same renderer as the Records view — one table definition, so the
+            // two surfaces cannot drift apart.
+            recurringItems = items;
+            container.innerHTML = renderRecurring(items);
         }
     }
 
@@ -4353,6 +4352,15 @@
         return html + '</tbody></table>';
     }
 
+    // The recurring table renders in two places (Records and Dash > Recurring).
+    // Refresh whichever one the edited cell actually lives in.
+    function recRefresh(node) {
+        if (node && node.closest && node.closest('#dash-manage-data')) {
+            return dashLoadManage('recurring');
+        }
+        return loadData('recurring');
+    }
+
     function recEdit(td) {
         if (td.querySelector('input')) return;
         const slug = td.dataset.slug, field = td.dataset.field;
@@ -4377,7 +4385,7 @@
                 });
                 const data = await res.json();
                 if (!res.ok) { showToast('Error: ' + (data.detail || 'Failed'), true); td.innerHTML = prev; return; }
-                await loadData('recurring');
+                await recRefresh(td);
             } catch (e) { showToast('Network error', true); td.innerHTML = prev; }
         };
         inp.onblur = save;
@@ -4454,7 +4462,7 @@
                 ? `Paid ${d.actual.toFixed(2)} (${sign}${d.variance.toFixed(2)}) — expected now ${d.new_amount.toFixed(2)}`
                 : `Paid ${d.actual.toFixed(2)}`);
             closePay();
-            await loadData('recurring');
+            await recRefresh(document.querySelector('#dash-manage-data tr.rec-row') ? document.getElementById('dash-manage-data') : null);
         } catch (e) { showToast('Network error', true); }
     }
 
