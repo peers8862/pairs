@@ -38,6 +38,8 @@ def dispatch(args):
         cmd_list(flags, action_args)
     elif action == 'generate':
         cmd_generate(flags, action_args)
+    elif action == 'edit':
+        cmd_edit(flags, action_args)
     elif action == 'pay':
         cmd_pay(flags, action_args)
     elif action == 'due':
@@ -57,6 +59,7 @@ Actions:
   add                 Define a new recurring entry
   list                List all recurring entries
   generate            Generate pending entries through a date
+  edit SLUG --FIELD VAL    Set fields (amount, day, reminder_days, tags, ...)
   pay [SLUG] [--amount N]  Record a payment at its real amount
   due                      Upcoming items + active reminders
   remove <slug>       Remove a recurring entry definition
@@ -96,6 +99,10 @@ def cmd_add(flags, args):
     credit_account = prompt("Credit account", default=bank)
     pair = prompt("BitLedger pair", default="0000")
 
+    day = prompt("Day of month the bill lands (1-31, optional)", required=False)
+    reminder_days = prompt("Remind how many days before due? (optional)", required=False)
+    tags_raw = prompt("Tags (comma-separated, e.g. utility, division:ops)", required=False)
+
     notes = prompt("Notes (optional)", required=False)
 
     entry_data = {
@@ -110,6 +117,13 @@ def cmd_add(flags, args):
         'currency': currency,
         'last_generated': None,
     }
+    if day and str(day).strip().isdigit():
+        entry_data['day'] = int(str(day).strip())
+    if reminder_days and str(reminder_days).strip().isdigit():
+        entry_data['reminder_days'] = int(str(reminder_days).strip())
+    tags = [t.strip() for t in (tags_raw or '').split(',') if t.strip()]
+    if tags:
+        entry_data['tags'] = tags
     if end_date:
         entry_data['end_date'] = end_date
     if notes:
@@ -303,6 +317,76 @@ def _next_occurrence(current_date, frequency):
         from datetime import timedelta
         return current_date + timedelta(weeks=2)
     return current_date
+
+
+
+def cmd_edit(flags, args):
+    """Set fields on a recurring entry: pair recurring edit SLUG --amount 155.55
+
+    Mirrors the web table's per-cell editing, so the same fields are reachable
+    from either surface.
+    """
+    EDITABLE = ('name', 'frequency', 'day', 'amount', 'currency', 'description',
+                'notes', 'tags', 'reminder_days', 'start_date', 'end_date',
+                'debit_account', 'credit_account', 'pair')
+
+    if not args:
+        print(f"\n  Usage: pair recurring edit SLUG --FIELD VALUE\n"
+              f"  Fields: {', '.join(EDITABLE)}\n")
+        return
+
+    slug = args[0]
+    entry = load_entity(MODULE, slug)
+    if not entry:
+        print(f"\n  No recurring entry '{slug}'\n")
+        return
+
+    updates, i = {}, 1
+    while i < len(args):
+        tok = args[i]
+        if not tok.startswith('--'):
+            i += 1
+            continue
+        field = tok[2:]
+        if field not in EDITABLE:
+            print(f"\n  Not an editable field: '{field}'\n  Fields: {', '.join(EDITABLE)}\n")
+            return
+        if i + 1 >= len(args) or args[i + 1].startswith('--'):
+            print(f"\n  --{field} needs a value\n")
+            return
+        updates[field] = args[i + 1]
+        i += 2
+
+    if not updates:
+        # No flags: show the current values instead of failing.
+        print(f"\n  {entry.get('name', slug)} ({slug})\n")
+        for f in EDITABLE:
+            if f in entry:
+                v = entry[f]
+                print(f"    {f:16} {', '.join(v) if isinstance(v, list) else v}")
+        print()
+        return
+
+    for field, raw in updates.items():
+        if field == 'amount':
+            try:
+                entry[field] = float(str(raw).replace(',', ''))
+            except ValueError:
+                print(f"\n  Invalid amount: {raw!r}\n")
+                return
+        elif field in ('day', 'reminder_days'):
+            if not str(raw).strip().isdigit():
+                print(f"\n  {field} must be a whole number, got {raw!r}\n")
+                return
+            entry[field] = int(str(raw).strip())
+        elif field == 'tags':
+            entry[field] = [t.strip() for t in str(raw).split(',') if t.strip()]
+        else:
+            entry[field] = raw
+
+    save_entity(MODULE, slug, entry)
+    print(f"\n  ✓ Updated {slug}: " +
+          ', '.join(f"{k}={v}" for k, v in updates.items()) + "\n")
 
 
 # ─── Due dates, reminders, and variable-amount payment ───────────────────────
