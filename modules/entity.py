@@ -135,13 +135,19 @@ def _find_journal_file(folder):
     Detection is extension-then-parseability: an extension match that hledger
     cannot parse is treated as no ledger, so a broken file yields a fresh
     create rather than a false registration.
+
+    Aggregators are tried first. A pair layout keeps company.journal including
+    every year, so plain alphabetical order would register 2025.journal — a
+    single year — and silently hide the rest of the books.
     """
     import subprocess
     if not folder.exists():
         return None
+    preferred = ('company.journal', 'main.journal', 'all.journal')
     candidates = sorted(
         [p for p in folder.rglob('*') if p.suffix in JOURNAL_EXTS and p.is_file()],
-        key=lambda p: (len(p.relative_to(folder).parts), p.name))
+        key=lambda p: (p.name not in preferred,
+                       len(p.relative_to(folder).parts), p.name))
     for path in candidates:
         try:
             r = subprocess.run(['hledger', '-f', str(path), 'stats'],
@@ -468,11 +474,15 @@ def _resolve_slug(args):
     return get_active_entity(), args
 
 
-def _set_entity_path(slug, new_dir):
+def _set_entity_path(slug, new_dir, old_dir=None):
     """Record an entity's folder location in global.yaml.
 
     Storing the default location would be noise, so it is recorded only when
     the folder actually lives somewhere else.
+
+    journal_file is an absolute path into the folder, so a move that only
+    rewrites `path` leaves it dangling — every report then fails on a file
+    that is no longer there. Pass old_dir to have it follow the folder.
     """
     config = load_global_config()
     default = BASE_DIR / 'entities' / slug
@@ -482,6 +492,14 @@ def _set_entity_path(slug, new_dir):
                 entry.pop('path', None)
             else:
                 entry['path'] = str(new_dir)
+            journal = entry.get('journal_file')
+            if journal and old_dir:
+                try:
+                    rel = Path(expand_path(journal)).resolve().relative_to(Path(old_dir).resolve())
+                except ValueError:
+                    rel = None  # points outside the folder — leave it alone
+                if rel is not None:
+                    entry['journal_file'] = str(Path(new_dir) / rel)
             save_global_config(config)
             return True
     return False
@@ -573,7 +591,7 @@ def cmd_move(args):
         return
 
     # Only now update config: a stale path is worse than none.
-    if not _set_entity_path(slug, dest):
+    if not _set_entity_path(slug, dest, old_dir=src):
         print(f"\n  Moved to {dest}, but '{slug}' was not in global.yaml.")
         print(f"  Register it with: pair entity path {slug} {dest}\n")
         return
