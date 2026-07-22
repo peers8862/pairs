@@ -74,6 +74,11 @@
 </style>
 </head>
     <style>
+        /* Recurring: per-cell edit bubbles */
+        .rec-cell { cursor: pointer; }
+        .rec-bubble { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 10px; border: 1px solid transparent; }
+        .rec-cell:hover .rec-bubble { background: var(--bg); border-color: var(--accent); color: var(--accent); }
+
         /* New entity/project modal fields */
         .ne-l { color: var(--fg-dim); font-size: 0.72rem; display: block; margin-bottom: 0.2rem; }
         .ne-f { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
@@ -679,6 +684,50 @@
             <div style="margin-top:1.25rem;display:flex;gap:0.5rem;justify-content:flex-end;">
                 <button class="btn" onclick="closeTradeModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
                 <button class="btn" id="td-submit" onclick="submitTrade()" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Record</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recurring: Pay -->
+    <div id="pay-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:78;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:94%;max-width:460px;">
+            <input type="hidden" id="pay-slug">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.9rem;">
+                <span style="color:var(--accent);font-weight:bold;" id="pay-title">Pay</span>
+                <button onclick="closePay()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div style="color:var(--fg-dim);font-size:0.78rem;margin-bottom:0.6rem;">Expected <span id="pay-expected" style="color:var(--fg)"></span></div>
+            <div style="display:grid;grid-template-columns:1fr 140px;gap:0.6rem;margin-bottom:0.5rem;">
+                <div><label class="ne-l">Actual amount</label>
+                    <input type="number" step="any" id="pay-amount" class="ne-f" oninput="payDebounce()"></div>
+                <div><label class="ne-l">Date</label>
+                    <input type="date" id="pay-date" class="ne-f"></div>
+            </div>
+            <div id="pay-diff" style="font-size:0.82rem;margin-bottom:0.6rem;min-height:1.2rem;"></div>
+            <div id="pay-policy-wrap" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.6rem 0.75rem;margin-bottom:0.8rem;font-size:0.8rem;">
+                <div style="color:var(--fg-dim);font-size:0.73rem;margin-bottom:0.4rem;">Future forecasts should use:</div>
+                <label style="display:block;margin-bottom:0.25rem;cursor:pointer;"><input type="radio" name="pay-policy" value="adopt"> Adopt this amount — <span id="pay-opt-adopt" style="color:var(--accent)"></span></label>
+                <label style="display:block;margin-bottom:0.25rem;cursor:pointer;"><input type="radio" name="pay-policy" value="average"> Average with expected — <span id="pay-opt-average" style="color:var(--accent)"></span></label>
+                <label style="display:block;cursor:pointer;"><input type="radio" name="pay-policy" value="anomaly" checked> Anomaly, keep — <span id="pay-opt-anomaly" style="color:var(--accent)"></span></label>
+            </div>
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+                <button class="btn" onclick="closePay()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                <button class="btn" onclick="submitPay()" style="font-size:0.8rem;padding:0.4rem 0.9rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Record payment</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recurring: detail -->
+    <div id="rm-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:77;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem;width:94%;max-width:560px;max-height:92vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.9rem;">
+                <span style="color:var(--accent);font-weight:bold;" id="rm-title"></span>
+                <button onclick="closeRecurringModal()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div id="rm-body"></div>
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem;">
+                <button class="btn" onclick="closeRecurringModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Close</button>
+                <button class="btn" id="rm-pay" style="font-size:0.8rem;padding:0.4rem 0.9rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Pay</button>
             </div>
         </div>
     </div>
@@ -2212,11 +2261,8 @@
             }
             content.innerHTML = html + '</tbody></table>';
         } else if (type === 'recurring') {
-            let html = '<table><thead><tr><th>Name</th><th>Frequency</th><th>Amount</th><th>Description</th></tr></thead><tbody>';
-            for (const item of items) {
-                html += `<tr><td>${esc(item.name||'')}</td><td>${esc(item.frequency||'')}</td><td>${item.currency||'CAD'} ${(item.amount||0).toFixed(2)}</td><td>${esc(item.description||'')}</td></tr>`;
-            }
-            content.innerHTML = html + '</tbody></table>';
+            recurringItems = items;
+            content.innerHTML = renderRecurring(items);
         }
     }
 
@@ -4260,6 +4306,194 @@
     }
 
     document.getElementById('trade-modal')?.addEventListener('click', function(e) { if (e.target === this) closeTradeModal(); });
+
+
+    // ─── Recurring: per-cell editing, reminders, pay-with-variance ──────────
+    // Each cell is individually editable: click a bubble, edit, Enter/blur saves
+    // just that field. Slug lives in the modal only — it is identity, not data
+    // you scan a table for.
+    let recurringItems = [];
+
+    function recCell(slug, field, display, opts) {
+        opts = opts || {};
+        const cls = opts.dim ? 'style="color:var(--fg-dim)"' : '';
+        return `<td class="rec-cell" data-slug="${esc(slug)}" data-field="${esc(field)}"
+                    onclick="recEdit(this)" title="click to edit ${esc(field)}" ${cls}>
+                  <span class="rec-bubble">${display === '' || display == null ? '<span style=\"color:var(--fg-dim)\">—</span>' : esc(String(display))}</span>
+                </td>`;
+    }
+
+    function renderRecurring(items) {
+        if (!items.length) return '<div class="empty">No recurring entries</div>';
+        let html = `<table><thead><tr>
+            <th>Name</th><th>Freq</th><th>Day</th><th style="text-align:right">Amount</th>
+            <th>Next due</th><th>Remind</th><th>Tags</th><th>Description</th><th></th>
+        </tr></thead><tbody>`;
+        for (const it of items) {
+            const cur = it.currency || 'CAD';
+            const due = it.next_due || '';
+            const dueTxt = due ? `${due} (${it.days_until}d)` : '—';
+            const bell = it.reminder_active ? ' 🔔' : '';
+            const tags = (it.tags || []).join(', ');
+            html += '<tr class="rec-row">'
+                + recCell(it.slug, 'name', it.name || '')
+                + recCell(it.slug, 'frequency', it.frequency || '')
+                + recCell(it.slug, 'day', it.day == null ? '' : it.day)
+                + `<td class="rec-cell" data-slug="${esc(it.slug)}" data-field="amount" onclick="recEdit(this)" style="text-align:right;white-space:nowrap;" title="click to edit amount"><span class="rec-bubble">${cur} ${(it.amount||0).toFixed(2)}</span></td>`
+                + `<td style="white-space:nowrap;${it.reminder_active ? 'color:var(--accent);' : 'color:var(--fg-dim);'}">${esc(dueTxt)}${bell}</td>`
+                + recCell(it.slug, 'reminder_days', it.reminder_days == null ? '' : it.reminder_days + 'd', {dim:true})
+                + recCell(it.slug, 'tags', tags, {dim:true})
+                + recCell(it.slug, 'description', it.description || '', {dim:true})
+                + `<td style="white-space:nowrap;text-align:right;">
+                     <button class="btn" style="font-size:0.7rem;padding:0.15rem 0.45rem;color:var(--accent);border-color:var(--accent);" onclick="event.stopPropagation();openPay('${esc(it.slug)}')">Pay</button>
+                     <button class="btn" style="font-size:0.7rem;padding:0.15rem 0.45rem;" onclick="event.stopPropagation();openRecurringModal('${esc(it.slug)}')">⋯</button>
+                   </td>`
+                + '</tr>';
+        }
+        return html + '</tbody></table>';
+    }
+
+    function recEdit(td) {
+        if (td.querySelector('input')) return;
+        const slug = td.dataset.slug, field = td.dataset.field;
+        const item = recurringItems.find(i => i.slug === slug) || {};
+        let current = item[field];
+        if (field === 'tags') current = (item.tags || []).join(', ');
+        if (current == null) current = '';
+        const prev = td.innerHTML;
+        td.innerHTML = `<input type="text" value="${esc(String(current))}"
+            style="width:100%;background:var(--bg);border:1px solid var(--accent);border-radius:4px;padding:0.15rem 0.35rem;color:var(--fg);font-family:inherit;font-size:0.8rem;box-sizing:border-box;">`;
+        const inp = td.querySelector('input');
+        inp.focus(); inp.select();
+        let done = false;
+        const cancel = () => { if (!done) { done = true; td.innerHTML = prev; } };
+        const save = async () => {
+            if (done) return; done = true;
+            const val = inp.value;
+            try {
+                const res = await fetch('/api/recurring/update', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({slug, fields: {[field]: val}}),
+                });
+                const data = await res.json();
+                if (!res.ok) { showToast('Error: ' + (data.detail || 'Failed'), true); td.innerHTML = prev; return; }
+                await loadData('recurring');
+            } catch (e) { showToast('Network error', true); td.innerHTML = prev; }
+        };
+        inp.onblur = save;
+        inp.onkeydown = e => {
+            // Commit directly rather than via blur(): blur is a no-op when the
+            // field never took focus, which would silently discard the edit.
+            if (e.key === 'Enter') { e.preventDefault(); save(); }
+            if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        };
+    }
+
+    // ── Pay, with live variance against the expected amount ──
+    let payTimer = null;
+
+    function openPay(slug) {
+        const it = recurringItems.find(i => i.slug === slug);
+        if (!it) return;
+        document.getElementById('pay-slug').value = slug;
+        document.getElementById('pay-title').textContent = it.name || slug;
+        document.getElementById('pay-expected').textContent = `${it.currency||'CAD'} ${(it.amount||0).toFixed(2)}`;
+        document.getElementById('pay-amount').value = (it.amount||0).toFixed(2);
+        document.getElementById('pay-date').value = new Date().toISOString().slice(0,10);
+        document.getElementById('pay-diff').innerHTML = '';
+        document.querySelectorAll('input[name="pay-policy"]').forEach(r => r.checked = r.value === 'anomaly');
+        document.getElementById('pay-policy-wrap').style.display = 'none';
+        document.getElementById('pay-modal').style.display = 'flex';
+        payPreview();
+    }
+    function closePay() { document.getElementById('pay-modal').style.display = 'none'; }
+    function payDebounce() { clearTimeout(payTimer); payTimer = setTimeout(payPreview, 250); }
+
+    async function payPreview() {
+        const slug = document.getElementById('pay-slug').value;
+        const amount = parseFloat(document.getElementById('pay-amount').value);
+        const box = document.getElementById('pay-diff');
+        const wrap = document.getElementById('pay-policy-wrap');
+        if (!slug || isNaN(amount)) { box.innerHTML = ''; wrap.style.display = 'none'; return; }
+        try {
+            const d = await fetch('/api/recurring/preview-pay', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({slug, amount}),
+            }).then(r => r.json());
+            if (d.variance === 0) {
+                box.innerHTML = '<span style="color:var(--green)">Matches the expected amount.</span>';
+                wrap.style.display = 'none';
+                return;
+            }
+            const up = d.variance > 0;
+            const sign = up ? '+' : '';
+            box.innerHTML = `<span style="color:${up ? 'var(--red)' : 'var(--green)'}">`
+                + `${sign}${d.variance.toFixed(2)} (${sign}${d.pct.toFixed(1)}%)</span>`
+                + ` <span style="color:var(--fg-dim)">vs expected ${d.expected.toFixed(2)}</span>`;
+            document.getElementById('pay-opt-adopt').textContent = d.adopt.toFixed(2);
+            document.getElementById('pay-opt-average').textContent = d.average.toFixed(2);
+            document.getElementById('pay-opt-anomaly').textContent = d.anomaly.toFixed(2);
+            wrap.style.display = 'block';
+        } catch (e) { box.innerHTML = ''; }
+    }
+
+    async function submitPay() {
+        const slug = document.getElementById('pay-slug').value;
+        const amount = parseFloat(document.getElementById('pay-amount').value);
+        if (isNaN(amount)) { showToast('Enter an amount', true); return; }
+        const policy = (document.querySelector('input[name="pay-policy"]:checked') || {}).value || 'anomaly';
+        try {
+            const res = await fetch('/api/recurring/pay', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({slug, amount, date: document.getElementById('pay-date').value, policy}),
+            });
+            const d = await res.json();
+            if (!res.ok) { showToast('Error: ' + (d.detail || 'Failed'), true); return; }
+            const sign = d.variance > 0 ? '+' : '';
+            showToast(d.variance
+                ? `Paid ${d.actual.toFixed(2)} (${sign}${d.variance.toFixed(2)}) — expected now ${d.new_amount.toFixed(2)}`
+                : `Paid ${d.actual.toFixed(2)}`);
+            closePay();
+            await loadData('recurring');
+        } catch (e) { showToast('Network error', true); }
+    }
+
+    function openRecurringModal(slug) {
+        const it = recurringItems.find(i => i.slug === slug);
+        if (!it) return;
+        const rows = [
+            ['Slug', it.slug], ['Name', it.name], ['Frequency', it.frequency],
+            ['Day of month', it.day], ['Amount', `${it.currency||'CAD'} ${(it.amount||0).toFixed(2)}`],
+            ['Next due', it.next_due], ['Reminder', it.reminder_days == null ? '—' : it.reminder_days + ' days before'],
+            ['Tags', (it.tags||[]).join(', ')], ['Start', it.start_date], ['End', it.end_date],
+            ['Last paid', it.last_paid], ['Description', it.description],
+        ];
+        let html = '<div style="display:grid;grid-template-columns:130px 1fr;gap:0.3rem 0.75rem;font-size:0.82rem;">';
+        for (const [k, v] of rows) {
+            html += `<div style="color:var(--fg-dim)">${esc(k)}</div><div>${v == null || v === '' ? '<span style="color:var(--fg-dim)">—</span>' : esc(String(v))}</div>`;
+        }
+        html += '</div>';
+        const hist = it.history || [];
+        if (hist.length) {
+            html += '<div style="margin-top:0.9rem;color:var(--fg-dim);font-size:0.75rem;">Payment history</div>'
+                 + '<table style="margin-top:0.3rem;"><thead><tr><th>Date</th><th style="text-align:right">Paid</th><th style="text-align:right">Expected</th><th style="text-align:right">Variance</th></tr></thead><tbody>';
+            for (const h of hist.slice().reverse()) {
+                const up = (h.variance||0) > 0;
+                html += `<tr><td>${esc(h.date)}</td><td style="text-align:right">${(h.amount||0).toFixed(2)}</td>`
+                     + `<td style="text-align:right;color:var(--fg-dim)">${(h.expected||0).toFixed(2)}</td>`
+                     + `<td style="text-align:right;color:${h.variance ? (up?'var(--red)':'var(--green)') : 'var(--fg-dim)'}">${h.variance ? (up?'+':'') + h.variance.toFixed(2) : '—'}</td></tr>`;
+            }
+            html += '</tbody></table>';
+        }
+        document.getElementById('rm-title').textContent = it.name || it.slug;
+        document.getElementById('rm-body').innerHTML = html;
+        document.getElementById('rm-pay').onclick = () => { closeRecurringModal(); openPay(slug); };
+        document.getElementById('rm-modal').style.display = 'flex';
+    }
+    function closeRecurringModal() { document.getElementById('rm-modal').style.display = 'none'; }
+
+    document.getElementById('pay-modal')?.addEventListener('click', function(e){ if (e.target===this) closePay(); });
+    document.getElementById('rm-modal')?.addEventListener('click', function(e){ if (e.target===this) closeRecurringModal(); });
 
     // ─── Entity Archive ─────────────────────────────────────────────────────
     async function openArchive() {

@@ -1257,10 +1257,92 @@ def create_app():
         """List all contracts from YAML."""
         return {'items': _load_yaml_dir('contracts')}
 
+    class RecurringUpdate(BaseModel):
+        slug: str
+        fields: dict = {}
+
+    class RecurringPay(BaseModel):
+        slug: str
+        amount: float
+        date: str = ''
+        policy: str = 'anomaly'   # adopt | average | anomaly
+        note: str = ''
+
     @app.get("/api/recurring")
     async def recurring():
-        """List all recurring entries from YAML."""
-        return {'items': _load_yaml_dir('recurring')}
+        """Recurring entries, each enriched with due/reminder info."""
+        from modules.recurring import due_info
+        items = _load_yaml_dir('recurring')
+        for it in items:
+            try:
+                it.update(due_info(it))
+            except Exception:
+                pass
+        return {'items': items}
+
+    @app.post("/api/recurring/update")
+    async def recurring_update(req: RecurringUpdate):
+        """Patch individual fields — powers per-cell editing in the table."""
+        from lib.yaml_store import load_entity, save_entity
+        entry = load_entity('recurring', req.slug)
+        if not entry:
+            raise HTTPException(status_code=404, detail=f"No recurring entry '{req.slug}'")
+
+        allowed = {'name', 'frequency', 'day', 'amount', 'currency', 'description',
+                   'tags', 'reminder_days', 'start_date', 'end_date'}
+        for key, value in (req.fields or {}).items():
+            if key not in allowed:
+                continue
+            if key in ('amount',):
+                try:
+                    value = float(str(value).replace(',', ''))
+                except (TypeError, ValueError):
+                    raise HTTPException(status_code=400, detail=f"Invalid amount: {value!r}")
+            elif key in ('day', 'reminder_days'):
+                raw = str(value).strip()
+                if raw == '':
+                    entry.pop(key, None)
+                    continue
+                if not raw.isdigit():
+                    raise HTTPException(status_code=400, detail=f"{key} must be a whole number")
+                value = int(raw)
+            elif key == 'tags':
+                if isinstance(value, str):
+                    value = [t.strip() for t in value.split(',') if t.strip()]
+            entry[key] = value
+
+        save_entity('recurring', req.slug, entry)
+        return {'status': 'ok', 'item': entry}
+
+    @app.post("/api/recurring/pay")
+    async def recurring_pay(req: RecurringPay):
+        """Record a payment at its real amount; returns the variance."""
+        from modules.recurring import record_payment
+        if req.policy not in ('adopt', 'average', 'anomaly'):
+            raise HTTPException(status_code=400, detail=f"Unknown policy '{req.policy}'")
+        result = record_payment(req.slug, req.amount, pay_date=(req.date or None),
+                                policy=req.policy, note=req.note)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"No recurring entry '{req.slug}'")
+        return {'status': 'ok', **result}
+
+    @app.post("/api/recurring/preview-pay")
+    async def recurring_preview_pay(req: RecurringPay):
+        """Variance for an amount without recording it — drives the live diff."""
+        from lib.yaml_store import load_entity
+        entry = load_entity('recurring', req.slug)
+        if not entry:
+            raise HTTPException(status_code=404, detail=f"No recurring entry '{req.slug}'")
+        expected = float(entry.get('amount') or 0)
+        diff = round(float(req.amount) - expected, 2)
+        return {
+            'expected': round(expected, 2), 'actual': round(float(req.amount), 2),
+            'variance': diff,
+            'pct': round((diff / expected * 100), 1) if expected else 0.0,
+            'adopt': round(float(req.amount), 2),
+            'average': round((expected + float(req.amount)) / 2, 2),
+            'anomaly': round(expected, 2),
+        }
 
     @app.get("/api/expenses")
     async def expenses(period: str = ''):
