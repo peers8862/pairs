@@ -11,6 +11,7 @@ consult init
 ```
 
 This walks you through:
+
 - Company name and business number
 - Contact info (email, phone)
 - Default currency and tax rate
@@ -38,20 +39,20 @@ Edit walks through each field showing the current value. Press enter to keep it.
 
 ### Entity config fields
 
-| Field | Purpose |
-|-------|---------|
-| `name` | Appears on invoices |
-| `business_number` | Tax registration (HST, GST, VAT, etc.) |
-| `email` | Contact on invoice |
-| `phone` | Contact on invoice |
-| `payment_terms` | e.g., "Net 30 days" |
-| `currency` | Default for projects under this entity |
-| `tax` | Default tax % for projects |
-| `invoice_prefix` | Prepended to invoice numbers (e.g., "CLR-") |
-| `next_invoice` | Auto-incremented counter |
-| `journal_file` | Where hledger `include` is managed |
-| `template` | Invoice template filename (in `templates/`) |
-| `accounts` | hledger account name mapping |
+| Field             | Purpose                                     |
+| ----------------- | ------------------------------------------- |
+| `name`            | Appears on invoices                         |
+| `business_number` | Tax registration (HST, GST, VAT, etc.)      |
+| `email`           | Contact on invoice                          |
+| `phone`           | Contact on invoice                          |
+| `payment_terms`   | e.g., "Net 30 days"                         |
+| `currency`        | Default for projects under this entity      |
+| `tax`             | Default tax % for projects                  |
+| `invoice_prefix`  | Prepended to invoice numbers (e.g., "CLR-") |
+| `next_invoice`    | Auto-incremented counter                    |
+| `journal_file`    | Where hledger `include` is managed          |
+| `template`        | Invoice template filename (in `templates/`) |
+| `accounts`        | hledger account name mapping                |
 
 ### Account mapping
 
@@ -66,7 +67,7 @@ accounts:
 ```
 
 The client name is appended to the receivable account automatically:
-`Assets:Accounts Receivable:Cibby Alexandar`
+`Assets:Accounts Receivable:Johnny Smith`
 
 ---
 
@@ -81,6 +82,7 @@ consult project new
 ```
 
 You'll specify:
+
 - **Entity** — which company is billing
 - **Project slug** — short identifier (e.g., `acme-website`)
 - **Client name** — appears on invoice
@@ -95,17 +97,21 @@ You'll specify:
 ### Rate types
 
 **Daily rate with hours:**
+
 ```
 Daily rate: 239
 Hours per day: 7.5
 → Effective hourly: $31.87/h
 ```
+
 Billing is always hours × effective hourly rate. The daily rate is the contractual reference point.
 
 **Hourly rate:**
+
 ```
 Hourly rate: 50
 ```
+
 Straightforward multiplication.
 
 ### Rate history
@@ -121,6 +127,7 @@ rates:
 ```
 
 Update with:
+
 ```bash
 consult rate acme-website
 ```
@@ -133,8 +140,8 @@ Stored in `projects/<slug>.yaml`:
 
 ```yaml
 entity: clairlea
-client: Cibby Alexandar
-project: YUPI dot CA
+client: Future Proofers
+project: Server Upgrades
 currency: CAD
 tax: 13
 rate_type: daily
