@@ -198,6 +198,28 @@ def create_app():
         credit_account: str = ''   # what the acquisition entry credits
         linked_liability: str = ''
 
+    class ContractParty(BaseModel):
+        contact: str = ''
+        role: str = ''
+
+    class ContractRequest(BaseModel):
+        name: str
+        slug: str = ''
+        type: str = 'service'
+        status: str = 'active'
+        start_date: str = ''
+        end_date: str = ''
+        value: float = 0
+        payment_schedule: str = 'monthly'
+        first_payment_date: str = ''
+        payment_terms: str = ''
+        parties: list[ContractParty] = []
+        renewal_type: str = ''            # auto | manual | none ('' = no renewal block)
+        renewal_notice_days: int = 30
+        linked_assets: list[str] = []
+        linked_liabilities: list[str] = []
+        notes: str = ''
+
     class LiabilityRequest(BaseModel):
         name: str
         slug: str = ''
@@ -540,6 +562,119 @@ def create_app():
             }
         except Exception as e:
             return {'currency': currency, 'assets': 0, 'liabilities': 0, 'net_worth': 0, 'accounts': [], 'error': str(e)}
+
+    @app.get("/api/metrics")
+    async def metrics(period: str = ''):
+        """Dense company-performance ratios for the dashboard strip.
+
+        Two hledger reads: a point-in-time balance sheet (stock figures) and a
+        period income statement (flow figures). Credit-normal roots (Liabilities,
+        Equity, Income) are flipped to positive so the ratio math reads naturally.
+        `period` mirrors the dashboard's time buttons; empty means all-dates.
+        Any ratio whose denominator is ~0 comes back as null so the front end can
+        show a dash rather than an Infinity/NaN.
+        """
+        journal = _get_journal_path()
+        if not journal:
+            raise HTTPException(status_code=404, detail="No journal found")
+
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+
+        def _rows(*acct_args, use_period=False):
+            """Flat, full-depth balances as (account, amount) pairs."""
+            cmd = ['hledger', '-f', journal, 'bal', '--flat', '-N',
+                   *acct_args, '--output-format', 'csv']
+            if use_period and period:
+                cmd += ['-p', period]
+            out = []
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if r.returncode != 0:
+                    return out
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                return out
+            for line in r.stdout.strip().split('\n')[1:]:  # skip header
+                parts = line.split('","')
+                if len(parts) < 2:
+                    continue
+                acct = parts[0].strip('"')
+                amt_str = parts[1].strip('"').replace(currency, '').strip().replace(',', '')
+                try:
+                    out.append((acct, float(amt_str)))
+                except ValueError:
+                    continue
+            return out
+
+        # Stock figures — point in time (balance sheet, all dates).
+        assets_total = assets_current = 0.0
+        liab_total = liab_current = 0.0
+        for acct, amt in _rows('Assets', 'Liabilities'):
+            if acct.startswith('Assets'):
+                assets_total += amt
+                if acct.startswith('Assets:Current'):
+                    assets_current += amt
+            elif acct.startswith('Liabilities'):
+                liab_total += -amt            # credit-normal → positive
+                if acct.startswith('Liabilities:Current'):
+                    liab_current += -amt
+        # Book equity via the accounting identity, not the Equity:* roots: in an
+        # un-closed hledger book the current-period P/L still lives in
+        # Income/Expenses, so summing Equity accounts omits retained earnings and
+        # inflates every equity-based ratio. A − L always gives true book equity.
+        equity_total = assets_total - liab_total
+
+        # Flow figures — over the selected period (income statement).
+        revenue = operating_rev = 0.0
+        expenses = operating_exp = 0.0
+        interest = amortization = 0.0
+        for acct, amt in _rows('Income', 'Expenses', use_period=True):
+            if acct.startswith('Income'):
+                revenue += -amt               # credit-normal → positive
+                if acct.startswith('Income:Operating'):
+                    operating_rev += -amt
+            elif acct.startswith('Expenses'):
+                expenses += amt
+                if acct.startswith('Expenses:Operating'):
+                    operating_exp += amt
+                low = acct.lower()
+                if 'interest' in low:
+                    interest += amt
+                if 'amortization' in low or 'depreciation' in low:
+                    amortization += amt
+
+        net_income = revenue - expenses
+        operating_income = operating_rev - operating_exp
+        ebitda = net_income + interest + amortization
+        working_capital = assets_current - liab_current
+
+        def _ratio(num, den):
+            return round(num / den, 4) if den else None
+
+        return {
+            'currency': currency,
+            'period': period or 'all',
+            # Raw figures (already sign-normalised to positive magnitudes).
+            'revenue': round(revenue, 2),
+            'net_income': round(net_income, 2),
+            'operating_income': round(operating_income, 2),
+            'ebitda': round(ebitda, 2),
+            'assets': round(assets_total, 2),
+            'liabilities': round(liab_total, 2),
+            'equity': round(equity_total, 2),
+            'working_capital': round(working_capital, 2),
+            # Ratios (fractions; multiply by 100 for the % ones on the client).
+            'operating_margin': _ratio(operating_income, operating_rev),
+            'net_margin': _ratio(net_income, revenue),
+            'ebitda_margin': _ratio(ebitda, revenue),
+            'roa': _ratio(net_income, assets_total),
+            'roe': _ratio(net_income, equity_total),
+            'current_ratio': _ratio(assets_current, liab_current),
+            'debt_to_equity': _ratio(liab_total, equity_total),
+            'debt_ratio': _ratio(liab_total, assets_total),
+            'equity_ratio': _ratio(equity_total, assets_total),
+            'asset_turnover': _ratio(revenue, assets_total),
+        }
 
     @app.get("/api/recent")
     async def recent(limit: int = 100, offset: int = 0, query: str = ''):
@@ -1015,7 +1150,8 @@ def create_app():
         return {'ok': True, 'active': slug, 'name': name}
 
     @app.get("/api/report")
-    async def report(cmd: str = 'bs', period: str = '', args: str = '', width: int = 0):
+    async def report(cmd: str = 'bs', period: str = '', args: str = '',
+                     width: int = 0, query: str = ''):
         """Run hledger report and return output."""
         journal = _get_journal_path()
         if not journal:
@@ -1040,6 +1176,19 @@ def create_app():
             if any(a.startswith('-') for a in arg_list):
                 raise HTTPException(status_code=400, detail="Report args cannot start with '-'")
             hledger_cmd += arg_list
+
+        # Free-text filter from the register's search box. Runs as a real
+        # hledger query rather than a client-side line filter, so the running
+        # balance column is recomputed for the matched set instead of keeping
+        # the values it had in the unfiltered run.
+        # NB: do not add a '--' separator here. hledger stops parsing prefix:
+        # query syntax after '--', so amt:/type:/expr: silently match nothing.
+        # The leading-dash rejection in _safe_query_terms is the guard.
+        if query.strip():
+            terms, err = _safe_query_terms(query)
+            if err:
+                return {'cmd': cmd, 'output': '', 'error': err}
+            hledger_cmd += terms
 
         try:
             result = subprocess.run(hledger_cmd, capture_output=True, text=True)
@@ -1289,6 +1438,316 @@ def create_app():
     async def contracts():
         """List all contracts from YAML."""
         return {'items': _load_yaml_dir('contracts')}
+
+    @app.post("/api/contract")
+    async def create_or_update_contract(req: ContractRequest):
+        """Create or update a contract YAML file."""
+        import re
+        from lib.yaml_store import save_entity, load_entity, entity_exists
+        # Reuse the CLI's vocabularies rather than restating them, so the two
+        # front ends cannot drift apart on what a valid contract looks like.
+        from modules.contract import TYPES, STATUSES, SCHEDULES, RENEWAL_TYPES
+
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required")
+
+        slug = req.slug.strip()
+        if slug:
+            if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', slug):
+                raise HTTPException(status_code=400, detail="Invalid slug")
+        else:
+            slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-') or 'untitled'
+
+        if req.type not in TYPES:
+            raise HTTPException(status_code=400, detail=f"Type must be one of: {', '.join(TYPES)}")
+        if req.status not in STATUSES:
+            raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(STATUSES)}")
+        if req.payment_schedule not in SCHEDULES:
+            raise HTTPException(status_code=400,
+                                detail=f"Payment schedule must be one of: {', '.join(SCHEDULES)}")
+        if req.renewal_type and req.renewal_type not in RENEWAL_TYPES:
+            raise HTTPException(status_code=400,
+                                detail=f"Renewal type must be one of: {', '.join(RENEWAL_TYPES)}")
+
+        def _check_date(value, label):
+            if not value:
+                return ''
+            try:
+                return date.fromisoformat(value.strip()).isoformat()
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"{label} must be YYYY-MM-DD")
+
+        start_date = _check_date(req.start_date, 'Start date') or date.today().isoformat()
+        end_date = _check_date(req.end_date, 'End date')
+        first_payment = _check_date(req.first_payment_date, 'First payment date')
+        if end_date and end_date < start_date:
+            raise HTTPException(status_code=400, detail="End date cannot precede start date")
+
+        # Edit keeps whatever the file already held that this form does not
+        # cover, so saving from the web never quietly drops a hand-written key.
+        data = (load_entity('contracts', slug) or {}) if entity_exists('contracts', slug) else {}
+
+        config = load_config()
+        data.update({
+            'name': name,
+            'slug': slug,
+            'type': req.type,
+            'start_date': start_date,
+            'status': req.status,
+            'payment_schedule': req.payment_schedule,
+            'currency': data.get('currency') or config.get('pair', {}).get('currency', 'CAD'),
+        })
+
+        # Optional fields are removed when cleared, rather than left as empty
+        # strings that would read as "set to nothing" on the next load.
+        def _set(key, value):
+            if value:
+                data[key] = value
+            else:
+                data.pop(key, None)
+
+        _set('end_date', end_date)
+        _set('first_payment_date', first_payment)
+        _set('value', float(req.value) if req.value else 0)
+        _set('payment_terms', req.payment_terms.strip())
+        _set('notes', req.notes.strip())
+        _set('parties', [{'contact': p.contact.strip(), 'role': p.role.strip()}
+                         for p in req.parties if p.contact.strip()])
+        _set('linked_assets', [s.strip() for s in req.linked_assets if s.strip()])
+        _set('linked_liabilities', [s.strip() for s in req.linked_liabilities if s.strip()])
+        _set('renewal', {'type': req.renewal_type, 'notice_days': int(req.renewal_notice_days)}
+                        if req.renewal_type and req.renewal_type != 'none' else None)
+
+        save_entity('contracts', slug, data)
+        return {'status': 'ok', 'slug': slug, 'message': f"Contract '{name}' saved"}
+
+    @app.delete("/api/contract/{slug}")
+    async def delete_contract(slug: str):
+        """Delete a contract."""
+        import re
+        from lib.yaml_store import delete_entity, entity_exists
+        if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', slug):
+            raise HTTPException(status_code=400, detail="Invalid slug")
+        if not entity_exists('contracts', slug):
+            raise HTTPException(status_code=404, detail=f"Contract '{slug}' not found")
+        delete_entity('contracts', slug)
+        return {'status': 'ok', 'message': f"Contract '{slug}' deleted"}
+
+    # ─── Contract run-rate totals ────────────────────────────────────────
+    # One annual figure per side, shown at seven cadences. The cadences are
+    # rhythms, not billing schedules: a quarterly contract still contributes
+    # to the Weekly column, because the question the table answers is "what
+    # do my commitments run at", not "what bills this week".
+    CONTRACT_CADENCES = [
+        ('weekly',     'Weekly',      52),
+        ('biweekly',   'Bi-Weekly',   26),
+        ('monthly',    'Monthly',     12),
+        ('bimonthly',  'Bi-Monthly',   6),
+        ('quarterly',  'Quarterly',    4),
+        ('semiannual', 'Semi-Annual',  2),
+        ('annual',     'Annual',       1),
+    ]
+
+    # Our own role decides the side: supplying something means money comes in,
+    # receiving it means money goes out. 'employer' is a cost — we pay staff.
+    _GAIN_SELF_ROLES = {'provider', 'landlord', 'lessor', 'vendor', 'seller',
+                        'supplier', 'contractor', 'consultant', 'licensor'}
+    _COST_SELF_ROLES = {'client', 'customer', 'tenant', 'lessee', 'buyer',
+                        'insured', 'employer', 'subscriber', 'licensee'}
+
+    # The same contract type reads differently depending on the side it is on:
+    # a lease you pay is rent, a lease you collect is rental income. Unknown
+    # types fall through to a title-cased version of the type itself, so a new
+    # contract type shows up in the breakdown without a code change.
+    _COST_CATEGORY_LABELS = {'subscription': 'Subscriptions', 'employment': 'Employment',
+                             'contractor': 'Contractors', 'service': 'Services',
+                             'lease': 'Rent & Lease'}
+    _GAIN_CATEGORY_LABELS = {'subscription': 'Subscriptions', 'service': 'Contracts',
+                             'lease': 'Rental Income', 'employment': 'Employment',
+                             'contractor': 'Contracts'}
+
+    def _contract_date(value):
+        try:
+            return date.fromisoformat(str(value).strip())
+        except Exception:
+            return None
+
+    # Schedules as written in the wild map onto the seven cadences. Anything
+    # unrecognised (or absent) is treated as once a year, which is the common
+    # case for a contract that only states a total.
+    _CADENCE_ALIASES = {
+        'weekly': 'weekly', 'week': 'weekly',
+        'biweekly': 'biweekly', 'bi-weekly': 'biweekly', 'fortnightly': 'biweekly',
+        'monthly': 'monthly', 'month': 'monthly',
+        'bimonthly': 'bimonthly', 'bi-monthly': 'bimonthly',
+        'quarterly': 'quarterly', 'quarter': 'quarterly',
+        'semiannual': 'semiannual', 'semi-annual': 'semiannual',
+        'semiannually': 'semiannual', 'biannual': 'semiannual', 'half-yearly': 'semiannual',
+        'annual': 'annual', 'annually': 'annual', 'yearly': 'annual', 'year': 'annual',
+    }
+    _CADENCE_PER_YEAR = {k: n for k, _, n in CONTRACT_CADENCES}
+
+    def _contract_cadence(data):
+        raw = str(data.get('payment_schedule') or '').strip().lower()
+        return _CADENCE_ALIASES.get(raw, 'annual')
+
+    def _contract_value(data):
+        try:
+            return float(data.get('value') or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _per_occurrence(data, cadence):
+        """What actually leaves (or arrives) on one payment.
+
+        `value` is the total over the term, so a fixed term divides by the
+        number of payments it contains: BrightPath's 30,000 over a 12-month
+        quarterly term is four payments of 7,500. Open-ended contracts have no
+        term to divide by and their value is already a yearly rate — an annual
+        salary — so it divides by the cadence's occurrences per year.
+        """
+        value = _contract_value(data)
+        if not value:
+            return 0.0
+        per_year = _CADENCE_PER_YEAR.get(cadence, 1)
+        start = _contract_date(data.get('start_date'))
+        end = _contract_date(data.get('end_date'))
+        if start and end and end > start:
+            years = ((end - start).days + 1) / 365.25
+            payments = max(1, round(years * per_year))
+            return value / payments
+        return value / per_year
+
+    def _year_amount(data, year_start, year_end):
+        """How much of this contract actually falls inside the calendar year.
+
+        Independent of the rate columns: a contract that ended in May still
+        cost real money this year, and belongs in the year's true total even
+        though it is no longer part of any running commitment.
+        """
+        value = _contract_value(data)
+        if not value:
+            return 0.0
+        start = _contract_date(data.get('start_date'))
+        end = _contract_date(data.get('end_date'))
+        if start and end and end > start:
+            daily = value / ((end - start).days + 1)
+            lo, hi = max(start, year_start), min(end, year_end)
+        else:
+            daily = value / 365.25
+            lo, hi = (max(start, year_start) if start else year_start), year_end
+        if hi < lo:
+            return 0.0
+        return daily * ((hi - lo).days + 1)
+
+    def _contract_side(data, self_slug):
+        parties = data.get('parties') or []
+        self_role, other_role = '', ''
+        for p in parties:
+            role = str(p.get('role') or '').strip().lower()
+            if self_slug and p.get('contact') == self_slug:
+                self_role = role
+            elif not other_role:
+                other_role = role
+        if self_role in _GAIN_SELF_ROLES:
+            return 'gains'
+        if self_role in _COST_SELF_ROLES:
+            return 'costs'
+        # No self party, or a role we do not recognise: read the counterparty
+        # and invert. Their 'client' is our income, their 'provider' our expense.
+        if other_role in _COST_SELF_ROLES:
+            return 'gains'
+        if other_role in _GAIN_SELF_ROLES:
+            return 'costs'
+        return 'costs'   # unknown: count it as a cost rather than flatter the net
+
+    @app.get("/api/contract-totals")
+    async def contract_totals():
+        """Per-cycle cost/gain across active contracts, plus the year's total.
+
+        Two different questions in one table. The cadence columns are money
+        that actually moves on one payment, filed under the cadence the
+        contract is paid at. The year column is what the calendar year truly
+        totals, which includes contracts that have since ended.
+        """
+        config = load_config()
+        currency = config.get('pair', {}).get('currency', 'CAD')
+
+        self_slug = ''
+        for c in _load_yaml_dir('contacts'):
+            if str(c.get('role') or '').strip().lower() == 'entity':
+                self_slug = c.get('slug') or ''
+                break
+
+        today = date.today()
+        year_start, year_end = date(today.year, 1, 1), date(today.year, 12, 31)
+
+        def _blank():
+            return {k: 0.0 for k, _, _ in CONTRACT_CADENCES}
+
+        rows = {'costs': {'cadence': _blank(), 'year': 0.0},
+                'gains': {'cadence': _blank(), 'year': 0.0}}
+        cats = {'costs': {}, 'gains': {}}
+        counted = 0
+        ended_in_year = 0
+        skipped_other = 0
+
+        for data in _load_yaml_dir('contracts'):
+            if str(data.get('status') or '').strip().lower() != 'active':
+                skipped_other += 1
+                continue
+            # One-time contracts are not a cycle — they would sit under a
+            # cadence that never repeats. They still count toward the year.
+            one_time = str(data.get('payment_schedule') or '').strip().lower() == 'one-time'
+            if not _contract_value(data):
+                skipped_other += 1
+                continue
+
+            side = _contract_side(data, self_slug)
+            ctype = str(data.get('type') or '').strip().lower()
+            labels = _GAIN_CATEGORY_LABELS if side == 'gains' else _COST_CATEGORY_LABELS
+            label = labels.get(ctype) or (ctype.title() if ctype else 'Other')
+            cat = cats[side].setdefault(label, {'cadence': _blank(), 'year': 0.0})
+
+            # A contract marked active can still have run out. It is no longer
+            # a running commitment, but it did cost money this year.
+            end = _contract_date(data.get('end_date'))
+            running = not (end and end < today)
+
+            if running and not one_time:
+                cadence = _contract_cadence(data)
+                amount = _per_occurrence(data, cadence)
+                rows[side]['cadence'][cadence] += amount
+                cat['cadence'][cadence] += amount
+                counted += 1
+            elif not running:
+                ended_in_year += 1
+            else:
+                skipped_other += 1
+
+            in_year = _year_amount(data, year_start, year_end)
+            rows[side]['year'] += in_year
+            cat['year'] += in_year
+
+        def _round(entry):
+            return {'cadence': {k: round(v, 2) for k, v in entry['cadence'].items()},
+                    'year': round(entry['year'], 2)}
+
+        def _cats(side):
+            out = [dict(_round(v), label=k) for k, v in cats[side].items()]
+            return sorted(out, key=lambda r: -r['year'])
+
+        return {
+            'currency': currency,
+            'year': today.year,
+            'cadences': [{'key': k, 'label': lbl} for k, lbl, _ in CONTRACT_CADENCES],
+            'rows': {'costs': _round(rows['costs']), 'gains': _round(rows['gains'])},
+            'categories': {'costs': _cats('costs'), 'gains': _cats('gains')},
+            'counted': counted,
+            'ended_in_year': ended_in_year,
+            'skipped_other': skipped_other,
+        }
 
     class RecurringUpdate(BaseModel):
         slug: str

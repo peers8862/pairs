@@ -17,7 +17,10 @@ MODULE = "contracts"
 
 TYPES = ['service', 'lease', 'employment', 'subscription']
 STATUSES = ['active', 'expired', 'terminated', 'pending']
-SCHEDULES = ['monthly', 'quarterly', 'annual', 'one-time']
+# The full cadence spectrum, so a contract files under the rhythm it is
+# actually paid at. The totals table columns are these.
+SCHEDULES = ['weekly', 'biweekly', 'monthly', 'bimonthly', 'quarterly',
+             'semiannual', 'annual', 'one-time']
 RENEWAL_TYPES = ['auto', 'manual', 'none']
 
 
@@ -90,6 +93,12 @@ def cmd_add(flags, args):
     value = prompt("Total value (optional)", required=False,
                    validator=lambda v: validate_positive_number(v) if v else None)
     payment_schedule = prompt_choice("Payment schedule", SCHEDULES, default='monthly')
+    # When the first payment falls, with the schedule running from there. An
+    # annual premium due in March is a different cash event from one due in
+    # December even though both are 'annual'.
+    first_payment = prompt("First payment date (optional, defaults to start date)",
+                           required=False,
+                           validator=lambda v: validate_date(v) if v else None)
     payment_terms = prompt("Payment terms (optional, e.g. 'Net 30 days')", required=False)
 
     # Parties
@@ -137,6 +146,8 @@ def cmd_add(flags, args):
 
     if end_date:
         contract_data['end_date'] = end_date
+    if first_payment:
+        contract_data['first_payment_date'] = first_payment
     if value:
         contract_data['value'] = float(value)
     if payment_terms:

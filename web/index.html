@@ -91,12 +91,42 @@
         .report-controls .btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
         .report-controls input { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.75rem; color: var(--fg); font-family: inherit; font-size: 0.8rem; width: 120px; }
         .report-controls input::placeholder { color: var(--fg-dim); }
-        /* Reports break out of the 1000px reading column. hledger lays its
-           output out to the width it is given and abbreviates account names
-           first, so the register is markedly more readable wide. min() keeps
-           the breakout at zero on viewports narrower than the column. */
-        #reports-block { margin-left: min(0px, calc(500px - 50vw + 1.5rem)); margin-right: min(0px, calc(500px - 50vw + 1.5rem)); }
         .report-output { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; overflow-x: auto; white-space: pre; font-size: 0.8rem; flex: 1; min-height: 300px; }
+
+        /* Report panel. The reports block stays inside the 1000px reading
+           column so its buttons line up with the rest of the page; the width
+           the register wants is earned on demand by the expand button rather
+           than taken from every view all the time. */
+        .report-panel { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+        .report-toolbar { display: none; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+        .report-toolbar.on { display: flex; }
+        .report-toolbar input {
+            flex: 1; min-width: 0; background: var(--bg-alt); border: 1px solid var(--border);
+            border-radius: 4px; padding: 0.35rem 0.7rem; color: var(--fg);
+            font-family: inherit; font-size: 0.78rem;
+        }
+        .report-toolbar input:focus { outline: none; border-color: var(--accent); }
+        .report-toolbar input::placeholder { color: var(--fg-dim); }
+        .report-expand {
+            background: var(--bg-alt); border: 1px solid var(--border); color: var(--fg-dim);
+            border-radius: 4px; padding: 0.3rem 0.6rem; cursor: pointer;
+            font-family: inherit; font-size: 0.78rem; line-height: 1; flex: none;
+        }
+        .report-expand:hover { border-color: var(--accent); color: var(--accent); }
+
+        /* Expanded: fills the window but stops at a width that still reads as
+           a column rather than a billboard. fitReportFont() shrinks the type
+           if hledger's output is wider than the space even so. */
+        .report-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 89; }
+        .report-backdrop.on { display: block; }
+        .report-panel.expanded {
+            position: fixed; top: 1.25rem; bottom: 1.25rem; left: 50%;
+            transform: translateX(-50%);
+            width: calc(100vw - 2.5rem); max-width: 1900px;
+            z-index: 90; background: var(--bg); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 0.85rem;
+        }
+        .report-panel.expanded .report-output { min-height: 0; overflow: auto; }
 </style>
 </head>
     <style>
@@ -177,6 +207,56 @@
         .btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--green); color: var(--bg); padding: 0.75rem 1.5rem; border-radius: var(--radius); font-size: 0.85rem; transition: transform 0.3s ease; z-index: 100; }
         .toast.show { transform: translateX(-50%) translateY(0); }
+        /* Contract run-rate totals. Meant to be read at a glance and often,
+           so: no card, no borders except one hairline per row, numbers in
+           tabular figures so the columns line up vertically. */
+        .ct-totals { margin-bottom: 0.9rem; overflow-x: auto; }
+        .ct-totals table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+        .ct-totals th {
+            text-align: right; font-weight: normal; color: var(--fg-dim);
+            font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase;
+            padding: 0 0 0.35rem 1rem; white-space: nowrap;
+        }
+        .ct-totals th:first-child { text-align: left; padding-left: 0; }
+        .ct-totals td {
+            text-align: right; padding: 0.4rem 0 0.4rem 1rem; white-space: nowrap;
+            font-variant-numeric: tabular-nums; border-top: 1px solid var(--border);
+        }
+        .ct-totals td:first-child { text-align: left; padding-left: 0; color: var(--fg-dim); }
+        .ct-row-costs td { color: var(--red); }
+        .ct-row-gains td { color: var(--green); }
+        /* The year total answers a different question from the cycle columns
+           (what the year really came to, vs what moves each period), so it is
+           ruled off rather than sitting flush with them. */
+        .ct-totals .ct-year-col { border-left: 1px solid var(--border); padding-left: 1rem; }
+        .ct-totals .ct-label { color: var(--fg-dim) !important; }
+        /* The expandable rule under Gains: a full-width hairline that is also
+           the control. Its label sits inline so the line reads as one object. */
+        .ct-expand {
+            display: flex; align-items: center; gap: 0.5rem; width: 100%;
+            background: none; border: none; padding: 0.45rem 0; cursor: pointer;
+            color: var(--fg-dim); font-family: inherit; font-size: 0.68rem;
+            letter-spacing: 0.04em; text-transform: uppercase;
+        }
+        .ct-expand:hover { color: var(--accent); }
+        .ct-expand::after {
+            content: ''; flex: 1; height: 1px; background: var(--border);
+        }
+        .ct-expand:hover::after { background: var(--accent); }
+        /* Breakdown rows live in the same table as the totals — a second table
+           would size its columns independently and the figures would not line
+           up under the ones they break down. */
+        .ct-breakdown-row { display: none; }
+        .ct-totals.open .ct-breakdown-row { display: table-row; }
+        .ct-breakdown-row td:first-child { padding-left: 0.9rem; }
+        .ct-rule-row td { border-top: none; padding: 0; }
+        .ct-side-head td {
+            color: var(--fg-dim) !important; font-size: 0.68rem;
+            letter-spacing: 0.04em; text-transform: uppercase; border-top: none;
+            padding-top: 0.55rem;
+        }
+        .ct-note { color: var(--fg-dim); font-size: 0.68rem; margin-top: 0.4rem; }
+
         #data-content { margin-top: 0.5rem; overflow-x: auto; }
         #data-content table { min-width: 600px; }
         #data-content .empty, .account-list .empty { padding: 2rem; text-align: center; color: var(--fg-dim); }
@@ -313,6 +393,9 @@
                 <div style="position:relative;height:36px;"><canvas id="spark-profit"></canvas></div>
             </div>
         </div>
+        <!-- Dense performance-ratio strip: one unbroken line of figures. Minimal
+             styling by design — labels dimmed, values in the mono flow. -->
+        <div id="dash-metrics" style="font-size:0.68rem;line-height:1.6;color:var(--fg-dim);margin:-0.25rem 0 1rem;letter-spacing:0.01em;"></div>
         <!-- Tax totals sit above the entry box on the entity page -->
         <div id="dash-tax-slot"></div>
         <!-- Quick Entry -->
@@ -348,6 +431,7 @@
                 <button class="btn" onclick="dashShowMain()" style="font-size:0.8rem;padding:0.3rem 0.6rem;">← Dash</button>
                 <span id="dash-manage-title" style="color:var(--accent);font-size:0.9rem;font-weight:bold;"></span>
             </div>
+            <div id="dash-manage-totals"></div>
             <div id="dash-manage-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
             <div id="dash-manage-data"></div>
         </div>
@@ -440,7 +524,15 @@
             <button class="btn" onclick="loadReport('register')">Register</button>
             <input type="text" id="report-period" placeholder="period (e.g. 2026)">
         </div>
-        <pre class="report-output" id="report-output">Select a report above...</pre>
+        <div class="report-panel" id="report-panel">
+            <!-- Register only: free-text filter and the expand toggle. -->
+            <div class="report-toolbar" id="report-toolbar">
+                <input type="text" id="report-filter" placeholder="filter the register (e.g. groceries, acct:bank, amt:&gt;100)">
+                <button class="report-expand" id="report-expand-btn" onclick="toggleReportExpand()" title="Expand to full window">⤢ Expand</button>
+            </div>
+            <pre class="report-output" id="report-output">Select a report above...</pre>
+        </div>
+        <div class="report-backdrop" id="report-backdrop" onclick="toggleReportExpand()"></div>
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.85rem 1rem;margin-top:1rem;">
             <div style="color:var(--accent);font-size:0.85rem;margin-bottom:0.6rem;">Export</div>
             <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
@@ -520,6 +612,7 @@
                 <button class="btn" onclick="recShowMain()" style="font-size:0.8rem;padding:0.3rem 0.6rem;">← Records</button>
                 <span id="rec-manage-title" style="color:var(--accent);font-size:0.9rem;font-weight:bold;"></span>
             </div>
+            <div id="rec-manage-totals"></div>
             <div id="rec-manage-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
             <div id="rec-manage-data"></div>
         </div>
@@ -1290,6 +1383,132 @@
         </div>
     </div>
 
+    <!-- Contract Modal (full form) -->
+    <div id="contract-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:60;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:92%;max-width:600px;max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <span style="color:var(--accent);font-weight:bold;" id="contract-modal-title">Add Contract</span>
+                <button onclick="closeContractModal()" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div style="display:grid;gap:0.75rem;font-size:0.85rem;">
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Name</label>
+                    <input type="text" id="contract-name" placeholder="e.g. CloudNorth Infrastructure Agreement" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Type</label>
+                        <select id="contract-type" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="service">Service</option>
+                            <option value="lease">Lease</option>
+                            <option value="employment">Employment</option>
+                            <option value="subscription">Subscription</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Status</label>
+                        <select id="contract-status" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="active">Active</option>
+                            <option value="pending">Pending</option>
+                            <option value="expired">Expired</option>
+                            <option value="terminated">Terminated</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Start Date</label>
+                        <input type="date" id="contract-start" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">End Date <span style="opacity:0.6;">(blank = open-ended)</span></label>
+                        <input type="date" id="contract-end" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Total Value</label>
+                        <input type="number" id="contract-value" step="0.01" min="0" placeholder="0.00" oninput="updateContractPerOccurrence()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Payment Schedule</label>
+                        <select id="contract-schedule" onchange="updateContractPerOccurrence()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="weekly">Weekly</option>
+                            <option value="biweekly">Bi-Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="bimonthly">Bi-Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="semiannual">Semi-Annual</option>
+                            <option value="annual">Annual</option>
+                            <option value="one-time">One-Time</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;align-items:end;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">First Payment Date <span style="opacity:0.6;">(blank = start)</span></label>
+                        <input type="date" id="contract-first-payment" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div id="contract-per-occurrence" style="color:var(--green);font-size:0.8rem;text-align:right;padding:0.5rem 0;"></div>
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Payment Terms</label>
+                    <input type="text" id="contract-terms" placeholder="e.g. Net 30 days" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                </div>
+
+                <!-- Parties. Each row is a contact slug + their role; the entity's
+                     own side is what decides cost vs gain in the totals table. -->
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem;">
+                        <span>Parties</span>
+                        <button type="button" class="btn" onclick="addContractParty()" style="font-size:0.7rem;padding:0.15rem 0.5rem;">+ Party</button>
+                    </label>
+                    <div id="contract-parties"></div>
+                    <div style="color:var(--fg-dim);font-size:0.7rem;margin-top:0.25rem;">Roles like <code>client</code>/<code>provider</code>, <code>tenant</code>/<code>landlord</code>, <code>employee</code>/<code>employer</code>. Your own side sets whether this is a cost or a gain.</div>
+                </div>
+
+                <!-- Renewal, optional. Notice-days only matter once a type is set. -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Renewal</label>
+                        <select id="contract-renewal" onchange="toggleContractRenewal()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                            <option value="">None</option>
+                            <option value="auto">Auto-renew</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+                    <div id="contract-notice-group" style="display:none;">
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Notice Days</label>
+                        <input type="number" id="contract-notice" min="0" value="30" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Linked Assets <span style="opacity:0.6;">(slugs, comma-sep)</span></label>
+                        <input type="text" id="contract-assets" placeholder="e.g. company-laptop" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Linked Liabilities <span style="opacity:0.6;">(slugs, comma-sep)</span></label>
+                        <input type="text" id="contract-liabilities" placeholder="e.g. equipment-loan" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div>
+                    <label style="color:var(--fg-dim);font-size:0.75rem;display:block;margin-bottom:0.25rem;">Notes</label>
+                    <textarea id="contract-notes" rows="2" placeholder="Optional notes" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:var(--fg);font-family:inherit;font-size:0.85rem;box-sizing:border-box;resize:vertical;"></textarea>
+                </div>
+            </div>
+            <div style="margin-top:1.25rem;display:flex;gap:0.5rem;justify-content:space-between;align-items:center;">
+                <button class="btn" id="contract-delete-btn" onclick="deleteContract()" style="font-size:0.8rem;padding:0.4rem 0.75rem;color:var(--red);border-color:var(--red);display:none;">Delete</button>
+                <div style="display:flex;gap:0.5rem;margin-left:auto;">
+                    <button class="btn" onclick="closeContractModal()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">Cancel</button>
+                    <button class="btn" onclick="saveContract()" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:var(--accent);color:var(--bg);border-color:var(--accent);">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <datalist id="contract-contact-list"></datalist>
+
     <!-- Payroll Settings Modal -->
     <div id="payroll-settings-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:65;align-items:center;justify-content:center;">
         <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:90%;max-width:440px;">
@@ -1756,23 +1975,33 @@
     // How many monospace characters fit across the report panel. hledger lays
     // its output out in columns, so it needs a column count, not pixels —
     // without this the register elides account names to fit 80.
+    // Keyed by the font string, not a bare number: fitReportFont() changes the
+    // output's font-size, and a width cached at the old size would ask hledger
+    // for the wrong column count.
+    let monoCharWidths = {};
     let monoCharWidth = 0;
     function reportColumns(el) {
         if (!el) return 0;
-        if (!monoCharWidth) {
+        const font = getComputedStyle(el).font;
+        if (!monoCharWidths[font]) {
             const probe = document.createElement('span');
             probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;';
-            probe.style.font = getComputedStyle(el).font;
+            probe.style.font = font;
             probe.textContent = '0'.repeat(100);
             document.body.appendChild(probe);
-            monoCharWidth = probe.getBoundingClientRect().width / 100;
+            monoCharWidths[font] = probe.getBoundingClientRect().width / 100;
             probe.remove();
         }
+        monoCharWidth = monoCharWidths[font];
         if (!monoCharWidth) return 0;
         const cs = getComputedStyle(el);
         const inner = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
         return Math.max(60, Math.floor(inner / monoCharWidth));
     }
+
+    // The register is the only report with a filter and an expand toggle, so
+    // the toolbar follows whichever report is currently loaded.
+    let currentReport = '';
 
     async function loadReport(cmd, scroll = true) {
         // Highlight by name rather than event.target — this is also called
@@ -1782,15 +2011,33 @@
             b.classList.toggle('active', (b.getAttribute('onclick') || '').includes("'" + cmd + "'"));
         });
 
+        currentReport = cmd;
+        const isRegister = cmd === 'register';
+        document.getElementById('report-toolbar').classList.toggle('on', isRegister);
+        // Leaving the register drops both the filter and the expanded state —
+        // neither means anything for a balance sheet.
+        if (!isRegister) {
+            document.getElementById('report-filter').value = '';
+            if (isReportExpanded()) collapseReport();
+        }
+
         const period = document.getElementById('report-period').value;
         const output = document.getElementById('report-output');
+        const filter = isRegister ? document.getElementById('report-filter').value.trim() : '';
+        // Always ask for the column count that fits at the *readable* size.
+        // Measuring at a shrunken font would report more columns, hledger would
+        // return wider output, and fitReportFont would shrink again to match —
+        // a loop that bottoms out at REPORT_FONT_MIN for no reason.
+        output.style.fontSize = REPORT_FONT_MAX + 'rem';
         let url = '/api/report?cmd=' + cmd + '&width=' + reportColumns(output);
         if (period) url += '&period=' + encodeURIComponent(period);
+        if (filter) url += '&query=' + encodeURIComponent(filter);
 
         output.textContent = 'Running…';
 
         const data = await fetch(url).then(r => r.json());
         output.textContent = data.error ? data.error : (data.output || '(no output)');
+        fitReportFont();
         // Put the report's own tab row at the top of the window — the same jump
         // the Records query stamp makes. After the output lands, so the page
         // height it is measured against is the final one. Not on the automatic
@@ -1798,6 +2045,79 @@
         if (scroll) scrollToTopOf(controls, activeSpacer());
         else makeRoomBelow(controls, activeSpacer());
     }
+
+    // ─── Register: expand + filter ──────────────────────────────────────────
+    // hledger is told a column count and lays its output out to fit, so a
+    // wider panel is not enough on its own — the report has to be re-run at
+    // the new width. Both toggles therefore end in a reload.
+    const REPORT_FONT_MAX = 0.8;   // rem, matches .report-output
+    const REPORT_FONT_MIN = 0.58;  // below this it stops being readable
+
+    function isReportExpanded() {
+        return document.getElementById('report-panel').classList.contains('expanded');
+    }
+
+    // hledger honours --width for account names but not for every amount, so
+    // long lines can still overrun. Step the type down until the widest line
+    // fits, rather than leaving the user to scroll sideways.
+    function fitReportFont() {
+        const output = document.getElementById('report-output');
+        if (!output) return;
+        let size = REPORT_FONT_MAX;
+        output.style.fontSize = size + 'rem';
+        if (!isReportExpanded()) return;   // narrow view keeps its scrollbar
+        while (output.scrollWidth > output.clientWidth && size > REPORT_FONT_MIN) {
+            size = Math.round((size - 0.02) * 100) / 100;
+            output.style.fontSize = size + 'rem';
+        }
+    }
+
+    function collapseReport() {
+        document.getElementById('report-panel').classList.remove('expanded');
+        document.getElementById('report-backdrop').classList.remove('on');
+        document.getElementById('report-expand-btn').textContent = '⤢ Expand';
+        document.body.style.overflow = '';
+    }
+
+    function toggleReportExpand() {
+        const panel = document.getElementById('report-panel');
+        if (isReportExpanded()) {
+            collapseReport();
+        } else {
+            panel.classList.add('expanded');
+            document.getElementById('report-backdrop').classList.add('on');
+            document.getElementById('report-expand-btn').textContent = '⤡ Close';
+            document.body.style.overflow = 'hidden';
+        }
+        // Re-run at the new width. No scroll — the panel is where the user is
+        // already looking, and scrolling the page under a fixed overlay is
+        // just motion for its own sake.
+        loadReport(currentReport || 'register', false);
+    }
+
+    // Debounced so a re-run does not fire on every keystroke.
+    let reportFilterTimer = null;
+    document.getElementById('report-filter').addEventListener('input', () => {
+        clearTimeout(reportFilterTimer);
+        reportFilterTimer = setTimeout(() => loadReport('register', false), 300);
+    });
+    document.getElementById('report-filter').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { clearTimeout(reportFilterTimer); loadReport('register', false); }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isReportExpanded()) toggleReportExpand();
+    });
+    // Resizing changes how many columns fit, and hledger baked the old count
+    // into the text it already returned. Shrinking the type alone would floor
+    // it at REPORT_FONT_MIN on the way down and leave the report narrow on the
+    // way up, so re-run and let hledger re-lay it out.
+    let reportResizeTimer = null;
+    window.addEventListener('resize', () => {
+        if (!isReportExpanded()) return;
+        clearTimeout(reportResizeTimer);
+        reportResizeTimer = setTimeout(() => loadReport(currentReport || 'register', false), 250);
+    });
 
     // ─── Quick Entry (dashboard) ────────────────────────────────────────────
     // Steps: description -> account -> amount -> (repeat) -> balance -> tags -> date -> write
@@ -2444,9 +2764,9 @@
             }
             content.innerHTML = html + '</tbody></table>';
         } else if (type === 'contracts') {
-            let html = '<table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Value</th><th>End Date</th></tr></thead><tbody>';
+            let html = '<table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Value</th><th>Schedule</th><th>End Date</th></tr></thead><tbody>';
             for (const item of items) {
-                html += `<tr><td>${esc(item.name||'')}</td><td>${esc(item.type||'')}</td><td>${esc(item.status||'')}</td><td>${item.value ? (item.currency||'CAD')+' '+(item.value).toLocaleString() : '—'}</td><td>${esc(item.end_date||'—')}</td></tr>`;
+                html += `<tr style="cursor:pointer;" onclick='openContractModal(${JSON.stringify(item).replace(/'/g,"&#39;")})'><td>${esc(item.name||'')}</td><td>${esc(item.type||'')}</td><td>${esc(item.status||'')}</td><td>${item.value ? (item.currency||'CAD')+' '+(item.value).toLocaleString() : '—'}</td><td>${esc(item.payment_schedule||'—')}</td><td>${esc(item.end_date||'—')}</td></tr>`;
             }
             content.innerHTML = html + '</tbody></table>';
         } else if (type === 'recurring') {
@@ -2558,13 +2878,19 @@
                     <button class="btn" onclick="quickAddRecurring()" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
                 </div>
             </div>`,
-            contracts: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                <span style="color:var(--accent);font-size:0.8rem;">+ Contract</span>
-                <input type="text" id="add-name" placeholder="name" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <input type="text" id="add-type" placeholder="type" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <input type="text" id="add-value" placeholder="value" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;">
-                <input type="text" id="add-end" placeholder="end date" style="width:90px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;">
-                <button class="btn" onclick="addItem('contracts')" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Add</button>
+            contracts: `<div style="display:grid;grid-template-columns:auto 1fr;gap:0.4rem 0.5rem;align-items:center;">
+                <button class="btn" onclick="openContractModal()" style="font-size:0.8rem;padding:0.35rem 0.6rem;color:var(--accent);border-color:var(--accent);" title="Full form">+ Contract</button>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="cq-name" placeholder="name" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="1">
+                    <select id="cq-type" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="2">
+                        <option value="service">service</option><option value="lease">lease</option><option value="employment">employment</option><option value="subscription">subscription</option>
+                    </select>
+                    <input type="text" id="cq-value" placeholder="value" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;text-align:right;" tabindex="3">
+                    <select id="cq-schedule" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.35rem 0.5rem;color:var(--fg);font-family:inherit;font-size:0.8rem;" tabindex="4">
+                        <option value="weekly">weekly</option><option value="biweekly">biweekly</option><option value="monthly" selected>monthly</option><option value="bimonthly">bimonthly</option><option value="quarterly">quarterly</option><option value="semiannual">semiannual</option><option value="annual">annual</option><option value="one-time">one-time</option>
+                    </select>
+                    <button class="btn" onclick="quickAddContract()" style="font-size:0.8rem;padding:0.35rem 0.75rem;" tabindex="5">Add</button>
+                </div>
             </div>`,
             contacts: `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
                 <span style="color:var(--accent);font-size:0.8rem;">+ Contact</span>
@@ -2790,10 +3116,98 @@
     // (loadDataInto) wherever it is opened — only the container differs.
     const MANAGE_SCOPES = {
         dash: { main: 'dash-main-content', panel: 'dash-manage-content', title: 'dash-manage-title',
-                form: 'dash-manage-form', data: 'dash-manage-data', btns: 'dash-manage-btns' },
+                form: 'dash-manage-form', data: 'dash-manage-data', btns: 'dash-manage-btns',
+                totals: 'dash-manage-totals' },
         rec:  { main: 'rec-main-content',  panel: 'rec-manage-content',  title: 'rec-manage-title',
-                form: 'rec-manage-form',  data: 'rec-manage-data',  btns: 'rec-manage-btns' },
+                form: 'rec-manage-form',  data: 'rec-manage-data',  btns: 'rec-manage-btns',
+                totals: 'rec-manage-totals' },
     };
+
+    // ─── Contract run-rate totals ───────────────────────────────────────────
+    // Costs and Gains stacked, the same annual commitment shown at seven
+    // cadences. Sits above the entry module so the running picture is the
+    // first thing on the page, not something you go looking for.
+    let ctBreakdownOpen = false;
+
+    function ctMoney(v) {
+        if (!v) return '—';
+        return v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    function toggleContractBreakdown() {
+        ctBreakdownOpen = !ctBreakdownOpen;
+        document.querySelectorAll('.ct-totals').forEach(el => el.classList.toggle('open', ctBreakdownOpen));
+        document.querySelectorAll('.ct-expand-label').forEach(el => {
+            el.textContent = ctBreakdownOpen ? 'hide categories' : 'per category';
+        });
+    }
+
+    async function renderContractTotals(container) {
+        const d = await fetch('/api/contract-totals').then(r => r.json()).catch(() => null);
+        if (!d || !d.cadences) { container.innerHTML = ''; return; }
+        if (!d.counted) {
+            container.innerHTML = '<div class="ct-note">No active contracts to total.</div>';
+            return;
+        }
+
+        const cads = d.cadences;
+        const cols = cads.length + 2;   // label + cadences + year
+        const head = '<tr><th></th>' + cads.map(c => `<th>${esc(c.label)}</th>`).join('')
+                   + `<th class="ct-year-col">${d.year}</th></tr>`;
+
+        // Bold whichever side is larger in each column, and bold the row's own
+        // name for whichever is larger over the year. Now that a contract sits
+        // only in its own cadence, the winner genuinely differs column to
+        // column — Gains take Quarterly while Costs take Bi-Weekly.
+        const yearWinner = d.rows.gains.year > d.rows.costs.year ? 'gains'
+                         : d.rows.costs.year > d.rows.gains.year ? 'costs' : '';
+        const cell = (mine, theirs, cls) => {
+            const txt = ctMoney(mine);
+            return `<td${cls ? ` class="${cls}"` : ''}>${mine && mine > theirs ? `<b>${txt}</b>` : txt}</td>`;
+        };
+        const row = (side, cls, label, mineRow, otherRow) => {
+            const name = side === yearWinner ? `<b>${label}</b>` : label;
+            const cells = cads.map(c => cell(mineRow.cadence[c.key], otherRow.cadence[c.key])).join('')
+                        + cell(mineRow.year, otherRow.year, 'ct-year-col');
+            return `<tr class="${cls}"><td class="ct-label">${name}</td>${cells}</tr>`;
+        };
+
+        // Each side's categories, indented under a heading. Only rendered for
+        // sides that have any, so an entity with no income shows no Gains block.
+        const catRows = (side, heading) => {
+            const rows = d.categories[side] || [];
+            if (!rows.length) return '';
+            const sideCls = side === 'gains' ? 'ct-row-gains' : 'ct-row-costs';
+            return `<tr class="ct-breakdown-row ct-side-head"><td colspan="${cols}">${heading}</td></tr>`
+                + rows.map(r => `<tr class="ct-breakdown-row ${sideCls}">`
+                    + `<td class="ct-label">${esc(r.label)}</td>`
+                    + cads.map(c => `<td>${ctMoney(r.cadence[c.key])}</td>`).join('')
+                    + `<td class="ct-year-col">${ctMoney(r.year)}</td></tr>`).join('');
+        };
+
+        const notes = [];
+        if (d.ended_in_year) notes.push(d.ended_in_year + ' ended — in ' + d.year + ' only');
+        if (d.skipped_other) notes.push(d.skipped_other + ' not a cycle');
+
+        container.innerHTML = `
+            <div class="ct-totals${ctBreakdownOpen ? ' open' : ''}">
+                <table>
+                    <thead>${head}</thead>
+                    <tbody>
+                        ${row('costs', 'ct-row-costs', 'Costs', d.rows.costs, d.rows.gains)}
+                        ${row('gains', 'ct-row-gains', 'Gains', d.rows.gains, d.rows.costs)}
+                        <tr class="ct-rule-row"><td colspan="${cols}">
+                            <button class="ct-expand" onclick="toggleContractBreakdown()">
+                                <span class="ct-expand-label">${ctBreakdownOpen ? 'hide categories' : 'per category'}</span>
+                            </button>
+                        </td></tr>
+                        ${catRows('costs', 'Costs')}
+                        ${catRows('gains', 'Gains')}
+                    </tbody>
+                </table>
+                ${notes.length ? `<div class="ct-note">${d.counted} on cycle · ${esc(notes.join(' · '))}</div>` : ''}
+            </div>`;
+    }
 
     function manageOpen(scope, type) {
         const s = MANAGE_SCOPES[scope];
@@ -2806,6 +3220,13 @@
             b.classList.toggle('active', b.textContent.trim().toLowerCase() === type);
         });
         showAddForm(type, document.getElementById(s.form));
+        // Contracts carry a run-rate table above the entry module. Cleared for
+        // every other module so a stale one cannot outlive its panel.
+        const totals = document.getElementById(s.totals);
+        if (totals) {
+            totals.innerHTML = '';
+            if (type === 'contracts') renderContractTotals(totals);
+        }
         const content = document.getElementById(s.data);
         content.innerHTML = '<div class="empty">Loading...</div>';
         return loadDataInto(type, content);
@@ -2937,9 +3358,9 @@
             }
             container.innerHTML = html + '</tbody></table>';
         } else if (type === 'contracts') {
-            let html = '<table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Value</th><th>End Date</th></tr></thead><tbody>';
+            let html = '<table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Value</th><th>Schedule</th><th>End Date</th></tr></thead><tbody>';
             for (const item of items) {
-                html += '<tr><td>' + esc(item.name||'') + '</td><td>' + esc(item.type||'') + '</td><td>' + esc(item.status||'') + '</td><td>' + (item.value ? (item.currency||'CAD')+' '+(item.value).toLocaleString() : '—') + '</td><td>' + esc(item.end_date||'—') + '</td></tr>';
+                html += '<tr style="cursor:pointer;" onclick=\'openContractModal(' + JSON.stringify(item).replace(/'/g,"&#39;") + ')\'><td>' + esc(item.name||'') + '</td><td>' + esc(item.type||'') + '</td><td>' + esc(item.status||'') + '</td><td>' + (item.value ? (item.currency||'CAD')+' '+(item.value).toLocaleString() : '—') + '</td><td>' + esc(item.payment_schedule||'—') + '</td><td>' + esc(item.end_date||'—') + '</td></tr>';
             }
             container.innerHTML = html + '</tbody></table>';
         } else if (type === 'recurring') {
@@ -3234,6 +3655,236 @@
             showToast('Network error: ' + e.message, true);
         }
     }
+
+    // ─── Contract Modal ─────────────────────────────────────────────────────
+    // Full contract form, same shape as the asset/liability modals: a row is
+    // clickable to edit, the + button opens a blank one, and the inline quick
+    // row on the manage panel handles the common case.
+    let editingContractSlug = null;
+
+    // Cadences per year, mirroring CONTRACT_CADENCES on the server. Drives the
+    // live "per payment" hint so the number is visible before saving.
+    const CONTRACT_PER_YEAR = { weekly:52, biweekly:26, monthly:12, bimonthly:6,
+                                quarterly:4, semiannual:2, annual:1, 'one-time':1 };
+
+    function contractPartyRow(contact, role) {
+        const box = 'background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.6rem;color:var(--fg);font-family:inherit;font-size:0.8rem;';
+        const div = document.createElement('div');
+        div.className = 'contract-party-row';
+        div.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem;';
+        div.innerHTML = `
+            <input type="text" class="cp-contact" list="contract-contact-list" placeholder="contact slug" value="${esc(contact||'')}" style="flex:2;min-width:0;${box}">
+            <input type="text" class="cp-role" placeholder="role" value="${esc(role||'')}" style="flex:1;min-width:0;${box}">
+            <button type="button" class="btn" onclick="this.closest('.contract-party-row').remove()" style="font-size:0.75rem;padding:0.25rem 0.5rem;color:var(--red);border-color:var(--red);">✕</button>`;
+        return div;
+    }
+
+    function addContractParty(contact, role) {
+        document.getElementById('contract-parties').appendChild(contractPartyRow(contact, role));
+    }
+
+    function toggleContractRenewal() {
+        const on = !!document.getElementById('contract-renewal').value;
+        document.getElementById('contract-notice-group').style.display = on ? 'block' : 'none';
+    }
+
+    // Per-payment estimate. Fixed terms divide the value across the payments in
+    // the term; open-ended contracts divide the yearly rate by the cadence.
+    function updateContractPerOccurrence() {
+        const el = document.getElementById('contract-per-occurrence');
+        const value = parseFloat(document.getElementById('contract-value').value) || 0;
+        const sched = document.getElementById('contract-schedule').value;
+        if (!value) { el.textContent = ''; return; }
+        if (sched === 'one-time') { el.textContent = 'one-time payment'; return; }
+        const perYear = CONTRACT_PER_YEAR[sched] || 1;
+        const start = document.getElementById('contract-start').value;
+        const end = document.getElementById('contract-end').value;
+        let payments = perYear;
+        if (start && end && end > start) {
+            const years = (new Date(end) - new Date(start)) / (365.25 * 864e5) + 1/365.25;
+            payments = Math.max(1, Math.round(years * perYear));
+            const per = value / payments;
+            el.textContent = '≈ ' + per.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + ' × ' + payments;
+        } else {
+            const per = value / perYear;
+            el.textContent = '≈ ' + per.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + ' / payment';
+        }
+    }
+
+    async function loadContractContacts() {
+        const dl = document.getElementById('contract-contact-list');
+        if (!dl || dl.dataset.loaded) return;
+        try {
+            const d = await fetch('/api/contacts').then(r => r.json());
+            dl.innerHTML = (d.items || []).map(c =>
+                `<option value="${esc(c.slug||'')}">${esc(c.name||'')}</option>`).join('');
+            dl.dataset.loaded = '1';
+        } catch (e) { /* suggestions are optional */ }
+    }
+
+    function openContractModal(item) {
+        loadContractContacts();
+        const modal = document.getElementById('contract-modal');
+        const title = document.getElementById('contract-modal-title');
+        const deleteBtn = document.getElementById('contract-delete-btn');
+        const parties = document.getElementById('contract-parties');
+        parties.innerHTML = '';
+
+        const set = (id, v) => { document.getElementById(id).value = v; };
+        if (item) {
+            title.textContent = 'Edit Contract';
+            editingContractSlug = item.slug || '';
+            set('contract-name', item.name || '');
+            set('contract-type', item.type || 'service');
+            set('contract-status', item.status || 'active');
+            set('contract-start', item.start_date || '');
+            set('contract-end', item.end_date || '');
+            set('contract-value', item.value || '');
+            set('contract-schedule', item.payment_schedule || 'monthly');
+            set('contract-first-payment', item.first_payment_date || '');
+            set('contract-terms', item.payment_terms || '');
+            (item.parties || []).forEach(p => addContractParty(p.contact, p.role));
+            set('contract-renewal', (item.renewal || {}).type || '');
+            set('contract-notice', (item.renewal || {}).notice_days || 30);
+            set('contract-assets', (item.linked_assets || []).join(', '));
+            set('contract-liabilities', (item.linked_liabilities || []).join(', '));
+            set('contract-notes', item.notes || '');
+            deleteBtn.style.display = 'inline-block';
+        } else {
+            title.textContent = 'Add Contract';
+            editingContractSlug = null;
+            set('contract-name', '');
+            set('contract-type', 'service');
+            set('contract-status', 'active');
+            set('contract-start', state.today);
+            set('contract-end', '');
+            set('contract-value', '');
+            set('contract-schedule', 'monthly');
+            set('contract-first-payment', '');
+            set('contract-terms', '');
+            set('contract-renewal', '');
+            set('contract-notice', '30');
+            set('contract-assets', '');
+            set('contract-liabilities', '');
+            set('contract-notes', '');
+            deleteBtn.style.display = 'none';
+        }
+        toggleContractRenewal();
+        updateContractPerOccurrence();
+        modal.style.display = 'flex';
+    }
+
+    function closeContractModal() {
+        document.getElementById('contract-modal').style.display = 'none';
+        editingContractSlug = null;
+    }
+
+    function refreshContracts() {
+        if (manageActiveScope()) manageRefresh('contracts');
+        else loadData('contracts');
+    }
+
+    function collectContractPayload() {
+        const val = id => document.getElementById(id).value.trim();
+        const parties = [...document.querySelectorAll('#contract-parties .contract-party-row')]
+            .map(r => ({ contact: r.querySelector('.cp-contact').value.trim(),
+                         role: r.querySelector('.cp-role').value.trim() }))
+            .filter(p => p.contact);
+        const csv = id => val(id).split(',').map(s => s.trim()).filter(Boolean);
+        return {
+            name: val('contract-name'),
+            slug: editingContractSlug || '',
+            type: document.getElementById('contract-type').value,
+            status: document.getElementById('contract-status').value,
+            start_date: val('contract-start'),
+            end_date: val('contract-end'),
+            value: parseFloat(document.getElementById('contract-value').value) || 0,
+            payment_schedule: document.getElementById('contract-schedule').value,
+            first_payment_date: val('contract-first-payment'),
+            payment_terms: val('contract-terms'),
+            parties: parties,
+            renewal_type: document.getElementById('contract-renewal').value,
+            renewal_notice_days: parseInt(document.getElementById('contract-notice').value) || 30,
+            linked_assets: csv('contract-assets'),
+            linked_liabilities: csv('contract-liabilities'),
+            notes: val('contract-notes'),
+        };
+    }
+
+    async function saveContract() {
+        const payload = collectContractPayload();
+        if (!payload.name) { showToast('Name is required', true); return; }
+        try {
+            const res = await fetch('/api/contract', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Contract saved');
+                closeContractModal();
+                refreshContracts();
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed to save'), true);
+            }
+        } catch (e) {
+            showToast('Network error: ' + e.message, true);
+        }
+    }
+
+    async function deleteContract() {
+        if (!editingContractSlug) return;
+        if (!confirm(`Delete contract "${editingContractSlug}"? This cannot be undone.`)) return;
+        try {
+            const res = await fetch(`/api/contract/${encodeURIComponent(editingContractSlug)}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Contract deleted');
+                closeContractModal();
+                refreshContracts();
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed to delete'), true);
+            }
+        } catch (e) {
+            showToast('Network error: ' + e.message, true);
+        }
+    }
+
+    async function quickAddContract() {
+        const name = document.getElementById('cq-name')?.value.trim();
+        if (!name) { showToast('Name is required', true); return; }
+        const payload = {
+            name: name,
+            type: document.getElementById('cq-type').value,
+            value: parseFloat(document.getElementById('cq-value').value) || 0,
+            payment_schedule: document.getElementById('cq-schedule').value,
+            start_date: state.today,
+        };
+        try {
+            const res = await fetch('/api/contract', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Contract added');
+                document.getElementById('cq-name').value = '';
+                document.getElementById('cq-value').value = '';
+                refreshContracts();
+            } else {
+                showToast('Error: ' + (data.detail || 'Failed'), true);
+            }
+        } catch (e) {
+            showToast('Network error: ' + e.message, true);
+        }
+    }
+
+    // Recompute the per-payment hint when the dates change too.
+    ['contract-start', 'contract-end'].forEach(id =>
+        document.getElementById(id)?.addEventListener('change', updateContractPerOccurrence));
+    document.getElementById('contract-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeContractModal();
+    });
 
     // Inline quick-add: Enter advances through fields, submits from last
     document.addEventListener('keydown', function(e) {
@@ -4145,6 +4796,61 @@
             const color = profitData[profitData.length-1] >= 0 ? '#98c379' : '#e06c75';
             createSparkline('spark-profit', profitData, color);
         }
+
+        loadMetrics(periodParam);
+    }
+
+    // Dense performance strip. One line, no chrome — just labelled figures the
+    // way a terminal ledger would print them. Values that carry a sign (money,
+    // margins) tint green/red; pure ratios stay neutral.
+    async function loadMetrics(periodParam) {
+        const el = document.getElementById('dash-metrics');
+        if (!el) return;
+        let m;
+        try { m = await fetch('/api/metrics' + periodParam).then(r => r.json()); }
+        catch (e) { el.textContent = ''; return; }
+
+        const cur = m.currency || '';
+        // Compact money: k/M suffixes keep the row from wrapping on big books.
+        const money = (n) => {
+            if (n == null) return '—';
+            const a = Math.abs(n);
+            const s = a >= 1e6 ? (n/1e6).toFixed(1) + 'M'
+                    : a >= 1e3 ? (n/1e3).toFixed(1) + 'k'
+                    : n.toFixed(0);
+            return cur + ' ' + s;
+        };
+        const pct = (r) => r == null ? '—' : (r*100).toFixed(1) + '%';
+        const mult = (r) => r == null ? '—' : r.toFixed(2) + '×';
+        // Sign tint only where a sign is meaningful.
+        const tint = (v, raw) => {
+            if (raw == null) return `<span style="color:var(--fg)">${v}</span>`;
+            const c = raw < 0 ? 'var(--red)' : 'var(--green)';
+            return `<span style="color:${c}">${v}</span>`;
+        };
+        const plain = (v) => `<span style="color:var(--fg)">${v}</span>`;
+
+        // token = dimmed label + value; the whole row is one flowing line.
+        const tok = (label, valHtml) =>
+            `<span style="white-space:nowrap;">${label} ${valHtml}</span>`;
+        const parts = [
+            tok('Rev',    plain(money(m.revenue))),
+            tok('NI',     tint(money(m.net_income), m.net_income)),
+            tok('OpInc',  tint(money(m.operating_income), m.operating_income)),
+            tok('EBITDA', tint(money(m.ebitda), m.ebitda)),
+            tok('Op%',    tint(pct(m.operating_margin), m.operating_margin)),
+            tok('Net%',   tint(pct(m.net_margin), m.net_margin)),
+            tok('EBITDA%',tint(pct(m.ebitda_margin), m.ebitda_margin)),
+            tok('ROA',    tint(pct(m.roa), m.roa)),
+            tok('ROE',    tint(pct(m.roe), m.roe)),
+            tok('Cur',    plain(mult(m.current_ratio))),
+            tok('WC',     tint(money(m.working_capital), m.working_capital)),
+            tok('D/E',    plain(mult(m.debt_to_equity))),
+            tok('Debt%',  plain(pct(m.debt_ratio))),
+            tok('Eq%',    plain(pct(m.equity_ratio))),
+            tok('AT',     plain(mult(m.asset_turnover))),
+        ];
+        el.innerHTML = parts.join('<span style="opacity:0.4;padding:0 0.4rem;">·</span>');
     }
 
     // ─── Chart of Accounts ──────────────────────────────────────────────────

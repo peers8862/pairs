@@ -21,3 +21,6 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+
+# Playwright MCP browser-test scratch
+.playwright-mcp/
