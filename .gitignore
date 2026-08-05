@@ -1,26 +1,35 @@
-# User data - private
+# ─── User data (private, per-installation) ───────────────────────────────────
+# Created and managed by `pair init` / `pair entity add`. Never commit.
 config.yaml
+global.yaml
+entities/
+companies/
+
+# Legacy single-entity layout (pre-`entities/`). No code references these;
+# they exist only in older installs and hold real ledger data.
+assets/
+journal/
+generated/
+include/
 projects/
 timesheets/
 invoices/
 output/
 build/
-entities/
-global.yaml
 
-# Keep directory structure
-!projects/.gitkeep
-!timesheets/.gitkeep
-!timesheets/billed/.gitkeep
-!invoices/.gitkeep
-!output/.gitkeep
-!build/.gitkeep
+# ─── Tooling / agent scratch ─────────────────────────────────────────────────
+.claude/settings.local.json
+.superpowers/
+.playwright-mcp/
 
-# Python
+# ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
 .venv/
+.pytest_cache/
 
-# Playwright MCP browser-test scratch
-.playwright-mcp/
+# ─── Editor / OS noise ───────────────────────────────────────────────────────
+*.bak
+*.swp
+.DS_Store
