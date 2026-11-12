@@ -12,7 +12,7 @@ import csv
 import shutil
 import subprocess
 import sys
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
@@ -72,21 +72,52 @@ def step_month(d, n, anchor_day):
     return date(year, month, min(anchor_day, calendar.monthrange(year, month)[1]))
 
 
-def build_scenario_entries(slug, start, description, account, amount,
-                           source_account, currency, repeat=1, pair='0000',
-                           category=None):
-    """Return journal entries for one scenario item, repeated monthly."""
-    if repeat < 1:
-        raise ValueError("repeat must be at least 1")
+FREQUENCIES = {'weekly': 0, 'monthly': 1, 'quarterly': 3, 'semiannual': 6, 'annual': 12}
+REVENUE_PREFIXES = ('Income', 'Revenue')
+MAX_ENTRIES = 600
+
+
+def is_revenue(account):
+    return account.startswith(REVENUE_PREFIXES)
+
+
+def occurrence_dates(start, every='monthly', repeat=None, months=None):
+    """Dates for an item: `repeat` occurrences, or every occurrence before
+    start + `months` months. Monthly-based steps keep the start day where the
+    month allows it; weekly steps are 7 days."""
+    if every not in FREQUENCIES:
+        raise ValueError(f"every must be one of: {', '.join(FREQUENCIES)}")
     first = date.fromisoformat(start)
+    step = FREQUENCIES[every]
+    nth = (lambda i: first + timedelta(days=7 * i)) if step == 0 else \
+          (lambda i: step_month(first, i * step, first.day))
+    if months:
+        end = step_month(first, int(months), first.day)
+        dates = []
+        while len(dates) < MAX_ENTRIES and nth(len(dates)) < end:
+            dates.append(nth(len(dates)))
+        return dates
+    repeat = 1 if repeat is None else int(repeat)
+    if not 1 <= repeat <= MAX_ENTRIES:
+        raise ValueError(f"repeat must be between 1 and {MAX_ENTRIES}")
+    return [nth(i) for i in range(repeat)]
+
+
+def build_scenario_entries(slug, start, description, account, amount,
+                           source_account, currency, repeat=None, pair='0000',
+                           category=None, every='monthly', months=None):
+    """Journal entries for one scenario item. An Income/Revenue account makes
+    it revenue (money in to source_account); otherwise it is an expense."""
     value = float(money(amount))
     tags = {'pair': pair, 'scenario': slug}
     if category:
         tags['category'] = category
-    postings = [(account, currency, value), (source_account, currency, -value)]
-    return [format_entry(step_month(first, i, first.day).isoformat(),
-                         description, postings, tags)
-            for i in range(repeat)]
+    if every != 'monthly' or months:
+        tags['every'] = every
+    sign = -1 if is_revenue(account) else 1
+    postings = [(account, currency, sign * value), (source_account, currency, -sign * value)]
+    return [format_entry(d.isoformat(), description, postings, tags)
+            for d in occurrence_dates(start, every, repeat, months)]
 
 
 # ─── hledger queries ─────────────────────────────────────────────────────────
@@ -116,18 +147,33 @@ def account_balances(files, query, begin=None, end=None, currency=None):
 
 def scenario_report_rows(real_file, scen_file, slug, begin=None, end=None,
                          currency=None):
-    """Rows of (account, actual, scenario, actual + scenario) for expenses."""
+    """Rows of (account, actual, scenario, actual + scenario) for expense and
+    revenue accounts; revenue is shown as a positive amount."""
     real_exists = real_file is not None and Path(real_file).exists()
     files = [real_file, scen_file] if real_exists else [scen_file]
-    actual = (account_balances([real_file], ['^Expenses'], begin, end, currency)
+    accounts = '^(Expenses|Income|Revenue)'
+    actual = (account_balances([real_file], [accounts], begin, end, currency)
               if real_exists else {})
-    planned = (account_balances(files, ['^Expenses', f'tag:scenario={slug}'],
+    planned = (account_balances(files, [accounts, f'tag:scenario={slug}'],
                                 begin, end, currency)
                if Path(scen_file).exists() else {})
     zero = Decimal('0')
-    return [(acct, actual.get(acct, zero), planned.get(acct, zero),
-             actual.get(acct, zero) + planned.get(acct, zero))
-            for acct in sorted(set(actual) | set(planned))]
+    rows = []
+    for acct in sorted(set(actual) | set(planned)):
+        sign = -1 if is_revenue(acct) else 1
+        a, p = sign * actual.get(acct, zero) + zero, sign * planned.get(acct, zero) + zero
+        rows.append((acct, a, p, a + p))
+    return rows
+
+
+def report_window(start=None, months=None, year=None):
+    """(begin, end) dates: start + months, a calendar year, or (None, None)."""
+    if start or months:
+        first = date.fromisoformat(start) if start else date(date.today().year, 1, 1)
+        return first.isoformat(), step_month(first, int(months or 12), first.day).isoformat()
+    if year:
+        return f'{year}-01-01', f'{int(year) + 1}-01-01'
+    return None, None
 
 
 def find_scenario_includes(entity_dir, extra_files=()):
@@ -189,10 +235,11 @@ def read_entries(slug):
         account, amount = '', Decimal('0')
         for line in lines[1:]:
             parts = line.strip().rsplit(None, 2)
-            if len(parts) == 3 and parts[0].startswith('Expenses'):
-                account, amount = parts[0], Decimal(parts[2])
+            if len(parts) == 3 and parts[0].startswith(('Expenses',) + REVENUE_PREFIXES):
+                account, amount = parts[0], abs(Decimal(parts[2]))
                 break
         items.append({'index': index, 'date': entry_date.strip(),
+                      'kind': 'revenue' if is_revenue(account) else 'expense',
                       'description': description.strip(),
                       'account': account, 'amount': amount})
     return items
@@ -257,10 +304,15 @@ Flags for 'add':
   --account ACCOUNT   Expense account, instead of --category
   --from METHOD       bank or credit-card
   --date DATE         First date (YYYY-MM-DD)
-  --repeat N          Repeat monthly N times (default 1)
+  --account ACCOUNT   An Income:/Revenue: account makes the item revenue
+  --every FREQ        weekly | monthly | quarterly | semiannual | annual (default monthly)
+  --repeat N          Number of occurrences (default 1)
+  --months N          Or: every occurrence within N months of --date
 
 Flags for 'report':
-  --year YYYY         Limit to one year (default: all dates)
+  --start DATE        Window start (with --months; default Jan 1 this year)
+  --months N          Window length in months (default 12 with --start)
+  --year YYYY         Or: one calendar year (default: all dates)
   --monthly           Month-by-month scenario expenses
 
 Budgets: 'pair budget vs --scenario <slug> --full' compares a budget with
@@ -345,6 +397,8 @@ def cmd_add(flags, args):
     method = _flag(args, '--from')
     start = _flag(args, '--date') or flags.get('date')
     repeat = _flag(args, '--repeat')
+    every = _flag(args, '--every', 'monthly')
+    months = _flag(args, '--months')
 
     if flags.get('batch'):
         if not (description and amount and (category or account)):
@@ -359,7 +413,11 @@ def cmd_add(flags, args):
         method = method or prompt_choice("Paid from", PAYMENT_METHODS, default='bank')
         start = start or prompt("First date", default=date.today().isoformat(),
                                 validator=validate_date)
-        repeat = repeat or prompt("Repeat monthly (times)", default='1')
+        if '--every' not in args:
+            every = prompt_choice("How often", list(FREQUENCIES), default='monthly')
+        if not (repeat or months):
+            span = prompt("Occurrences, or Nm for N months (e.g. 3 or 12m)", default='1')
+            months, repeat = (span[:-1], None) if span.endswith('m') else (None, span)
 
     start = start or date.today().isoformat()
     if validate_date(start):
@@ -369,9 +427,10 @@ def cmd_add(flags, args):
         print(f"  Invalid amount: {amount}")
         sys.exit(1)
     try:
-        repeat = int(repeat or 1)
+        repeat = int(repeat) if repeat else None
+        months = int(months) if months else None
     except ValueError:
-        print(f"  Invalid repeat count: {repeat}")
+        print(f"  Invalid --repeat or --months: {repeat or months}")
         sys.exit(1)
     if not account:
         if category not in CATEGORY_ACCOUNTS:
@@ -384,17 +443,22 @@ def cmd_add(flags, args):
     else:
         source_account, pair = bank_account, '0000'
 
-    entries = build_scenario_entries(slug, start, description, account, amount,
-                                     source_account, currency, repeat, pair, category)
+    try:
+        entries = build_scenario_entries(slug, start, description, account, amount,
+                                         source_account, currency, repeat, pair, category,
+                                         every, months)
+    except ValueError as e:
+        print(f"  {e}")
+        sys.exit(1)
     if flags.get('dry_run'):
         print(''.join(entries))
         return
     add_entries(slug, entries)
     warn_if_included(config)
     if not flags.get('quiet'):
-        total = money(amount) * repeat
+        total = money(amount) * len(entries)
         print(f"\n  Added to scenario '{slug}': {description}")
-        print(f"  {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} from {start}, "
+        print(f"  {len(entries)} {every} entr{'y' if len(entries) == 1 else 'ies'} from {start}, "
               f"{currency} {total} in total, account {account}")
         print(f"  Written to: scenarios/{slug}/{JOURNAL_NAME} (not in the real books)")
 
@@ -421,11 +485,11 @@ def cmd_report(flags, args):
     real = real_journal(config)
     journal = scenario_journal(slug)
     year = _flag(args, '--year')
-    begin, end = (f'{year}-01-01', f'{int(year) + 1}-01-01') if year else (None, None)
+    begin, end = report_window(_flag(args, '--start'), _flag(args, '--months'), year)
 
     warn_if_included(config)
     co = get_active_entity() or "entity"
-    span = year or "all dates"
+    span = f"{begin} to {end}" if begin else "all dates"
 
     if '--monthly' in args:
         print(f"\n  [{co}] Scenario '{slug}' by month ({span})\n", flush=True)
@@ -433,23 +497,26 @@ def cmd_report(flags, args):
         cmd = ['hledger']
         for f in files:
             cmd += ['-f', str(f)]
-        cmd += ['bal', '^Expenses', f'tag:scenario={slug}', '-M', '--flat']
+        cmd += ['bal', '^(Expenses|Income|Revenue)', f'tag:scenario={slug}', '-M', '--flat']
         if begin:
             cmd += ['-b', begin, '-e', end]
         subprocess.run(cmd)
         return
 
     rows = scenario_report_rows(real, journal, slug, begin, end, currency)
-    print(f"\n  [{co}] Scenario '{slug}' — expenses ({span})\n")
+    print(f"\n  [{co}] Scenario '{slug}' — expenses and revenue ({span})\n")
     print(f"  {'Account':<40} {'Actual':>13} {'Scenario':>13} {'Actual+Scn':>13}")
     print(f"  {'─' * 82}")
-    totals = [Decimal('0')] * 3
+    totals = {'expense': [Decimal('0')] * 3, 'revenue': [Decimal('0')] * 3}
     for account, *amounts in rows:
-        totals = [t + a for t, a in zip(totals, amounts)]
-        name = account.replace('Expenses:', '', 1)
-        print(f"  {name:<40} " + " ".join(f"{float(a):>13,.2f}" for a in amounts))
+        kind = 'revenue' if is_revenue(account) else 'expense'
+        totals[kind] = [t + a for t, a in zip(totals[kind], amounts)]
+        print(f"  {account:<40} " + " ".join(f"{float(a):>13,.2f}" for a in amounts))
     print(f"  {'─' * 82}")
-    print(f"  {'TOTAL (' + currency + ')':<40} " + " ".join(f"{float(t):>13,.2f}" for t in totals))
+    net = [r - e for r, e in zip(totals['revenue'], totals['expense'])]
+    for label, values in (('Expenses', totals['expense']), ('Revenue', totals['revenue']),
+                          ('Net (revenue - expenses)', net)):
+        print(f"  {label + ' (' + currency + ')':<40} " + " ".join(f"{float(v):>13,.2f}" for v in values))
     print("\n  Real books unchanged: scenario entries are never included in them.\n")
 
 

@@ -146,3 +146,29 @@ def test_budget_vs_rows_measures_variance_against_scenario(tmp_path, monkeypatch
         Decimal('6000'), Decimal('1000.00'), None, Decimal('5000.00'))
     [scn] = budget_vs_rows(config, budget, scenario='studio')
     assert (scn['with_scenario'], scn['variance']) == (Decimal('4600.00'), Decimal('1400.00'))
+
+
+def test_frequencies_and_month_spans():
+    weekly = _entries(start='2026-03-02', every='weekly', repeat=3)
+    assert [e[:10] for e in weekly] == ['2026-03-02', '2026-03-09', '2026-03-16']
+    quarterly = _entries(start='2026-01-31', every='quarterly', repeat=3)
+    assert [e[:10] for e in quarterly] == ['2026-01-31', '2026-04-30', '2026-07-31']
+    semi = _entries(start='2026-02-15', every='semiannual', months=12)
+    assert [e[:10] for e in semi] == ['2026-02-15', '2026-08-15']
+    annual = _entries(start='2026-05-01', every='annual', months=36)
+    assert [e[:10] for e in annual] == ['2026-05-01', '2027-05-01', '2028-05-01']
+    assert len(_entries(start='2026-01-01', every='weekly', months=1)) == 5
+    with pytest.raises(ValueError):
+        _entries(every='fortnightly')
+
+
+@needs_hledger
+def test_revenue_items_post_to_income_and_report_positive(tmp_path):
+    [entry] = _entries(description='Grant', account='Income:Operating:Grants', amount=5000)
+    assert 'Assets:Current:Chequing' in entry and 'CAD 5000.00' in entry
+    assert 'Income:Operating:Grants' in entry and 'CAD -5000.00' in entry
+    scen = tmp_path / 'expenses.journal'
+    scen.write_text(entry + ''.join(_entries()))
+    rows = scenario_report_rows(None, scen, 'studio')
+    assert rows == [('Expenses:Operating:Rent', Decimal('0'), Decimal('1800.00'), Decimal('1800.00')),
+                    ('Income:Operating:Grants', Decimal('0'), Decimal('5000.00'), Decimal('5000.00'))]

@@ -1165,7 +1165,7 @@
                 <div class="plan-row">
                     <label class="plan-lbl">Budget <select id="bud-select" class="plan-in" onchange="loadBudgetCompare()"></select></label>
                     <label class="plan-lbl">Scenario <select id="bud-scenario" class="plan-in" onchange="loadBudgetCompare()"></select></label>
-                    <span style="color:var(--fg-dim);font-size:0.75rem;">Whole budget year</span>
+                    <span style="color:var(--fg-dim);font-size:0.75rem;">Whole budget year (expense lines)</span>
                 </div>
             </div>
             <div id="bud-content"></div>
@@ -3428,7 +3428,7 @@
     // ─── Plan: scenarios & budgets ──────────────────────────────────────────
     // Scenario entries live outside the real books (scenarios/<slug>/), so
     // nothing here changes ledgers or totals shown in the other views.
-    const planState = { tab: 'scenarios', slug: null, year: String(new Date().getFullYear()), seq: 0 };
+    const planState = { tab: 'scenarios', slug: null, start: new Date().getFullYear() + '-01-01', months: '12', seq: 0 };
 
     function planMoney(v) {
         return (v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -3495,49 +3495,58 @@
         planState.slug = slug;
         if (refreshList) { loadScenarios(); return; }
         const box = document.getElementById('scn-detail');
-        const yearQ = planState.year === 'all' ? '' : `?year=${planState.year}`;
+        const yearQ = planState.months ? `?start=${planState.start}&months=${planState.months}` : '';
         const seq = ++planState.seq;   // a slower, older response must not overwrite a newer one
         let d;
         try { d = await planFetch(`/api/scenario/${encodeURIComponent(slug)}${yearQ}`); }
         catch (e) { if (seq === planState.seq) box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
         if (seq !== planState.seq) return;
-        const thisYear = new Date().getFullYear();
-        const years = ['all', thisYear - 1, thisYear, thisYear + 1, thisYear + 2].map(String);
-        const yearOpts = years.map(y => `<option value="${y}"${y === planState.year ? ' selected' : ''}>${y === 'all' ? 'All dates' : y}</option>`).join('');
 
         let html = `<div class="plan-panel" style="margin-top:1rem;">
             <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.5rem;">
                 <span style="color:var(--accent);font-weight:bold;">${esc(d.name)}</span>
                 <span style="color:var(--fg-dim);font-size:0.8rem;flex:1;">${esc(d.description)}</span>
-                <select class="plan-in" onchange="planState.year=this.value;openScenario('${esc(slug)}',false)">${yearOpts}</select>
+                <label class="plan-lbl">from <input type="date" class="plan-in" value="${esc(planState.start)}" onchange="planState.start=this.value;openScenario('${esc(slug)}',false)"></label>
+                <label class="plan-lbl">for <input type="number" class="plan-in" min="1" style="width:64px;" placeholder="all" value="${esc(planState.months)}" onchange="planState.months=this.value;openScenario('${esc(slug)}',false)"> months</label>
                 <button class="btn" onclick="deleteScenario('${esc(slug)}')" style="font-size:0.75rem;padding:0.3rem 0.6rem;color:var(--red);border-color:var(--red);">Delete scenario</button>
             </div>`;
         if ((d.leaks || []).length) {
             html += `<div style="color:var(--red);font-size:0.8rem;margin-bottom:0.5rem;">Warning: ${d.leaks.map(esc).join(', ')} include scenario entries, so real totals are wrong.</div>`;
         }
-        html += `<div class="plan-sub">Add a planned expense</div>
+        const opts = list => list.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+        html += `<div class="plan-sub">Add a planned expense or revenue</div>
             <div class="plan-row">
                 <input type="text" id="scn-item-desc" class="plan-in" placeholder="description" style="flex:2;min-width:160px;">
                 <input type="number" id="scn-item-amount" class="plan-in" placeholder="amount" min="0" step="0.01" style="width:110px;text-align:right;">
-                <select id="scn-item-account" class="plan-in" style="flex:2;min-width:180px;"><option value="">expense account…</option></select>
-                <select id="scn-item-method" class="plan-in"><option value="bank">paid from bank</option><option value="credit-card">credit card</option></select>
+                <select id="scn-item-account" class="plan-in" style="flex:2;min-width:180px;"><option value="">account…</option>
+                    <optgroup label="Expense">${opts(d.expense_accounts || [])}</optgroup><optgroup label="Revenue">${opts(d.revenue_accounts || [])}</optgroup></select>
+                <select id="scn-item-method" class="plan-in"><option value="bank">bank</option><option value="credit-card">credit card</option></select>
                 <input type="date" id="scn-item-date" class="plan-in" value="${new Date().toISOString().slice(0, 10)}">
-                <label class="plan-lbl">repeat monthly <input type="number" id="scn-item-repeat" class="plan-in" value="1" min="1" max="120" style="width:64px;"></label>
+                <select id="scn-item-every" class="plan-in"><option value="weekly">weekly</option><option value="monthly" selected>monthly</option><option value="quarterly">quarterly</option><option value="semiannual">semi-annual</option><option value="annual">annual</option></select>
+                <label class="plan-lbl">× <input type="number" id="scn-item-repeat" class="plan-in" value="1" min="1" max="600" style="width:60px;"> times</label>
+                <label class="plan-lbl">or for <input type="number" id="scn-item-months" class="plan-in" min="1" placeholder="—" style="width:60px;"> months</label>
                 <button class="btn plan-primary" onclick="addScenarioItem('${esc(slug)}')">Add</button>
             </div>`;
 
         // Report: actual vs scenario vs both
-        const span = planState.year === 'all' ? 'all dates' : planState.year;
-        html += `<div class="plan-sub">Expenses by account (${esc(span)}, ${esc(d.currency)})</div>`;
+        const span = d.begin ? `${d.begin} to ${d.end}` : 'all dates';
+        const isRev = a => /^(Income|Revenue)/.test(a);
+        html += `<div class="plan-sub">By account (${esc(span)}, ${esc(d.currency)})</div>`;
         if (!d.report.length) {
             html += '<div class="empty">Nothing to compare yet.</div>';
         } else {
-            const tot = d.report.reduce((t, r) => [t[0] + r.actual, t[1] + r.scenario, t[2] + r.combined], [0, 0, 0]);
+            const sum = rows => rows.reduce((t, r) => [t[0] + r.actual, t[1] + r.scenario, t[2] + r.combined], [0, 0, 0]);
+            const exp = sum(d.report.filter(r => !isRev(r.account))), rev = sum(d.report.filter(r => isRev(r.account)));
+            const net = rev.map((v, i) => v - exp[i]);
             html += '<table><thead><tr><th>Account</th><th style="text-align:right">Actual</th><th style="text-align:right">Scenario</th><th style="text-align:right">Actual + scenario</th></tr></thead><tbody>';
             for (const r of d.report) {
-                html += `<tr><td>${esc(r.account.replace(/^Expenses:/, ''))}</td>${planAmt(r.actual)}<td style="text-align:right;color:var(--yellow)">${planMoney(r.scenario)}</td>${planAmt(r.combined)}</tr>`;
+                const c = isRev(r.account) ? ' style="color:var(--green)"' : '';
+                html += `<tr><td${c}>${esc(r.account)}</td>${planAmt(r.actual)}<td style="text-align:right;color:var(--yellow)">${planMoney(r.scenario)}</td>${planAmt(r.combined)}</tr>`;
             }
-            html += `<tr style="font-weight:bold;"><td>Total</td>${planAmt(tot[0])}<td style="text-align:right;color:var(--yellow)">${planMoney(tot[1])}</td>${planAmt(tot[2])}</tr></tbody></table>`;
+            for (const [label, t] of [['Expenses', exp], ['Revenue', rev], ['Net (revenue − expenses)', net]]) {
+                html += `<tr style="font-weight:bold;"><td>${label}</td>${planAmt(t[0], true)}<td style="text-align:right;color:var(--yellow)">${planMoney(t[1])}</td>${planAmt(t[2], true)}</tr>`;
+            }
+            html += '</tbody></table>';
         }
 
         // Month by month (scenario entries only)
@@ -3546,9 +3555,9 @@
             html += '<div class="plan-sub">Scenario by month</div><div style="overflow-x:auto;"><table><thead><tr><th>Account</th>';
             html += d.months.map(m => `<th style="text-align:right">${esc(m.month)}</th>`).join('') + '</tr></thead><tbody>';
             for (const a of accounts) {
-                html += `<tr><td>${esc(a.replace(/^Expenses:/, ''))}</td>` + d.months.map(m => planAmt(m.accounts[a] || 0)).join('') + '</tr>';
+                html += `<tr><td${isRev(a) ? ' style="color:var(--green)"' : ''}>${esc(a)}</td>` + d.months.map(m => planAmt(m.accounts[a] || 0)).join('') + '</tr>';
             }
-            html += '<tr style="font-weight:bold;"><td>Total</td>' + d.months.map(m => planAmt(Object.values(m.accounts).reduce((s, v) => s + v, 0))).join('') + '</tr>';
+            html += '<tr style="font-weight:bold;"><td>Net (revenue − expenses)</td>' + d.months.map(m => planAmt(Object.entries(m.accounts).reduce((s, [a, v]) => s + (isRev(a) ? v : -v), 0), true)).join('') + '</tr>';
             html += '</tbody></table></div>';
         }
 
@@ -3559,21 +3568,14 @@
         } else {
             html += '<table><thead><tr><th>Date</th><th>Description</th><th>Account</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>';
             for (const e of d.entries) {
-                html += `<tr><td style="color:var(--fg-dim)">${esc(e.date)}</td><td>${esc(e.description)}</td><td style="color:var(--fg-dim)">${esc(e.account.replace(/^Expenses:/, ''))}</td>${planAmt(e.amount)}
+                html += `<tr><td style="color:var(--fg-dim)">${esc(e.date)}</td><td>${esc(e.description)}</td><td style="color:${e.kind === 'revenue' ? 'var(--green)' : 'var(--fg-dim)'}">${esc(e.account)}</td>${planAmt(e.amount)}
                     <td style="text-align:right"><button class="btn" title="Remove entry" onclick="removeScenarioItem('${esc(slug)}', ${e.index})" style="font-size:0.7rem;padding:0.1rem 0.45rem;">✕</button></td></tr>`;
             }
             html += '</tbody></table>';
         }
         box.innerHTML = html + '</div>';
-        fillExpenseAccounts(d.expense_accounts || []);
     }
 
-    function fillExpenseAccounts(accounts) {
-        const sel = document.getElementById('scn-item-account');
-        if (!sel) return;
-        sel.innerHTML = '<option value="">expense account…</option>' +
-            accounts.map(a => `<option value="${esc(a)}">${esc(a.replace(/^Expenses:/, ''))}</option>`).join('');
-    }
 
     async function addScenarioItem(slug) {
         const body = {
@@ -3582,10 +3584,13 @@
             account: document.getElementById('scn-item-account').value,
             method: document.getElementById('scn-item-method').value,
             date: document.getElementById('scn-item-date').value,
+            every: document.getElementById('scn-item-every').value,
             repeat: parseInt(document.getElementById('scn-item-repeat').value || '1', 10),
+            months: parseInt(document.getElementById('scn-item-months').value || '0', 10),
         };
+        if (body.months) body.repeat = 0;
         if (!body.description || !(body.amount > 0) || !body.account) {
-            showToast('Description, a positive amount and an expense account are needed', true);
+            showToast('Description, a positive amount and an account are needed', true);
             return;
         }
         try {

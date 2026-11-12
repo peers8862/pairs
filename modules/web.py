@@ -1979,14 +1979,19 @@ def create_app():
         return {'status': 'ok', 'message': f"Scenario '{slug}' removed"}
 
     @app.get("/api/scenario/{slug}")
-    async def scenario_detail(slug: str, year: str = ''):
-        """Entries, per-account report (actual / scenario / both) and months."""
+    async def scenario_detail(slug: str, year: str = '', start: str = '', months: str = ''):
+        """Entries, per-account report (actual / scenario / both) and months,
+        for a window of start + months (or a calendar year, or all dates)."""
         from modules.scenario import (read_entries, scenario_journal, scenario_report_rows,
-                                      find_scenario_includes)
+                                      find_scenario_includes, report_window, is_revenue)
         meta = _scenario_or_404(slug)
         currency = get_entity_currency()
         real = _get_journal_path()
-        begin, end = (f'{year}-01-01', f'{int(year) + 1}-01-01') if year.isdigit() else (None, None)
+        try:
+            begin, end = report_window(start or None, months if months.isdigit() else None,
+                                       year if year.isdigit() else None)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Start must be YYYY-MM-DD")
         try:
             rows = scenario_report_rows(Path(real) if real else None, scenario_journal(slug),
                                         slug, begin, end, currency)
@@ -2002,10 +2007,13 @@ def create_app():
             months[month][e['account']] = months[month].get(e['account'], 0.0) + float(e['amount'])
         leaks = find_scenario_includes(get_entity_dir(), [real] if real else [])
         from modules.expense import CATEGORY_ACCOUNTS
-        known = [a for a in (_get_accounts() or []) if a.startswith('Expenses')]
-        expense_accounts = sorted(set(known) | set(CATEGORY_ACCOUNTS.values()))
+        chart = _get_accounts() or []
+        expense_accounts = sorted({a for a in chart if a.startswith('Expenses')}
+                                  | set(CATEGORY_ACCOUNTS.values()))
+        revenue_accounts = sorted(a for a in chart if is_revenue(a)) or ['Income:Operating:Revenue']
         return {
-            'expense_accounts': expense_accounts,
+            'begin': begin, 'end': end,
+            'expense_accounts': expense_accounts, 'revenue_accounts': revenue_accounts,
             'slug': slug, 'name': meta.get('name', slug),
             'description': meta.get('description', ''), 'currency': currency,
             'entries': [{**e, 'amount': float(e['amount'])} for e in entries],
@@ -2022,7 +2030,9 @@ def create_app():
         category: str = ''
         method: str = 'bank'
         date: str = ''
-        repeat: int = 1
+        repeat: int = 0
+        every: str = 'monthly'
+        months: int = 0
 
     @app.post("/api/scenario/{slug}/item")
     async def scenario_add_item(slug: str, req: ScenarioItem):
@@ -2034,23 +2044,27 @@ def create_app():
             raise HTTPException(status_code=400, detail="Description is required")
         if req.amount <= 0:
             raise HTTPException(status_code=400, detail="Amount must be positive")
-        if not 1 <= req.repeat <= 120:
-            raise HTTPException(status_code=400, detail="Repeat must be between 1 and 120 months")
         start = req.date.strip() or date.today().isoformat()
         if validate_date(start):
             raise HTTPException(status_code=400, detail="Date must be YYYY-MM-DD")
         account = req.account.strip() or CATEGORY_ACCOUNTS.get(req.category.strip(), '')
-        if not account.startswith('Expenses'):
-            raise HTTPException(status_code=400, detail="Choose an expense account or category")
+        if not account.startswith(('Expenses', 'Income', 'Revenue')):
+            raise HTTPException(status_code=400, detail="Choose an expense or revenue account")
         config = load_config()
         if req.method == 'credit-card':
             source, pair = 'Liabilities:Current:Credit Card', '0001'
         else:
             source = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
             pair = '0000'
-        entries = build_scenario_entries(slug, start, req.description.strip(), account,
-                                         req.amount, source, get_entity_currency(),
-                                         req.repeat, pair, req.category.strip() or None)
+        try:
+            entries = build_scenario_entries(slug, start, req.description.strip(), account,
+                                             req.amount, source, get_entity_currency(),
+                                             req.repeat or None, pair, req.category.strip() or None,
+                                             req.every, req.months or None)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if not entries:
+            raise HTTPException(status_code=400, detail="No dates fall inside that span")
         add_entries(slug, entries)
         return {'status': 'ok', 'message': f"Added {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}"}
 
