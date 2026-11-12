@@ -1936,6 +1936,173 @@ def create_app():
         except Exception as e:
             return {'items': [], 'error': str(e)}
 
+    # ─── Scenarios (what-if expenses outside the real books) ────────────────
+
+    def _scenario_or_404(slug):
+        from modules.scenario import load_scenario
+        meta = load_scenario(slug)
+        if meta is None:
+            raise HTTPException(status_code=404, detail=f"Scenario '{slug}' not found")
+        return meta
+
+    @app.get("/api/scenarios")
+    async def scenarios():
+        from modules.scenario import list_scenarios, load_scenario, read_entries
+        items = []
+        for slug in list_scenarios():
+            meta = load_scenario(slug) or {}
+            entries = read_entries(slug)
+            items.append({'slug': slug, 'name': meta.get('name', slug),
+                          'description': meta.get('description', ''),
+                          'items': len(entries),
+                          'total': float(sum((e['amount'] for e in entries), Decimal('0')))})
+        return {'scenarios': items, 'currency': get_entity_currency()}
+
+    class ScenarioCreate(BaseModel):
+        name: str
+        description: str = ''
+
+    @app.post("/api/scenario")
+    async def scenario_create(req: ScenarioCreate):
+        from modules.scenario import create_scenario
+        try:
+            slug = create_scenario(req.name.strip(), req.description.strip())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {'status': 'ok', 'slug': slug, 'message': f"Scenario '{slug}' created"}
+
+    @app.delete("/api/scenario/{slug}")
+    async def scenario_delete(slug: str):
+        from modules.scenario import delete_scenario
+        _scenario_or_404(slug)
+        delete_scenario(slug)
+        return {'status': 'ok', 'message': f"Scenario '{slug}' removed"}
+
+    @app.get("/api/scenario/{slug}")
+    async def scenario_detail(slug: str, year: str = ''):
+        """Entries, per-account report (actual / scenario / both) and months."""
+        from modules.scenario import (read_entries, scenario_journal, scenario_report_rows,
+                                      find_scenario_includes)
+        meta = _scenario_or_404(slug)
+        currency = get_entity_currency()
+        real = _get_journal_path()
+        begin, end = (f'{year}-01-01', f'{int(year) + 1}-01-01') if year.isdigit() else (None, None)
+        try:
+            rows = scenario_report_rows(Path(real) if real else None, scenario_journal(slug),
+                                        slug, begin, end, currency)
+        except RuntimeError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        entries = read_entries(slug)
+        months = {}
+        for e in entries:
+            if begin and not (begin <= e['date'] < end):
+                continue
+            month = e['date'][:7]
+            months.setdefault(month, {})
+            months[month][e['account']] = months[month].get(e['account'], 0.0) + float(e['amount'])
+        leaks = find_scenario_includes(get_entity_dir(), [real] if real else [])
+        from modules.expense import CATEGORY_ACCOUNTS
+        known = [a for a in (_get_accounts() or []) if a.startswith('Expenses')]
+        expense_accounts = sorted(set(known) | set(CATEGORY_ACCOUNTS.values()))
+        return {
+            'expense_accounts': expense_accounts,
+            'slug': slug, 'name': meta.get('name', slug),
+            'description': meta.get('description', ''), 'currency': currency,
+            'entries': [{**e, 'amount': float(e['amount'])} for e in entries],
+            'report': [{'account': a, 'actual': float(x), 'scenario': float(s), 'combined': float(c)}
+                       for a, x, s, c in rows],
+            'months': [{'month': m, 'accounts': months[m]} for m in sorted(months)],
+            'leaks': [str(p) for p in leaks],
+        }
+
+    class ScenarioItem(BaseModel):
+        description: str
+        amount: float
+        account: str = ''
+        category: str = ''
+        method: str = 'bank'
+        date: str = ''
+        repeat: int = 1
+
+    @app.post("/api/scenario/{slug}/item")
+    async def scenario_add_item(slug: str, req: ScenarioItem):
+        from modules.scenario import build_scenario_entries, add_entries
+        from modules.expense import CATEGORY_ACCOUNTS
+        from lib.helpers import validate_date
+        _scenario_or_404(slug)
+        if not req.description.strip():
+            raise HTTPException(status_code=400, detail="Description is required")
+        if req.amount <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be positive")
+        if not 1 <= req.repeat <= 120:
+            raise HTTPException(status_code=400, detail="Repeat must be between 1 and 120 months")
+        start = req.date.strip() or date.today().isoformat()
+        if validate_date(start):
+            raise HTTPException(status_code=400, detail="Date must be YYYY-MM-DD")
+        account = req.account.strip() or CATEGORY_ACCOUNTS.get(req.category.strip(), '')
+        if not account.startswith('Expenses'):
+            raise HTTPException(status_code=400, detail="Choose an expense account or category")
+        config = load_config()
+        if req.method == 'credit-card':
+            source, pair = 'Liabilities:Current:Credit Card', '0001'
+        else:
+            source = config.get('accounts', {}).get('bank', 'Assets:Current:Chequing')
+            pair = '0000'
+        entries = build_scenario_entries(slug, start, req.description.strip(), account,
+                                         req.amount, source, get_entity_currency(),
+                                         req.repeat, pair, req.category.strip() or None)
+        add_entries(slug, entries)
+        return {'status': 'ok', 'message': f"Added {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}"}
+
+    @app.delete("/api/scenario/{slug}/item/{index}")
+    async def scenario_remove_item(slug: str, index: int):
+        from modules.scenario import remove_entry
+        _scenario_or_404(slug)
+        try:
+            remove_entry(slug, index)
+        except IndexError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        return {'status': 'ok', 'message': 'Entry removed'}
+
+    # ─── Budgets (read-only; compared with actuals and scenarios) ───────────
+
+    @app.get("/api/budgets")
+    async def budgets():
+        from modules.budget import _list_budgets, _load_budget
+        items = []
+        for slug in _list_budgets():
+            b = _load_budget(slug) or {}
+            items.append({'slug': slug, 'name': b.get('name', slug), 'year': str(b.get('year', '')),
+                          'scenario': b.get('scenario', ''), 'active': bool(b.get('active')),
+                          'period_type': b.get('period_type', '')})
+        return {'budgets': items}
+
+    @app.get("/api/budget/{slug}/compare")
+    async def budget_compare(slug: str, scenario: str = ''):
+        """Whole-year budget vs actual (and vs actual + scenario), plus forecast."""
+        from modules.budget import _load_budget, budget_vs_rows, forecast_rows
+        budget = _load_budget(slug)
+        if not budget:
+            raise HTTPException(status_code=404, detail=f"Budget '{slug}' not found")
+        if scenario:
+            _scenario_or_404(scenario)
+        config = load_config()
+        vs = budget_vs_rows(config, budget, scenario or None)
+        forecast, forecast_note = None, ''
+        try:
+            fc = forecast_rows(config, budget, scenario or None)
+            forecast = {'elapsed': fc['elapsed'], 'total': fc['total'],
+                        'rows': [{k: (float(v) if isinstance(v, Decimal) else v) for k, v in r.items()}
+                                 for r in fc['rows']]}
+        except NotImplementedError:
+            forecast_note = "Forecast with a scenario needs project_with_scenario in modules/budget.py."
+        return {
+            'budget': {'slug': slug, 'name': budget.get('name', slug), 'year': str(budget.get('year', ''))},
+            'scenario': scenario, 'currency': get_entity_currency(),
+            'vs': [{k: (float(v) if isinstance(v, Decimal) else v) for k, v in r.items()} for r in vs],
+            'forecast': forecast, 'forecast_note': forecast_note,
+        }
+
     @app.get("/api/equity")
     async def equity(period: str = ''):
         """Equity accounts from hledger."""

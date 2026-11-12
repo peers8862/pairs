@@ -309,6 +309,37 @@ pair expense list --division operations
 
 ---
 
+## Scenario Module
+
+What-if expenses kept outside the real books. Each scenario is a folder,
+`scenarios/<slug>/`, holding `scenario.yaml` and `expenses.journal`. Entries
+are tagged `scenario:<slug>`. No include file references `scenarios/`, so real
+ledgers, reports and totals never count them; scenario reports load the real
+journal and the scenario journal side by side. `add` and `report` warn if an
+include file ever pulls a scenario in.
+
+```bash
+pair scenario new "Studio move" --desc "Lease a studio from March"
+pair scenario add studio-move --batch --desc "Studio lease" --amount 1800 \
+    --category rent --date 2026-03-31 --repeat 10     # monthly, day clamped to month end
+pair scenario add studio-move --batch --desc "Camera" --amount 3200 \
+    --account "Expenses:Operating:Equipment" --from credit-card --date 2026-05-10
+pair scenario list
+pair scenario show studio-move                         # entries
+pair scenario report studio-move --year 2026           # Actual | Scenario | Actual+Scn per account
+pair scenario report studio-move --monthly             # scenario expenses by month
+pair scenario remove studio-move
+```
+
+With budgets:
+
+```bash
+pair budget vs --full --scenario studio-move           # whole year: budget vs actual + scenario
+pair budget forecast --scenario studio-move            # year-end projection including planned items
+```
+
+---
+
 ## Income Module
 
 ### `pair income add`

@@ -117,6 +117,8 @@ Flags:
   --division DIV      Scope to division
   --project PROJ      Scope to project
   --ytd               Year-to-date comparison
+  --full              Whole budget year (vs)
+  --scenario SLUG     Add a scenario's planned expenses to actuals (vs, forecast)
   --months RANGE      Rolling window (e.g. Jul-Sep, Q2)
   --forecast          Include year-end projection
   --vertical          Narrow terminal layout
@@ -774,12 +776,18 @@ def cmd_vs(flags, args):
     project = None
     fmt = None
     year = str(date.today().year)
+    scenario = None
+    full = False
 
     for i, a in enumerate(args):
         if a == '--show' and i + 1 < len(args):
             show_filter = args[i + 1]
         elif a == '--ytd':
             ytd = True
+        elif a == '--full':
+            full = True
+        elif a == '--scenario' and i + 1 < len(args):
+            scenario = args[i + 1]
         elif a == '--division' and i + 1 < len(args):
             division = args[i + 1]
         elif a == '--project' and i + 1 < len(args):
@@ -800,7 +808,15 @@ def cmd_vs(flags, args):
 
     # Determine which periods to compare
     today = date.today()
-    if ytd:
+    if scenario:
+        from modules.scenario import load_scenario
+        if load_scenario(scenario) is None:
+            print(f"Scenario '{scenario}' not found. See 'pair scenario list'.")
+            return
+    if full:
+        # Whole budget year (useful with --scenario, whose items are mostly ahead)
+        compare_periods = list(periods)
+    elif ytd:
         # All periods up to current
         compare_periods = [p for p in periods if p['from'] <= today.strftime("%Y-%m-%d")]
     else:
@@ -817,9 +833,11 @@ def cmd_vs(flags, args):
     period_label = f"{compare_periods[0]['label']}" if len(compare_periods) == 1 else f"{compare_periods[0]['label']}-{compare_periods[-1]['label']}"
 
     co = get_active_entity() or "entity"
-    title = "YTD" if ytd else period_label
-    print(f"\n  [{co}] Budget vs Actual — {title} {year}\n")
-    print(f"  {'Account':<35} {'Budget':>12} {'Actual':>12} {'Variance':>12} {'%':>6}")
+    title = "Full year" if full else "YTD" if ytd else period_label
+    against = f"Actual + scenario '{scenario}'" if scenario else "Actual"
+    actual_col = "Actual+Scn" if scenario else "Actual"
+    print(f"\n  [{co}] Budget vs {against} — {title} {year}\n")
+    print(f"  {'Account':<35} {'Budget':>12} {actual_col:>12} {'Variance':>12} {'%':>6}")
     print(f"  {'─' * 80}")
 
     total_budget = Decimal('0')
@@ -828,7 +846,8 @@ def cmd_vs(flags, args):
     for line in lines:
         amounts = line.get('amounts', [])
         budget_amt = sum(Decimal(str(amounts[i])) for i in period_indices if i < len(amounts))
-        actual_amt = _get_actual_for_periods(config, line['account'], compare_periods, division)
+        actual_amt = _get_actual_for_periods(config, line['account'], compare_periods,
+                                             division, scenario)
 
         variance = budget_amt - actual_amt
         pct = (float(variance) / float(budget_amt) * 100) if budget_amt != 0 else 0
@@ -876,20 +895,49 @@ def cmd_vs_interactive(flags):
 
 # ─── Forecast ────────────────────────────────────────────────────────────────
 
+def project_with_scenario(actual_ytd, elapsed_count, total_periods, scenario_ahead):
+    """Year-end projection for one account when a scenario is applied.
+
+    actual_ytd      real spending in the elapsed periods (Decimal)
+    elapsed_count   periods already finished
+    total_periods   periods in the budget year
+    scenario_ahead  planned scenario spending dated in the remaining periods
+
+    Without a scenario, forecast projects actual_ytd's run rate over the whole
+    year. Decide how scenario items combine with that run rate.
+    """
+    # TODO(owner): return the projected year-end amount as a Decimal.
+    raise NotImplementedError("project_with_scenario: choose how scenarios combine with the run rate")
+
+
 def cmd_forecast(flags, args):
     """Project year-end based on actuals so far."""
     config = load_config()
     currency = config.get('pair', {}).get('currency', 'CAD')
     year = str(date.today().year)
+    scenario = None
 
     for i, a in enumerate(args):
         if a == '--year' and i + 1 < len(args):
             year = args[i + 1]
+        elif a == '--scenario' and i + 1 < len(args):
+            scenario = args[i + 1]
 
     budget = _get_active_budget(year)
     if not budget:
         print(f"No active budget for {year}.")
         return
+    if scenario:
+        from modules.scenario import load_scenario
+        if load_scenario(scenario) is None:
+            print(f"Scenario '{scenario}' not found. See 'pair scenario list'.")
+            return
+        try:
+            project_with_scenario(Decimal('0'), 1, 1, Decimal('0'))
+        except NotImplementedError:
+            print("Forecast with a scenario needs project_with_scenario in modules/budget.py.\n"
+                  "Use 'pair budget vs --full --scenario <slug>' meanwhile.")
+            return
 
     periods = budget.get('periods', [])
     lines = budget.get('lines', [])
@@ -905,7 +953,8 @@ def cmd_forecast(flags, args):
         return
 
     co = get_active_entity() or "entity"
-    print(f"\n  [{co}] Forecast — {year} ({elapsed_count} of {len(periods)} periods elapsed)\n")
+    with_scn = f" with scenario '{scenario}'" if scenario else ""
+    print(f"\n  [{co}] Forecast{with_scn} — {year} ({elapsed_count} of {len(periods)} periods elapsed)\n")
     print(f"  {'Account':<35} {'Budget(yr)':>11} {'Actual(ytd)':>12} {'Projected':>11} {'vs Budget':>11}")
     print(f"  {'─' * 83}")
 
@@ -925,6 +974,14 @@ def cmd_forecast(flags, args):
             projected = rate_per_period * len(periods)
         else:
             projected = Decimal('0')
+
+        if scenario:
+            # Planned scenario spending in the periods still ahead (scenario journal only)
+            future = periods[elapsed_count:]
+            scenario_ahead = _get_actual_for_periods({}, line['account'], future,
+                                                     None, scenario)
+            projected = project_with_scenario(actual_ytd, elapsed_count,
+                                              len(periods), scenario_ahead)
 
         diff = projected - budget_yr
         sign = "+" if diff >= 0 else ""
@@ -1090,6 +1147,51 @@ def _get_active_budget(year):
     return None
 
 
+def budget_vs_rows(config, budget, scenario=None, periods=None):
+    """Budget against actuals (and actuals + scenario) per line, as data.
+
+    periods defaults to the whole budget year. Variance is measured against
+    actual + scenario when a scenario is given, otherwise against actual.
+    """
+    periods = list(budget.get('periods', [])) if periods is None else periods
+    all_periods = budget.get('periods', [])
+    indices = [all_periods.index(p) for p in periods]
+    division = (budget.get('scope') or {}).get('division')
+    rows = []
+    for line in budget.get('lines', []):
+        amounts = line.get('amounts', [])
+        budget_amt = sum((Decimal(str(amounts[i])) for i in indices if i < len(amounts)),
+                         Decimal('0'))
+        actual = _get_actual_for_periods(config, line['account'], periods, division)
+        combined = (_get_actual_for_periods(config, line['account'], periods, division, scenario)
+                    if scenario else None)
+        rows.append({'account': line['account'], 'budget': budget_amt, 'actual': actual,
+                     'with_scenario': combined,
+                     'variance': budget_amt - (actual if combined is None else combined)})
+    return rows
+
+
+def forecast_rows(config, budget, scenario=None, today=None):
+    """Year-end projection per line, as data. Raises NotImplementedError until
+    project_with_scenario is written, when a scenario is given."""
+    today = (today or date.today()).strftime("%Y-%m-%d")
+    periods = budget.get('periods', [])
+    elapsed = [p for p in periods if p['to'] <= today]
+    rows = []
+    for line in budget.get('lines', []):
+        budget_yr = sum((Decimal(str(a)) for a in line.get('amounts', [])), Decimal('0'))
+        actual_ytd = _get_actual_for_periods(config, line['account'], elapsed, None)
+        projected = (actual_ytd / len(elapsed) * len(periods)) if elapsed else Decimal('0')
+        if scenario and elapsed:
+            ahead = _get_actual_for_periods({}, line['account'], periods[len(elapsed):],
+                                            None, scenario)
+            projected = project_with_scenario(actual_ytd, len(elapsed), len(periods), ahead)
+        rows.append({'account': line['account'], 'budget_year': budget_yr,
+                     'actual_ytd': actual_ytd, 'projected': projected,
+                     'vs_budget': projected - budget_yr})
+    return {'elapsed': len(elapsed), 'total': len(periods), 'rows': rows}
+
+
 def _filter_lines(lines, show_filter):
     """Filter budget lines by account type."""
     if show_filter == 'all' or show_filter not in SHOW_FILTERS:
@@ -1102,22 +1204,31 @@ def _filter_lines(lines, show_filter):
     return [l for l in lines if l['account'].startswith(prefix)]
 
 
-def _get_actual_for_periods(config, account, periods, division=None):
-    """Query hledger for actual balance across specified periods."""
-    from lib.helpers import expand_path
-    journal_file = config.get('journal_file')
-    if not journal_file:
-        return Decimal('0')
+def _get_actual_for_periods(config, account, periods, division=None, scenario=None):
+    """Query hledger for actual balance across specified periods.
 
-    journal_path = str(expand_path(journal_file))
-    if not periods:
+    With scenario, that scenario's planned entries are added to the actuals
+    (the scenario journal is loaded next to the real one, never included in it).
+    """
+    from lib.helpers import expand_path
+    files = []
+    journal_file = config.get('journal_file')
+    if journal_file and expand_path(journal_file).exists():
+        files.append(str(expand_path(journal_file)))
+    if scenario:
+        from modules.scenario import scenario_journal
+        files.append(str(scenario_journal(scenario)))
+    if not files or not periods:
         return Decimal('0')
 
     begin = periods[0]['from']
     end = periods[-1]['to']
 
-    cmd = ['hledger', '-f', journal_path, 'bal', account,
-           '-b', begin, '-e', end, '--no-total', '--output-format=csv']
+    cmd = ['hledger']
+    for f in files:
+        cmd += ['-f', f]
+    cmd += ['bal', account,
+            '-b', begin, '-e', end, '--no-total', '--output-format=csv']
     if division:
         cmd += [f'tag:division={division}']
 
