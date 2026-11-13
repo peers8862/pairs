@@ -1978,14 +1978,18 @@ def create_app():
     @app.get("/api/scenarios")
     async def scenarios():
         from modules.scenario import list_scenarios, load_scenario, read_entries
+        from lib.plan_rules import expand
         items = []
         for slug in list_scenarios():
             meta = load_scenario(slug) or {}
             entries = read_entries(slug)
+            rules = meta.get('rules') or []
+            spend = sum((e['amount'] for e in entries if e['kind'] == 'expense'), Decimal('0'))
+            spend += sum((o['amount'] for o in expand(rules) if o['kind'] == 'expense'), Decimal('0'))
             items.append({'slug': slug, 'name': meta.get('name', slug),
                           'description': meta.get('description', ''),
-                          'items': len(entries),
-                          'total': float(sum((e['amount'] for e in entries), Decimal('0')))})
+                          'items': len(entries) + len(rules),
+                          'total': float(spend)})
         return {'scenarios': items, 'currency': get_entity_currency()}
 
     class ScenarioCreate(BaseModel):
@@ -2012,8 +2016,9 @@ def create_app():
     async def scenario_detail(slug: str, year: str = '', start: str = '', months: str = ''):
         """Entries, per-account report (actual / scenario / both) and months,
         for a window of start + months (or a calendar year, or all dates)."""
-        from modules.scenario import (read_entries, scenario_journal, scenario_report_rows,
-                                      find_scenario_includes, report_window, is_revenue)
+        from modules.scenario import (read_entries, scenario_files, scenario_report_rows,
+                                      find_scenario_includes, report_window, is_revenue, load_rules)
+        from lib.plan_rules import expand, describe, monthly_totals
         meta = _scenario_or_404(slug)
         currency = get_entity_currency()
         real = _get_journal_path()
@@ -2023,7 +2028,7 @@ def create_app():
         except ValueError:
             raise HTTPException(status_code=400, detail="Start must be YYYY-MM-DD")
         try:
-            rows = scenario_report_rows(Path(real) if real else None, scenario_journal(slug),
+            rows = scenario_report_rows(Path(real) if real else None, scenario_files(slug),
                                         slug, begin, end, currency)
         except RuntimeError as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -2035,6 +2040,22 @@ def create_app():
             month = e['date'][:7]
             months.setdefault(month, {})
             months[month][e['account']] = months[month].get(e['account'], 0.0) + float(e['amount'])
+        rules = load_rules(slug)
+        occ = [o for o in expand(rules)
+               if not begin or begin <= o['date'].isoformat() < end]
+        for o in occ:
+            if o['kind'] == 'funding':
+                continue
+            month = o['date'].isoformat()[:7]
+            months.setdefault(month, {})
+            months[month][o['account']] = months[month].get(o['account'], 0.0) + float(o['amount'])
+        totals = monthly_totals(occ)
+        for e in entries:
+            if begin and not (begin <= e['date'] < end):
+                continue
+            t = totals.setdefault(e['date'][:7], {'expense': Decimal('0'), 'revenue': Decimal('0'),
+                                                   'funding': Decimal('0')})
+            t[e['kind']] += e['amount']
         leaks = find_scenario_includes(get_entity_dir(), [real] if real else [])
         from modules.expense import CATEGORY_ACCOUNTS
         chart = _get_accounts() or []
@@ -2050,8 +2071,87 @@ def create_app():
             'report': [{'account': a, 'actual': float(x), 'scenario': float(s), 'combined': float(c)}
                        for a, x, s, c in rows],
             'months': [{'month': m, 'accounts': months[m]} for m in sorted(months)],
+            'rules': [{**r, 'summary': describe(r)} for r in rules],
+            'monthly': [{'month': m, 'expense': float(t['expense']), 'revenue': float(t['revenue']),
+                         'funding': float(t['funding']),
+                         'net': float(t['revenue'] - t['expense'])}
+                        for m, t in sorted(totals.items())],
             'leaks': [str(p) for p in leaks],
         }
+
+    class ScenarioRule(BaseModel):
+        model_config = {'extra': 'allow'}
+        name: str
+        kind: str = 'expense'
+        driver: str = 'fixed'
+        start: str = ''
+
+    def _rule_payload(req):
+        data = {k: v for k, v in req.model_dump().items() if v not in (None, '')}
+        data['name'] = data.get('name', '').strip()
+        if not data['name']:
+            raise HTTPException(status_code=400, detail="Name is required")
+        data.setdefault('start', date.today().isoformat())
+        for key in ('months', 'repeat'):
+            if key in data:
+                data[key] = int(data[key]) or None
+        return {k: v for k, v in data.items() if v is not None}
+
+    @app.post("/api/scenario/{slug}/rule")
+    async def scenario_add_rule(slug: str, req: ScenarioRule):
+        from modules.scenario import add_rule
+        _scenario_or_404(slug)
+        try:
+            rule = add_rule(slug, _rule_payload(req), load_config())
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {'status': 'ok', 'rule': rule, 'message': f"Added rule {rule['id']}"}
+
+    @app.put("/api/scenario/{slug}/rule/{rule_id}")
+    async def scenario_update_rule(slug: str, rule_id: str, req: ScenarioRule):
+        from modules.scenario import load_rules, save_rules
+        from lib.plan_rules import validate
+        _scenario_or_404(slug)
+        rules = load_rules(slug)
+        new = {**_rule_payload(req), 'id': rule_id}
+        problems = validate(new)
+        if problems:
+            raise HTTPException(status_code=400, detail='; '.join(problems))
+        for i, r in enumerate(rules):
+            if r.get('id') == rule_id:
+                rules[i] = new          # replace, so cleared fields really go away
+                save_rules(slug, rules, load_config())
+                return {'status': 'ok', 'rule': new}
+        raise HTTPException(status_code=404, detail=f"No rule {rule_id}")
+
+    @app.delete("/api/scenario/{slug}/rule/{rule_id}")
+    async def scenario_remove_rule(slug: str, rule_id: str):
+        from modules.scenario import remove_rule
+        _scenario_or_404(slug)
+        try:
+            remove_rule(slug, rule_id, load_config())
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"No rule {rule_id}")
+        return {'status': 'ok'}
+
+    class ScenarioCopy(BaseModel):
+        name: str
+
+    @app.post("/api/scenario/{slug}/copy")
+    async def scenario_copy(slug: str, req: ScenarioCopy):
+        from modules.scenario import copy_scenario
+        _scenario_or_404(slug)
+        try:
+            new = copy_scenario(slug, req.name.strip())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {'status': 'ok', 'slug': new}
+
+    @app.post("/api/scenario/{slug}/migrate")
+    async def scenario_migrate(slug: str):
+        from modules.scenario import migrate_entries
+        _scenario_or_404(slug)
+        return {'status': 'ok', 'rules': migrate_entries(slug, load_config())}
 
     class ScenarioItem(BaseModel):
         description: str

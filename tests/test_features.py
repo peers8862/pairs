@@ -32,6 +32,8 @@ def test_command_and_path_lookup():
     assert pack_for_path('/api/scenario/x/item') == 'scenarios'
     assert pack_for_path('/api/scenarios') == 'scenarios'
     assert pack_for_path('/api/budgets') is None
+    assert pack_for_path('/api/metrics') is None          # dashboard, baseline
+    assert pack_for_path('/api/scenariosx') is None
 
 
 def test_every_pack_requirement_exists():

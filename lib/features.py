@@ -31,7 +31,7 @@ PACKS = {
     'executive': {
         'title': 'Executive',
         'description': 'Company profile and company/product/founder metrics',
-        'commands': ['profile', 'metric'],
+        'commands': ['profile', 'kpi'],
     },
     'captable': {
         'title': 'Cap table & fundraising',
@@ -75,22 +75,24 @@ def resolve(global_cfg, entity_cfg=None):
     return state
 
 
-# Web API path prefixes owned by each pack (checked by the web middleware).
+# Web API roots owned by each pack (checked by the web middleware). A root
+# matches itself and anything below it ("/api/scenario" covers
+# "/api/scenario/x/rule" but not "/api/scenarios" — list each root).
+# Baseline roots such as /api/metrics (dashboard) must never appear here.
 PACK_PATHS = {
-    '/api/scenario': 'scenarios',
+    '/api/scenario': 'scenarios', '/api/scenarios': 'scenarios',
     '/api/runway': 'runway',
-    '/api/profile': 'executive',
-    '/api/metric': 'executive',
-    '/api/round': 'captable',
-    '/api/investor': 'captable',
+    '/api/profile': 'executive', '/api/kpi': 'executive', '/api/kpis': 'executive',
+    '/api/round': 'captable', '/api/rounds': 'captable',
+    '/api/investor': 'captable', '/api/investors': 'captable',
     '/api/captable': 'captable',
     '/api/growth': 'growth',
 }
 
 
 def pack_for_path(path):
-    for prefix, name in PACK_PATHS.items():
-        if path.startswith(prefix):
+    for root, name in PACK_PATHS.items():
+        if path == root or path.startswith(root + '/'):
             return name
     return None
 

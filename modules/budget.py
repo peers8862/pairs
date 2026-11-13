@@ -1224,8 +1224,8 @@ def _get_actual_for_periods(config, account, periods, division=None, scenario=No
     if journal_file and expand_path(journal_file).exists():
         files.append(str(expand_path(journal_file)))
     if scenario:
-        from modules.scenario import scenario_journal
-        files.append(str(scenario_journal(scenario)))
+        from modules.scenario import scenario_files
+        files += [str(f) for f in scenario_files(scenario)]
     if not files or not periods:
         return Decimal('0')
 

@@ -317,7 +317,7 @@ The baseline (books, reports, contacts, budgets, payroll…) is always on. Optio
 |---|---|---|
 | `scenarios` | `pair scenario`, web Plan tab | |
 | `runway` | `pair runway`, Plan > Runway | scenarios |
-| `executive` | `pair profile`, `pair metric`, web Company tab | |
+| `executive` | `pair profile`, `pair kpi`, web Company tab | |
 | `captable` | `pair round`, `pair investor`, `pair captable` | |
 | `growth` | `pair growth`, Plan > Growth | scenarios |
 
@@ -366,6 +366,32 @@ pair budget forecast --scenario studio-move            # year-end projection inc
 ```
 
 ---
+
+### Rules (one stored line per planned item)
+
+A rule is kept once in `scenario.yaml` and turned into dated entries (`rules.journal`, regenerated on every change). Drivers say how the amount behaves:
+
+| Driver | Meaning | Flags |
+|---|---|---|
+| `fixed` | same amount each time | `--amount` |
+| `growth` | changes by a % each occurrence | `--amount --rate 0.05` |
+| `step` | new amount from a date | `--amount --step 2027-01-01=1700` |
+| `percent` | share of the scenario's revenue that month (or of another rule) | `--percent 0.029 [--of r2]` |
+| `units` | units × price, units growing; optional cost per unit (COGS) | `--units --price [--unit-growth --unit-cost]` |
+| `salary` | a hire: salary/12 + benefits, yearly raise, one-off setup | `--salary --benefits --raise --setup-cost` |
+
+Kinds: `expense`, `revenue`, `funding` (`--instrument equity|safe|note|debt|grant`; cash in, not profit). Timing: `--start`, `--every weekly|monthly|quarterly|semiannual|annual|once`, then `--end DATE`, `--months N` or `--repeat N`.
+
+```bash
+pair scenario rule add lean --name "Card fees" --driver percent --percent 0.029
+pair scenario rule add lean --name "Dev hire" --driver salary --salary 90000 --benefits 0.12 --start 2027-01-01 --months 18
+pair scenario rule add lean --name "Pre-seed" --kind funding --instrument safe --amount 150000 --every once
+pair scenario rule list lean
+pair scenario copy lean "Lean + studio"     # same rules, new scenario
+pair scenario migrate lean                  # group old manual entries into rules
+```
+
+Report categories (`report_categories` in config.yaml) group accounts into Salaries & Benefits, Marketing & Sales, Product & Materials, Legal & Accounting and Overhead by default.
 
 ## Income Module
 
