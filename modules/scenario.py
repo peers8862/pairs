@@ -360,6 +360,27 @@ def remove_rule(slug, rule_id, config=None):
     save_rules(slug, kept, config)
 
 
+def scenario_monthly(slug, config=None):
+    """Planned amounts by month: ({YYYY-MM: {revenue, expense, funding}},
+    {YYYY-MM: {account: expense}}) from rules and manual entries."""
+    from lib.plan_rules import expand, month_key
+    months, by_account = {}, {}
+
+    def add(month, kind, account, amount):
+        m = months.setdefault(month, {'revenue': Decimal('0'), 'expense': Decimal('0'),
+                                      'funding': Decimal('0')})
+        m[kind] += amount
+        if kind == 'expense':
+            a = by_account.setdefault(month, {})
+            a[account] = a.get(account, Decimal('0')) + amount
+
+    for o in expand(load_rules(slug)):
+        add(month_key(o['date']), o['kind'], o['account'], o['amount'])
+    for e in read_entries(slug):
+        add(e['date'][:7], e['kind'], e['account'], e['amount'])
+    return dict(sorted(months.items())), by_account
+
+
 def copy_scenario(slug, new_name, description=None):
     """New scenario with the same rules and manual entries."""
     meta = load_scenario(slug) or {}

@@ -158,7 +158,7 @@ def _filter_accounts(accounts, prefixes):
 
 def create_app():
     """Create and configure the FastAPI application."""
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, Query
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse
     from pydantic import BaseModel
@@ -2207,6 +2207,32 @@ def create_app():
         except IndexError as e:
             raise HTTPException(status_code=404, detail=str(e))
         return {'status': 'ok', 'message': 'Entry removed'}
+
+    # ─── Runway (runway pack) ───────────────────────────────────────────────
+
+    @app.get("/api/runway")
+    async def runway(scenario: str = '', mode: str = 'add', months: int = 18, start: str = '',
+                     cash: str = '', raise_: str = Query('', alias='raise')):
+        from modules.runway import build
+        from lib.runway import to_json
+        from lib.features import is_enabled
+        if scenario:
+            if not is_enabled('scenarios'):
+                raise HTTPException(status_code=404, detail="Scenarios pack is off")
+            _scenario_or_404(scenario)
+        if mode not in ('add', 'replace'):
+            raise HTTPException(status_code=400, detail="mode is add or replace")
+        try:
+            data = build(load_config(), scenario or None, max(1, min(months, 120)), mode,
+                         start or None, Decimal(cash) if cash else None, raise_ or None)
+        except (RuntimeError, ValueError, ArithmeticError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        rows, summary = to_json(data['rows'], data['summary'])
+        f = lambda v: float(v) if isinstance(v, Decimal) else v
+        return {'currency': data['currency'], 'scenario': data['scenario'], 'books': data['books'],
+                'rows': rows, 'summary': summary,
+                'uses': {'amount': f(data['uses']['amount']), 'covers_months': f(data['uses']['covers_months']),
+                         'rows': [{k: f(v) for k, v in r.items()} for r in data['uses']['rows']]}}
 
     # ─── Budgets (read-only; compared with actuals and scenarios) ───────────
 
