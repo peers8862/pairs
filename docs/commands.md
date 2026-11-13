@@ -318,7 +318,7 @@ The baseline (books, reports, contacts, budgets, payroll…) is always on. Optio
 | `scenarios` | `pair scenario`, web Plan tab | |
 | `runway` | `pair runway`, Plan > Runway | scenarios |
 | `executive` | `pair profile`, `pair kpi`, web Company tab (Profile, KPIs) | |
-| `captable` | `pair round`, `pair investor`, `pair captable` | |
+| `captable` | `pair round`, `pair investor`, `pair captable`, Company > Fundraising / Cap table | |
 | `growth` | `pair growth`, Plan > Growth | scenarios |
 
 ```bash
@@ -448,6 +448,35 @@ pair kpi --months 6 --project 6
 ```
 
 Files: `kpis/values.csv` (metric, month, value, note), `kpis/definitions.yaml` (your own metrics), `kpis/projections.yaml`. Web: Company > Profile and Company > KPIs (type into a cell to record it).
+
+## Fundraising and Cap Table  `[captable pack]`
+
+**Rounds** hold the type, instrument (SAFE, note, equity, debt, grant), target, anticipated close and terms (cap, discount, interest, price). **Investors** move through stages (1st call → 2nd call → due diligence → documents requested → soft committed → agreement sent → signed → capital received, or passed). Rounds show target vs soft-committed, signed and received. Connections, meetings and conversions feed Company > KPIs automatically.
+
+```bash
+pair round add "Pre-seed 2027" --type pre-seed --instrument safe --target 500000 --cap 5000000 --discount 0.2
+pair investor add "Ann Angel" --organization "Angels North" --investor-type "angel (pro)" --round pre-seed-2027 --amount 50000
+pair investor meeting ann-angel "Walked through the deck" --date 2026-11-12
+pair investor stage ann-angel "soft committed"
+pair investor receive ann-angel --dry-run      # preview
+pair investor receive ann-angel                # writes the books AND the cap table
+```
+
+`receive` writes the cash entry (bank / Equity:SAFE, Equity:Share Capital or Liabilities:Long-Term:Convertible Notes) to `generated/<year>/equity.journal`, and records the SAFE/note, or shares at the round price, in the cap table — entered once, both stay in step.
+
+**Cap table** (`captable/register.yaml`): holders by group, share classes, issuances, option pool and grants, open SAFEs and notes. **Versions** (`captable/versions/`) are contemplated futures built from steps — SAFE, note, priced round (pre-money or % sold, pool top-up to a target), option grant — and never change the real table.
+
+```bash
+pair captable holder "Ana Diaz" --group founder
+pair captable issue ana-diaz 4500000
+pair captable pool 1000000
+pair captable version new "Seed at 8M pre"
+pair captable version step seed-at-8m-pre --type safe --holder angels --amount 300000 --cap 5000000
+pair captable version step seed-at-8m-pre --type priced --name Seed --investment 2000000 --pre-money 8000000 --pool-target 0.1
+pair captable compare
+```
+
+Priced rounds convert open notes and SAFEs (pre-money notes at min(price × (1 − discount), cap ÷ pre-round shares); post-money SAFEs own amount ÷ cap of the post-SAFE capitalisation). Notes accrue simple interest. Liquidation preferences, pro-rata and vesting are not modelled. Web: Company > Fundraising and Company > Cap table.
 
 ## Income Module
 

@@ -13,7 +13,7 @@ from lib.yaml_store import (
 
 MODULE = "contacts"
 
-ROLES = ['client', 'vendor', 'employee', 'lender', 'entity']
+ROLES = ['client', 'vendor', 'employee', 'lender', 'investor', 'entity']
 
 
 def dispatch(args):

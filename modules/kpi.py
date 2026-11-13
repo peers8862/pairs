@@ -50,7 +50,13 @@ def build(config, entity_dir=None, end=None, months=12, project=0):
     projections = K.load_projections(entity_dir)
     ms = window(end, months)
     future = [add_months(ms[-1], i) for i in range(1, int(project) + 1)]
-    cells = K.grid(defs, values, ledger_series(config), ms, projections, future)
+    feeds = ledger_series(config)
+    from lib.features import is_enabled
+    if is_enabled('captable'):
+        from modules.fundraise import load_deals
+        from lib.fundraising import momentum
+        feeds.update(momentum(load_deals(entity_dir), config))
+    cells = K.grid(defs, values, feeds, ms, projections, future)
     return {'defs': defs, 'months': ms, 'future': future, 'cells': cells, 'notes': notes,
             'projections': projections, 'buckets': K.BUCKETS}
 

@@ -2328,6 +2328,174 @@ def create_app():
         K.save_projection(get_entity_dir(), req.key, req.growth)
         return {'status': 'ok'}
 
+    # ─── Fundraising and cap table (captable pack) ───────────────────────────
+
+    def _num(v):
+        return float(v) if isinstance(v, Decimal) else v
+
+    def _deep(v):
+        if isinstance(v, Decimal):
+            return float(v)
+        if isinstance(v, dict):
+            return {str(k): _deep(x) for k, x in v.items()}
+        if isinstance(v, (list, tuple)):
+            return [_deep(x) for x in v]
+        return v
+
+    @app.get("/api/rounds")
+    async def rounds_list():
+        from modules.fundraise import load_rounds, load_deals
+        from lib import fundraising as F
+        config = load_config()
+        deals = load_deals()
+        return {'rounds': [{**r, 'progress': _deep(F.progress(r, deals, config))} for r in load_rounds()],
+                'stages': F.stages(config), 'closed_lost': F.CLOSED_LOST,
+                'investor_types': F.investor_types(config), 'round_types': F.ROUND_TYPES,
+                'instruments': F.INSTRUMENTS, 'currency': get_entity_currency()}
+
+    @app.post("/api/round")
+    async def round_add(data: dict):
+        from modules.fundraise import add_round
+        try:
+            return {'round': add_round(data)}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.put("/api/round/{rid}")
+    async def round_update(rid: str, data: dict):
+        from modules.fundraise import update_round
+        try:
+            return {'round': update_round(rid, data)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"No round {rid}")
+
+    @app.get("/api/investors")
+    async def investors_list():
+        from modules.fundraise import load_deals
+        return {'investors': load_deals()}
+
+    @app.post("/api/investor")
+    async def investor_add(data: dict):
+        from modules.fundraise import add_deal
+        try:
+            return {'investor': add_deal(data, config=load_config())}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.put("/api/investor/{did}")
+    async def investor_update(did: str, data: dict):
+        from modules.fundraise import update_deal
+        try:
+            return {'investor': update_deal(did, data, config=load_config())}
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"No investor {did}")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/investor/{did}")
+    async def investor_remove(did: str):
+        from modules.fundraise import remove_deal
+        try:
+            remove_deal(did)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"No investor {did}")
+        return {'status': 'ok'}
+
+    @app.post("/api/investor/{did}/receive")
+    async def investor_receive(did: str, data: dict):
+        from modules.fundraise import receive
+        try:
+            s = receive(did, data.get('date') or None, load_config(), write=not data.get('preview'))
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"No investor {did}")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return _deep(s)
+
+    @app.get("/api/captable")
+    async def captable_get():
+        from modules.captable import load_register, list_versions, load_version
+        from lib import captable as C
+        reg = load_register()
+        t = C.table(reg)
+        return _deep({'table': t, 'groups': C.by_group(reg), 'holders': reg['holders'], 'classes': reg['classes'],
+                      'pool_size': reg['pool'].get('size', 0), 'grants': reg['grants'],
+                      'versions': [{'slug': v, 'name': (load_version(v) or {}).get('name', v)} for v in list_versions()],
+                      'currency': get_entity_currency()})
+
+    @app.post("/api/captable/change")
+    async def captable_change(data: dict):
+        from modules.captable import load_register, save_register, apply_change
+        try:
+            reg = apply_change(load_register(), data)
+        except (ValueError, KeyError, ArithmeticError) as e:
+            raise HTTPException(status_code=400, detail=str(e) or 'invalid change')
+        save_register(reg)
+        return {'status': 'ok'}
+
+    @app.post("/api/captable/version")
+    async def captable_version_new(data: dict):
+        from modules.captable import load_version, save_version
+        from lib.helpers import slugify
+        name = (data.get('name') or '').strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="A version needs a name")
+        slug = slugify(name)
+        if load_version(slug):
+            raise HTTPException(status_code=400, detail=f"Version {slug} exists")
+        save_version(slug, {'name': name, 'steps': data.get('steps') or []})
+        return {'slug': slug}
+
+    @app.get("/api/captable/version/{slug}")
+    async def captable_version_get(slug: str):
+        from modules.captable import load_version, version_result
+        from lib import captable as C
+        v = load_version(slug)
+        if not v:
+            raise HTTPException(status_code=404, detail=f"No version {slug}")
+        try:
+            reg, steps = version_result(v)
+            error = ''
+        except (ValueError, ArithmeticError) as e:
+            reg, steps, error = None, [], str(e)
+        return _deep({'slug': slug, 'name': v.get('name', slug), 'steps': v.get('steps') or [],
+                      'results': steps, 'error': error,
+                      'table': C.table(reg) if reg else None})
+
+    @app.put("/api/captable/version/{slug}")
+    async def captable_version_save(slug: str, data: dict):
+        from modules.captable import load_version, save_version, load_register
+        from lib import captable as C
+        v = load_version(slug)
+        if not v:
+            raise HTTPException(status_code=404, detail=f"No version {slug}")
+        steps = data.get('steps', v.get('steps') or [])
+        try:
+            C.apply_steps(load_register(), steps)
+        except (ValueError, KeyError, ArithmeticError) as e:
+            raise HTTPException(status_code=400, detail=str(e) or 'invalid step')
+        v['steps'] = steps
+        if data.get('name'):
+            v['name'] = data['name']
+        save_version(slug, v)
+        return {'status': 'ok'}
+
+    @app.delete("/api/captable/version/{slug}")
+    async def captable_version_delete(slug: str):
+        from modules.captable import delete_version
+        if not delete_version(slug):
+            raise HTTPException(status_code=404, detail=f"No version {slug}")
+        return {'status': 'ok'}
+
+    @app.get("/api/captable/compare")
+    async def captable_compare(slugs: str = ''):
+        from modules.captable import compare, list_versions
+        try:
+            rows = compare([s for s in slugs.split(',') if s] or list_versions())
+        except (ValueError, ArithmeticError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return _deep({'rows': rows})
+
     # ─── Budgets (read-only; compared with actuals and scenarios) ───────────
 
     @app.get("/api/budgets")
