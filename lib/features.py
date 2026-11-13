@@ -83,6 +83,7 @@ PACK_PATHS = {
     '/api/scenario': 'scenarios', '/api/scenarios': 'scenarios',
     '/api/runway': 'runway',
     '/api/profile': 'executive', '/api/kpi': 'executive', '/api/kpis': 'executive',
+    '/api/portrait': 'executive',
     '/api/round': 'captable', '/api/rounds': 'captable',
     '/api/investor': 'captable', '/api/investors': 'captable',
     '/api/captable': 'captable',

@@ -2075,6 +2075,7 @@ def create_app():
                        for a, x, s, c in rows],
             'months': [{'month': m, 'accounts': months[m]} for m in sorted(months)],
             'rules': [{**r, 'summary': describe(r)} for r in rules],
+            'layers': meta.get('layers') or [], 'growth': bool(meta.get('growth')),
             'monthly': [{'month': m, 'expense': float(t['expense']), 'revenue': float(t['revenue']),
                          'funding': float(t['funding']),
                          'net': float(t['revenue'] - t['expense'])}
@@ -2541,6 +2542,103 @@ def create_app():
         except (ValueError, ArithmeticError) as e:
             raise HTTPException(status_code=400, detail=str(e))
         return _deep({'rows': rows})
+
+    # ─── Views: compare, statements, export, layers, budget, portrait ────────
+
+    def _rw_args(scenario, mode, months, cash):
+        from lib.features import is_enabled
+        if scenario and not is_enabled('scenarios'):
+            raise HTTPException(status_code=404, detail="Scenarios pack is off")
+        if scenario:
+            _scenario_or_404(scenario)
+        if mode not in ('add', 'replace'):
+            raise HTTPException(status_code=400, detail="mode is add or replace")
+        try:
+            return scenario or None, max(1, min(int(months), 120)), mode, (Decimal(cash) if cash else None)
+        except (ValueError, ArithmeticError):
+            raise HTTPException(status_code=400, detail="months and cash are numbers")
+
+    @app.get("/api/runway/statements")
+    async def runway_statements(scenario: str = '', mode: str = 'add', months: int = 18, cash: str = ''):
+        from modules.runway import statements
+        sc, mo, md, ca = _rw_args(scenario, mode, months, cash)
+        out = statements(load_config(), sc, mo, md, None, ca)
+        out['lines'] = [{**l, 'values': {m: float(v) for m, v in l['values'].items()}} for l in out['lines']]
+        return out
+
+    @app.get("/api/runway/compare")
+    async def runway_compare(slugs: str = '', mode: str = 'add', months: int = 18, cash: str = ''):
+        from modules.runway import compare_scenarios
+        from modules.scenario import list_scenarios
+        _, mo, md, ca = _rw_args('', mode, months, cash)
+        names = [s for s in slugs.split(',') if s] or list_scenarios()
+        for s_ in names:
+            _scenario_or_404(s_)
+        rows = compare_scenarios(load_config(), names, mo, md, ca)
+        f = lambda v: float(v) if isinstance(v, Decimal) else v
+        return {'rows': [{k: (f(v) if k != 'series' else [{'month': p['month'], 'end': f(p['end'])} for p in v])
+                          for k, v in r.items()} for r in rows], 'currency': get_entity_currency()}
+
+    @app.get("/api/runway/export")
+    async def runway_export(kind: str = 'runway', scenario: str = '', mode: str = 'add', months: int = 18,
+                            cash: str = '', slugs: str = ''):
+        import csv as _csv, io as _io
+        from fastapi.responses import Response
+        from modules.runway import build, statements, compare_scenarios
+        from modules.scenario import list_scenarios
+        buf = _io.StringIO()
+        w = _csv.writer(buf)
+        sc, mo, md, ca = _rw_args(scenario if kind != 'compare' else '', mode, months, cash)
+        config = load_config()
+        if kind == 'runway':
+            data = build(config, sc, mo, md, None, ca)
+            w.writerow(['month', 'source', 'begin', 'revenue', 'expenses', 'net', 'funding', 'end_cash'])
+            for r in data['rows']:
+                w.writerow([r['month'], r['source'], r['begin'], r['revenue'], r['expense'], r['net'], r['funding'], r['end']])
+        elif kind == 'statements':
+            st = statements(config, sc, mo, md, None, ca)
+            w.writerow(['line'] + st['months'])
+            for l in st['lines']:
+                w.writerow([l['label']] + [l['values'].get(m, '') for m in st['months']])
+        elif kind == 'compare':
+            names = [s_ for s_ in slugs.split(',') if s_] or list_scenarios()
+            rows = compare_scenarios(config, names, mo, md, ca)
+            keys = ['revenue', 'expense', 'net', 'funding', 'end_cash', 'lowest_cash', 'burn', 'runway',
+                    'cash_out', 'breakeven', 'raise_target']
+            w.writerow(['measure'] + [r['name'] for r in rows])
+            for k in keys:
+                w.writerow([k] + [r[k] if r[k] is not None else '' for r in rows])
+        else:
+            raise HTTPException(status_code=400, detail="kind is runway, statements or compare")
+        name = f"{kind}-{scenario or 'all'}.csv"
+        return Response(buf.getvalue(), media_type='text/csv',
+                        headers={'Content-Disposition': f'attachment; filename="{name}"'})
+
+    @app.put("/api/scenario/{slug}/layers")
+    async def scenario_layers(slug: str, data: dict):
+        from modules.scenario import set_layers
+        _scenario_or_404(slug)
+        try:
+            set_layers(slug, data.get('layers') or [], load_config())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {'status': 'ok'}
+
+    @app.post("/api/scenario/{slug}/budget")
+    async def scenario_budget(slug: str, data: dict):
+        from modules.scenario import scenario_to_budget
+        _scenario_or_404(slug)
+        try:
+            b = scenario_to_budget(slug, int(data.get('year') or date.today().year + 1), data.get('name') or None,
+                                   bool(data.get('activate')), load_config())
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {'budget': b}
+
+    @app.get("/api/portrait")
+    async def portrait(scenario: str = ''):
+        from modules.portrait import build
+        return build(load_config(), scenario or None)
 
     # ─── Budgets (read-only; compared with actuals and scenarios) ───────────
 

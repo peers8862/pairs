@@ -52,6 +52,41 @@ def build(config, scenario=None, months=18, mode='add', start=None, starting_cas
     }
 
 
+def statements(config, scenario=None, months=18, mode='add', start=None, starting_cash=None):
+    from lib import statements as ST
+    data = build(config, scenario, months, mode, start, starting_cash)
+    journal = config.get('journal_file')
+    journal = expand_path(journal) if journal else None
+    actual_exp, _ = ST.actual_by_account(journal, data['currency'], start or rw.this_month())
+    plan_exp = {}
+    if scenario:
+        from modules.scenario import scenario_monthly
+        _, plan_exp = scenario_monthly(scenario, config)
+    out = ST.build(data['rows'], actual_exp, plan_exp, data['summary']['base_expense'], mode, config)
+    out['currency'] = data['currency']
+    return out
+
+
+def compare_scenarios(config, slugs, months=18, mode='add', starting_cash=None):
+    """One summary row per scenario (plus 'no scenario' first)."""
+    from decimal import Decimal as _D
+    from modules.scenario import load_scenario
+    rows = []
+    for slug in [''] + list(slugs):
+        data = build(config, slug or None, months, mode, None, starting_cash)
+        s, plan = data['summary'], [r for r in data['rows'] if r['source'] == 'plan']
+        tot = lambda k: sum((r[k] for r in plan), _D('0'))
+        rows.append({'slug': slug, 'name': (load_scenario(slug) or {}).get('name', slug) if slug else 'No scenario',
+                     'revenue': tot('revenue'), 'expense': tot('expense'), 'net': tot('net'),
+                     'funding': tot('funding'), 'end_cash': plan[-1]['end'] if plan else s['cash_now'],
+                     'lowest_cash': s['lowest_cash'], 'burn': s['avg_burn_plan'],
+                     'runway': s['runway_months'] if s['runway_months'] is not None else s['runway_text'],
+                     'cash_out': s['cash_out_month'], 'breakeven': s['breakeven_month'],
+                     'raise_target': s['raise_target'],
+                     'series': [{'month': r['month'], 'end': r['end']} for r in plan]})
+    return rows
+
+
 def dispatch(args):
     flags, remaining = parse_global_flags(args)
     if flags['help'] or (remaining and remaining[0] in ('help',)):

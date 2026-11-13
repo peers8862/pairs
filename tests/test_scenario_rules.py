@@ -85,3 +85,35 @@ def test_growth_model_feeds_scenario_months(entity):
     assert 'rule:growth-revenue' in (entity / 'scenarios' / slug / 'rules.journal').read_text()
     with pytest.raises(ValueError):
         sc.save_growth(slug, {'start': 'x'})
+
+
+def test_layers_merge_and_refuse_loops(entity, monkeypatch):
+    base = sc.create_scenario('Base')
+    sc.add_rule(base, {'name': 'Rent', 'account': 'Expenses:Rent', 'amount': 1000, 'start': '2027-01-01', 'months': 2})
+    hire = sc.create_scenario('Hire')
+    sc.add_rule(hire, {'name': 'Dev', 'driver': 'salary', 'salary': 120000, 'start': '2027-01-01', 'months': 2})
+    sc.set_layers(hire, [base])
+    months, _ = sc.scenario_monthly(hire)
+    assert float(months['2027-01']['expense']) == 11000
+    # changing the base regenerates the layered scenario's journal
+    sc.add_rule(base, {'name': 'Ads', 'amount': 500, 'start': '2027-01-01', 'every': 'once'})
+    assert 'Ads' in (entity / 'scenarios' / hire / 'rules.journal').read_text()
+    with pytest.raises(ValueError):
+        sc.set_layers(base, [hire])
+    with pytest.raises(ValueError):
+        sc.set_layers(hire, ['nope'])
+
+
+def test_scenario_to_budget(entity, monkeypatch):
+    import modules.budget as B
+    monkeypatch.setattr(B, 'get_entity_dir', lambda: entity, raising=False)
+    import lib.helpers as H
+    monkeypatch.setattr(H, 'get_entity_dir', lambda: entity)
+    slug = sc.create_scenario('Plan')
+    sc.add_rule(slug, {'name': 'Rent', 'account': 'Expenses:Rent', 'amount': 1000, 'start': '2027-03-01', 'months': 12})
+    b = sc.scenario_to_budget(slug, 2027, activate=True)
+    data = B._load_budget(b)
+    assert data['lines'][0]['account'] == 'Expenses:Rent'
+    assert data['lines'][0]['amounts'][:3] == [0, 0, 1000] and data['active'] and data['source_scenario'] == slug
+    with pytest.raises(ValueError):
+        sc.scenario_to_budget(slug, 2030)

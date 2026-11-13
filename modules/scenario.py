@@ -220,6 +220,8 @@ def create_scenario(name, description=''):
 def add_entries(slug, entries):
     with open(scenario_journal(slug), 'a') as f:
         f.write(''.join(entries))
+    for dep in dependents(slug):
+        sync_rules_journal(dep)
 
 
 def _entry_blocks(text):
@@ -303,24 +305,71 @@ def _cash_setup(config):
             config.get('accounts', {}).get('bank', 'Assets:Current:Chequing'))
 
 
-def scenario_occurrences(slug, meta=None):
-    """Dated amounts from a scenario's rules and its growth model."""
+def scenario_occurrences(slug, meta=None, _seen=None):
+    """Dated amounts from a scenario's rules, its growth model and the
+    scenarios it layers on top of (scenario.yaml `layers: [slug, ...]`)."""
     from lib.plan_rules import expand
+    seen = set(_seen or ()) | {slug}
     meta = meta if meta is not None else (load_scenario(slug) or {})
     occ = expand(list(meta.get('rules') or []))
     if meta.get('growth'):
         from lib.growth import occurrences
         occ += occurrences(meta['growth'])
+    for layer in meta.get('layers') or []:
+        if layer in seen or load_scenario(layer) is None:
+            continue
+        for o in scenario_occurrences(layer, None, seen):
+            occ.append({**o, 'rule': f"{layer}/{o['rule']}", 'layer': layer})
+        for e in read_entries(layer):
+            occ.append({'rule': f"{layer}/entry{e['index']}", 'name': e['description'], 'kind': e['kind'],
+                        'account': e['account'], 'category': '', 'layer': layer,
+                        'date': date.fromisoformat(e['date']), 'amount': e['amount']})
     return sorted(occ, key=lambda o: (o['date'], o['rule']))
 
 
-def sync_rules_journal(slug, config=None):
-    """Regenerate rules.journal from the rules (and growth model) in scenario.yaml."""
+def dependents(slug):
+    """Scenarios that layer this one (directly)."""
+    return [s for s in list_scenarios() if slug in ((load_scenario(s) or {}).get('layers') or [])]
+
+
+def set_layers(slug, layers, config=None):
+    """Set the scenarios this one builds on; refuses unknown slugs and cycles."""
+    layers = [l for l in dict.fromkeys(layers or []) if l and l != slug]
+    for l in layers:
+        if load_scenario(l) is None:
+            raise ValueError(f"No scenario '{l}'")
+
+    def reaches(start, target, seen=()):
+        for nxt in (load_scenario(start) or {}).get('layers') or []:
+            if nxt == target or (nxt not in seen and reaches(nxt, target, seen + (nxt,))):
+                return True
+        return False
+    for l in layers:
+        if reaches(l, slug):
+            raise ValueError(f"'{l}' already builds on '{slug}' (that would be a loop)")
+    meta = load_scenario(slug) or {}
+    if layers:
+        meta['layers'] = layers
+    else:
+        meta.pop('layers', None)
+    _save_meta(slug, meta)
+    sync_rules_journal(slug, config)
+
+
+def sync_rules_journal(slug, config=None, _done=None):
+    """Regenerate rules.journal from the rules, growth model and layers in
+    scenario.yaml, then the scenarios that layer this one."""
     from lib.plan_rules import journal_text
     from lib.journal import write_journal_atomic
+    done = set(_done or ())
+    if slug in done:
+        return
+    done.add(slug)
     currency, bank = _cash_setup(config)
     text = journal_text(slug, scenario_occurrences(slug), currency, bank)
     write_journal_atomic(scenario_dir(slug) / RULES_JOURNAL, text)
+    for dep in dependents(slug):
+        sync_rules_journal(dep, config, done)
 
 
 def save_rules(slug, rules, config=None):
@@ -408,6 +457,34 @@ def save_growth(slug, model, config=None):
     sync_rules_journal(slug, config)
 
 
+def scenario_to_budget(slug, year, name=None, activate=False, config=None):
+    """Write a monthly budget for `year` from the scenario's planned expenses.
+
+    Each expense account the scenario touches becomes a budget line with 12
+    monthly amounts. Returns the budget slug."""
+    from modules.budget import _generate_periods, _save_budget, _load_budget, _list_budgets
+    meta = load_scenario(slug) or {}
+    year = int(year)
+    _, by_account = scenario_monthly(slug, config)
+    accounts = sorted({a for m, accts in by_account.items() if m.startswith(f'{year}-') for a in accts})
+    if not accounts:
+        raise ValueError(f"The scenario has no planned expenses in {year}")
+    lines = [{'account': a, 'amounts': [float(by_account.get(f'{year}-{m:02d}', {}).get(a, 0)) for m in range(1, 13)]}
+             for a in accounts]
+    bslug = slugify(f"{slug}-{year}")
+    name = name or f"{meta.get('name', slug)} {year}"
+    if activate:
+        for other in _list_budgets():
+            b = _load_budget(other)
+            if b and str(b.get('year')) == str(year) and b.get('active') and other != bslug:
+                b['active'] = False
+                _save_budget(other, b)
+    _save_budget(bslug, {'name': name, 'slug': bslug, 'year': str(year), 'scenario': 'custom',
+                         'source_scenario': slug, 'period_type': 'monthly', 'active': bool(activate),
+                         'periods': _generate_periods(year, 'monthly'), 'lines': lines})
+    return bslug
+
+
 def copy_scenario(slug, new_name, description=None):
     """New scenario with the same rules and manual entries."""
     meta = load_scenario(slug) or {}
@@ -489,6 +566,7 @@ def dispatch(args):
         'new': cmd_new, 'list': cmd_list, 'add': cmd_add,
         'show': cmd_show, 'report': cmd_report, 'remove': cmd_remove,
         'rule': cmd_rule, 'rules': cmd_rule, 'copy': cmd_copy, 'migrate': cmd_migrate,
+        'layer': cmd_layer, 'budget': cmd_budget, 'compare': cmd_compare,
     }
     if action not in actions:
         print(f"Unknown scenario action: {action}")
@@ -515,6 +593,9 @@ Actions:
   rule remove <slug> <id>
   copy <slug> <name>  New scenario with the same rules and entries
   migrate <slug>      Turn manual entries into rules
+  layer <slug> [base ...]   Build on other scenarios (no names = clear), e.g. layer hire-editor base
+  budget <slug> --year Y [--name N] [--activate]   Make a monthly budget from planned expenses
+  compare [slug ...] [--replace] [--cash N] [--months N]   Side-by-side net, burn, runway (runway pack)
 
 Rule flags ('rule add'):
   --name TEXT         What it is
@@ -887,3 +968,52 @@ def cmd_migrate(flags, args):
     _require(slug)
     n = migrate_entries(slug)
     print(f"  Turned the manual entries of '{slug}' into {n} rule(s).")
+
+
+def cmd_layer(flags, args):
+    positional = [a for a in args if not a.startswith('--')]
+    slug = positional[0] if positional else None
+    _require(slug)
+    try:
+        set_layers(slug, positional[1:])
+    except ValueError as e:
+        print(f"  {e}")
+        sys.exit(1)
+    layers = (load_scenario(slug) or {}).get('layers') or []
+    print(f"  '{slug}' builds on: {', '.join(layers) if layers else '(nothing)'}")
+
+
+def cmd_budget(flags, args):
+    positional = [a for a in args if not a.startswith('--')]
+    slug = positional[0] if positional else None
+    _require(slug)
+    year = _flag(args, '--year', str(date.today().year + 1))
+    try:
+        b = scenario_to_budget(slug, year, _flag(args, '--name'), '--activate' in args)
+    except ValueError as e:
+        print(f"  {e}")
+        sys.exit(1)
+    print(f"  Wrote budgets/{b}.yaml from '{slug}' for {year}"
+          + (" (active)" if '--activate' in args else '') + f". Compare with: pair budget vs --full")
+
+
+def cmd_compare(flags, args):
+    from lib.features import is_enabled, gate_message
+    if not is_enabled('runway'):
+        print(gate_message('runway'))
+        sys.exit(1)
+    from modules.runway import compare_scenarios
+    slugs = [a for i, a in enumerate(args) if not a.startswith('--') and (i == 0 or args[i - 1] not in ('--cash', '--months'))]
+    slugs = slugs or list_scenarios()
+    cash = _flag(args, '--cash')
+    rows = compare_scenarios(load_config(), slugs, int(_flag(args, '--months', 18)),
+                             'replace' if '--replace' in args else 'add', Decimal(cash) if cash else None)
+    print(f"\n  {'':<20}" + ''.join(f"{r['name'][:16]:>18}" for r in rows))
+    def line(label, key, fmt=lambda v: f"{float(v):,.0f}"):
+        print(f"  {label:<20}" + ''.join(f"{(fmt(r[key]) if r[key] is not None else '—')[:17]:>18}" for r in rows))
+    line('Revenue', 'revenue'); line('Expenses', 'expense'); line('Net', 'net'); line('Funding in', 'funding')
+    line('End cash', 'end_cash'); line('Lowest cash', 'lowest_cash'); line('Burn / month', 'burn')
+    line('Runway (months)', 'runway', lambda v: f"{float(v):.1f}" if isinstance(v, (int, float, Decimal))
+         else {'beyond the projection': 'beyond window', 'not burning cash': 'no burn'}.get(v, str(v)))
+    line('Cash runs out', 'cash_out', str); line('Break-even', 'breakeven', str); line('Raise target', 'raise_target')
+    print()

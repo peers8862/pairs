@@ -175,6 +175,10 @@
     .cap-bar span { display:block; height:100%; }
     #co-cap a { color:var(--accent); }
     .gr-sliders input[type=range] { width:120px; accent-color: var(--accent); }
+    .portrait section { background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:0.75rem 1rem; margin-bottom:0.75rem; }
+    .portrait h3 { margin:0 0 0.4rem; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--fg-dim); font-weight:normal; }
+    .portrait-name { font-size:1.2rem; font-weight:bold; color:var(--accent); }
+    .portrait p { margin:0.3rem 0; }
 </style>
 </head>
     <style>
@@ -1234,6 +1238,15 @@
                 </div>
             </div>
             <div id="rw-content"></div>
+            <div class="plan-row" style="margin-top:0.75rem;">
+                <button class="btn" onclick="loadStatements()">Statements (P&amp;L + cash)</button>
+                <button class="btn" onclick="loadCompare()">Compare scenarios</button>
+                <span class="plan-lbl" style="margin-left:auto;">Download CSV:</span>
+                <a class="btn" style="font-size:0.75rem;" href="#" onclick="rwExport('runway');return false;">runway</a>
+                <a class="btn" style="font-size:0.75rem;" href="#" onclick="rwExport('statements');return false;">statements</a>
+                <a class="btn" style="font-size:0.75rem;" href="#" onclick="rwExport('compare');return false;">comparison</a>
+            </div>
+            <div id="rw-extra"></div>
         </div>
 
         <div id="plan-budgets" style="display:none;">
@@ -1251,11 +1264,13 @@
     <div class="view" id="view-company">
         <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.5rem;">
             <div class="section-title" style="margin:0;" id="co-title">Company</div>
+            <button class="btn plan-subtab co-subtab" id="co-tab-overview" data-pack="executive" onclick="companyShow('overview')">Overview</button>
             <button class="btn plan-subtab co-subtab" id="co-tab-profile" data-pack="executive" onclick="companyShow('profile')">Profile</button>
             <button class="btn plan-subtab co-subtab" id="co-tab-kpis" data-pack="executive" onclick="companyShow('kpis')">KPIs</button>
             <button class="btn plan-subtab co-subtab" id="co-tab-fund" data-pack="captable" onclick="companyShow('fund')">Fundraising</button>
             <button class="btn plan-subtab co-subtab" id="co-tab-cap" data-pack="captable" onclick="companyShow('cap')">Cap table</button>
         </div>
+        <div id="co-overview" style="display:none;"></div>
         <div id="co-profile" style="display:none;"></div>
         <div id="co-fund" style="display:none;"></div>
         <div id="co-cap" style="display:none;"></div>
@@ -3672,15 +3687,16 @@
     }
 
     // ─── Company: profile and KPIs (executive pack) ─────────────────────────
-    const coState = {tab: 'profile', kpi: null};
+    const coState = {tab: 'overview', kpi: null};
     function loadCompanyView() {
-        const first = ['profile', 'kpis', 'fund', 'cap'].find(t => document.getElementById('co-tab-' + t).style.display !== 'none');
+        const first = ['overview', 'profile', 'kpis', 'fund', 'cap'].find(t => document.getElementById('co-tab-' + t).style.display !== 'none');
         companyShow(document.getElementById('co-tab-' + coState.tab)?.style.display === 'none' ? (first || 'profile') : coState.tab);
     }
     function companyShow(tab) {
         coState.tab = tab;
-        ['profile', 'kpis', 'fund', 'cap'].forEach(t => { const el = document.getElementById('co-' + t); if (el) el.style.display = t === tab ? '' : 'none'; });
+        ['overview', 'profile', 'kpis', 'fund', 'cap'].forEach(t => { const el = document.getElementById('co-' + t); if (el) el.style.display = t === tab ? '' : 'none'; });
         document.querySelectorAll('.co-subtab').forEach(b => b.classList.toggle('sel', b.id === 'co-tab-' + tab));
+        if (tab === 'overview') loadPortrait();
         if (tab === 'profile') loadProfile();
         if (tab === 'kpis') loadKpis();
         if (tab === 'fund') loadFundraising();
@@ -4173,18 +4189,103 @@
         box.innerHTML = html + '</tbody></table></div>';
     }
 
+    // ─── Runway extras: statements, compare, export ─────────────────────────
+    function rwQuery(extra = {}) {
+        const q = new URLSearchParams({scenario: document.getElementById('rw-scenario').value, mode: document.getElementById('rw-mode').value,
+            months: document.getElementById('rw-months').value || '18', ...extra});
+        const cash = document.getElementById('rw-cash').value;
+        if (cash) q.set('cash', cash);
+        return q;
+    }
+    function rwExport(kind) { window.location.href = '/api/runway/export?' + rwQuery({kind}); }
+    async function loadStatements() {
+        const box = document.getElementById('rw-extra');
+        let d;
+        try { d = await planFetch('/api/runway/statements?' + rwQuery()); } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        let html = `<div class="plan-sub">Profit &amp; loss and cash by month (${esc(d.currency)}) — actual months from the books, then the plan</div><div style="overflow-x:auto;"><table class="kpi-table"><thead><tr><th></th>`;
+        html += d.months.map(m => `<th class="${d.sources[m] === 'plan' ? 'kpi-fut' : ''}">${esc(m)}</th>`).join('') + '</tr></thead><tbody>';
+        for (const l of d.lines) {
+            const st = l.kind === 'subtotal' || l.kind === 'total' ? 'font-weight:bold;' : (l.kind === 'category' ? 'padding-left:1.2rem;color:var(--fg-dim);' : '');
+            html += `<tr${l.kind === 'cash' ? ' style="color:var(--accent)"' : ''}><td style="${st}">${esc(l.label)}</td>` + d.months.map(m => planAmt(l.values[m] || 0, l.kind !== 'category')).join('') + '</tr>';
+        }
+        box.innerHTML = html + '</tbody></table></div><div class="plan-note">Yellow months are planned. Balance sheet projection is not modelled.</div>';
+    }
+    async function loadCompare() {
+        const box = document.getElementById('rw-extra');
+        let d;
+        try { d = await planFetch('/api/runway/compare?' + rwQuery()); } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        const rows = d.rows, m = v => v === null || v === undefined ? '—' : (typeof v === 'number' ? fm(v) : esc(String(v)));
+        let html = `<div class="plan-sub">Scenarios side by side (${esc(d.currency)}, ${esc(document.getElementById('rw-mode').selectedOptions[0].text)})</div><div style="overflow-x:auto;"><table><thead><tr><th></th>${rows.map(r => `<th style="text-align:right">${esc(r.name)}</th>`).join('')}</tr></thead><tbody>`;
+        for (const [label, k] of [['Revenue', 'revenue'], ['Expenses', 'expense'], ['Net', 'net'], ['Funding in', 'funding'], ['End cash', 'end_cash'], ['Lowest cash', 'lowest_cash'], ['Burn / month', 'burn'], ['Runway', 'runway'], ['Cash runs out', 'cash_out'], ['Break-even', 'breakeven'], ['Raise target', 'raise_target']]) {
+            html += `<tr><td>${label}</td>` + rows.map(r => `<td style="text-align:right">${k === 'runway' && typeof r[k] === 'number' ? r[k].toFixed(1) + ' mo' : m(r[k])}</td>`).join('') + '</tr>';
+        }
+        html += '</tbody></table></div>';
+        const colors = ['var(--fg-dim)', 'var(--accent)', 'var(--green)', 'var(--yellow)', '#c678dd', 'var(--red)', '#56b6c2'];
+        const all = rows.flatMap(r => r.series.map(p => p.end)).concat([0]);
+        const lo = Math.min(...all), hi = Math.max(...all) || 1, n = Math.max(...rows.map(r => r.series.length)), W = 720, H = 180, P = 28;
+        const x = i => P + (W - 2 * P) * (n <= 1 ? 0.5 : i / (n - 1)), y = v => H - P - (H - 2 * P) * ((v - lo) / ((hi - lo) || 1));
+        html += `<svg viewBox="0 0 ${W} ${H}" class="rw-chart"><line x1="${P}" x2="${W - P}" y1="${y(0)}" y2="${y(0)}" stroke="var(--red)" stroke-dasharray="3 3" opacity="0.6"/>`;
+        rows.forEach((r, k) => { html += `<polyline fill="none" stroke="${colors[k % colors.length]}" stroke-width="2" points="${r.series.map((p, i) => `${x(i)},${y(p.end)}`).join(' ')}"/><text x="${P + k * 130}" y="14" class="rw-tick" fill="${colors[k % colors.length]}">${esc(r.name)}</text>`; });
+        box.innerHTML = html + '</svg><div class="plan-note">Cash at month end for each scenario.</div>';
+    }
+
+    // ─── Company overview (portrait) ────────────────────────────────────────
+    async function loadPortrait() {
+        const box = document.getElementById('co-overview');
+        let d;
+        try { d = await planFetch('/api/portrait'); } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        const p = d.profile, f = v => v === null || v === undefined ? '—' : fm(v);
+        const off = pack => `<div class="rw-note">Turn on the ${pack} pack (⚙ settings) to see this.</div>`;
+        const unitFmt = (v, u) => u === 'percent' ? (v * 100).toFixed(1) + '%' : (u === 'ratio' || u === 'months') ? v.toFixed(1) : fm(v);
+        let html = `<div class="portrait"><section><h3>Who we are</h3><div class="portrait-name">${esc(d.name)} <span class="pack-state ${p.status === 'speculative' ? '' : 'on'}">${esc(p.status)}</span></div>
+            ${p.one_liner ? `<p>${esc(p.one_liner)}</p>` : '<p class="rw-note">Add a one-liner under Profile.</p>'}
+            <div class="rw-note">${esc([p.stage, p.business_type, p.industry, p.location, p.founded && 'founded ' + p.founded, p.team_size && p.team_size + ' people'].filter(Boolean).join(' · '))}</div>
+            ${(p.founders || []).length ? `<div class="rw-note">Founders: ${p.founders.map(esc).join(', ')}</div>` : ''}
+            ${p.tam ? `<div class="rw-note">Market ${fm(p.tam)}${p.market_share_5y ? ` · aiming for ${(p.market_share_5y * 100).toFixed(1)}% in 5 years (${fm(p.tam * p.market_share_5y)})` : ''}${p.exit_multiple ? ` · exit multiple ${p.exit_multiple}×` : ''}</div>` : ''}
+            ${(p.links || []).length ? `<div class="plan-row" style="margin-top:0.3rem;">${p.links.map(l => `<a class="btn" style="font-size:0.75rem;" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || l.url)}</a>`).join('')}</div>` : ''}</section>`;
+        html += '<section><h3>Traction</h3>';
+        if (d.traction.metrics.length) html += '<div class="rw-cards">' + d.traction.metrics.map(m => rwCard(m.name, unitFmt(m.value, m.unit), `${esc(m.month)}${m.change !== null ? ` · ${m.change >= 0 ? '+' : ''}${(m.change * 100).toFixed(0)}% vs 3 mo` : ''}`)).join('') + '</div>';
+        else html += '<div class="rw-note">No metrics yet — record them under KPIs.</div>';
+        if (d.traction.momentum.length) html += '<div class="rw-note">Last 3 months: ' + d.traction.momentum.map(m => `${esc(m.name)} ${fm(m.last_3_months)}`).join(' · ') + '</div>';
+        html += '</section><section><h3>Money</h3>';
+        if (!d.packs.runway) html += off('runway');
+        else if (d.money?.error) html += `<div class="rw-note">${esc(d.money.error)}</div>`;
+        else {
+            const s = d.money.summary;
+            html += '<div class="rw-cards">' + rwCard('Cash now', f(s.cash_now), d.money.books ? 'from the books' : 'starting cash') + rwCard('Burn / month', f(s.avg_burn_plan), 'planned') +
+                rwCard('Runway', s.runway_months !== null ? s.runway_months.toFixed(1) + ' mo' : esc(s.runway_text), s.cash_out_month ? 'cash runs out ' + esc(s.cash_out_month) : '') +
+                rwCard('Break-even', s.breakeven_month ? esc(s.breakeven_month) : '—', '') + rwCard('Raise target', f(s.raise_target), `burn × ${s.buffer_months} months`) + '</div>';
+        }
+        html += '</section><section><h3>Plan</h3>';
+        if (!d.plan) html += `<div class="rw-note">${d.packs.scenarios ? 'Set "Plan scenario" under Profile to the scenario that is your working plan.' : 'Turn on the scenarios pack to plan.'}</div>`;
+        else html += `<div><strong>${esc(d.plan.name)}</strong> <span class="rw-note">${esc(d.plan.description)}</span></div><div class="rw-note">${d.plan.rules} rules${d.plan.growth ? ' · growth model' : ''}${d.plan.layers.length ? ' · builds on ' + d.plan.layers.map(esc).join(', ') : ''}</div>
+            <div class="rw-note">Next 12 months: revenue ${f(d.plan.next_12.revenue)} · expenses ${f(d.plan.next_12.expense)} · funding ${f(d.plan.next_12.funding)}</div>`;
+        html += '</section><section><h3>Fundraising</h3>';
+        if (!d.packs.captable) html += off('cap table & fundraising');
+        else if (!(d.fundraising || []).length) html += '<div class="rw-note">No open rounds.</div>';
+        else html += d.fundraising.map(r => { const t = r.target || 1, w = v => Math.min(100, v / t * 100).toFixed(1); return `<div><strong>${esc(r.name)}</strong> <span class="rw-note">${esc(r.instrument || '')} · ${esc(r.status)}</span>
+            <div class="fund-bar"><span class="rec" style="width:${w(r.received)}%"></span><span class="sig" style="width:${w(Math.max(0, r.signed - r.received))}%"></span><span class="soft" style="width:${w(Math.max(0, r.soft - r.signed))}%"></span></div>
+            <div class="rw-note">target ${f(r.target)} · soft ${f(r.soft)} · signed ${f(r.signed)} · received ${f(r.received)} · ${r.investors} investor(s)</div></div>`; }).join('');
+        html += '</section><section><h3>Ownership</h3>';
+        if (!d.packs.captable) html += off('cap table & fundraising');
+        else if (!d.ownership.fully_diluted) html += '<div class="rw-note">No cap table yet.</div>';
+        else { const g = d.ownership.groups; html += capBar(g) + `<div class="rw-note">founders ${pc(g.founder)} · employees ${pc(g.employee)} · advisors ${pc(g.advisor)} · investors ${pc(g.investor)} · pool ${pc(g.pool)}${d.ownership.price ? ` · price ${d.ownership.price.toFixed(4)} · value ${f(d.ownership.value)}` : ''}${d.ownership.open_instruments ? ` · ${d.ownership.open_instruments} open SAFE/note` : ''}</div>`; }
+        box.innerHTML = html + '</section></div>';
+    }
+
     async function loadScenarios() {
         const box = document.getElementById('scn-list');
         let data;
         try { data = await planFetch('/api/scenarios'); }
         catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
         const list = data.scenarios || [];
+        planState.list = list;
         if (!list.length) {
             box.innerHTML = '<div class="empty">No scenarios yet. Name one above to start planning.</div>';
             document.getElementById('scn-detail').innerHTML = '';
             return;
         }
-        let html = `<table><thead><tr><th>Scenario</th><th>Description</th><th style="text-align:right">Entries</th><th style="text-align:right">Planned (${esc(data.currency)})</th></tr></thead><tbody>`;
+        let html = `<table><thead><tr><th>Scenario</th><th>Description</th><th style="text-align:right">Items</th><th style="text-align:right">Planned spend (${esc(data.currency)})</th></tr></thead><tbody>`;
         for (const s of list) {
             const sel = s.slug === planState.slug ? ' style="cursor:pointer;background:var(--bg-alt);"' : ' style="cursor:pointer;"';
             html += `<tr${sel} onclick="openScenario('${esc(s.slug)}')"><td style="color:var(--accent);font-weight:bold;">${esc(s.name)}</td><td style="color:var(--fg-dim)">${esc(s.description)}</td><td style="text-align:right">${s.items}</td>${planAmt(s.total)}</tr>`;
@@ -4233,6 +4334,14 @@
             html += `<div style="color:var(--red);font-size:0.8rem;margin-bottom:0.5rem;">Warning: ${d.leaks.map(esc).join(', ')} include scenario entries, so real totals are wrong.</div>`;
         }
         planState.detail = d;
+        const others = (planState.list || []).filter(x => x.slug !== slug);
+        if (others.length) {
+            html += `<div class="plan-row" style="margin-bottom:0.4rem;"><span class="plan-lbl">Builds on:</span>${others.map(x => `<label class="plan-lbl"><input type="checkbox" class="scn-layer" value="${esc(x.slug)}" ${(d.layers || []).includes(x.slug) ? 'checked' : ''} onchange="saveLayers('${esc(slug)}')"> ${esc(x.name)}</label>`).join('')}
+                <span class="rw-note">layers add another scenario's lines to this one, e.g. Base + "hire editor"</span></div>`;
+        }
+        html += `<div class="plan-row" style="margin-bottom:0.4rem;"><span class="plan-lbl">Make a budget for</span><input type="number" id="scn-bud-year" class="plan-in" value="${new Date().getFullYear() + 1}" style="width:80px;">
+            <label class="plan-lbl"><input type="checkbox" id="scn-bud-active"> make active</label><button class="btn" onclick="scenarioBudget('${esc(slug)}')" style="font-size:0.75rem;">Create budget</button>
+            <span class="rw-note">monthly expense lines from this plan; compare under Budget vs scenario</span></div>`;
         html += ruleFormHtml(d, slug);
 
         // Rules
@@ -4412,6 +4521,16 @@
     function rfReset() { planState.editRule = null; openScenario(planState.slug, false); }
     async function removeRule(slug, id) {
         try { await planFetch(`/api/scenario/${encodeURIComponent(slug)}/rule/${encodeURIComponent(id)}`, {method: 'DELETE'}); showToast('Rule removed'); openScenario(slug, false); }
+        catch (e) { showToast(e.message, true); }
+    }
+    async function saveLayers(slug) {
+        const layers = [...document.querySelectorAll('.scn-layer:checked')].map(x => x.value);
+        try { await jpost(`/api/scenario/${encodeURIComponent(slug)}/layers`, {layers}, 'PUT'); showToast('Layers saved'); openScenario(slug, false); }
+        catch (e) { showToast(e.message, true); openScenario(slug, false); }
+    }
+    async function scenarioBudget(slug) {
+        const year = document.getElementById('scn-bud-year').value, activate = document.getElementById('scn-bud-active').checked;
+        try { const r = await jpost(`/api/scenario/${encodeURIComponent(slug)}/budget`, {year, activate}); showToast(`Budget ${r.budget} written`); }
         catch (e) { showToast(e.message, true); }
     }
     async function copyScenario(slug) {
