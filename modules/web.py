@@ -2234,6 +2234,100 @@ def create_app():
                 'uses': {'amount': f(data['uses']['amount']), 'covers_months': f(data['uses']['covers_months']),
                          'rows': [{k: f(v) for k, v in r.items()} for r in data['uses']['rows']]}}
 
+    # ─── Company profile and KPIs (executive pack) ───────────────────────────
+
+    @app.get("/api/profile")
+    async def profile_get():
+        from lib.profile import FIELDS, load
+        config = load_config()
+        return {'name': config.get('pair', {}).get('name', ''), 'profile': load(config),
+                'fields': [{'key': k, 'label': l, 'kind': t, 'help': h} for k, l, t, h in FIELDS]}
+
+    @app.post("/api/profile")
+    async def profile_set(changes: dict):
+        from lib.profile import update
+        from lib.helpers import save_config
+        config = load_config()
+        try:
+            profile = update(config, changes)
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        save_config(config)
+        return {'profile': profile}
+
+    @app.get("/api/kpis")
+    async def kpis(months: int = 6, project: int = 0, end: str = ''):
+        from modules.kpi import build
+        data = build(load_config(), end=end or None, months=max(1, min(months, 36)),
+                     project=max(0, min(project, 36)))
+        f = lambda v: None if v is None else float(v)
+        return {
+            'months': data['months'], 'future': data['future'],
+            'buckets': [{'id': b, 'label': l, 'description': d} for b, l, d in data['buckets']],
+            'metrics': [{**{k: v for k, v in d.items()},
+                         'cells': {m: {'value': f(c['value']), 'kind': c['kind']}
+                                   for m, c in data['cells'][mid].items()},
+                         'projection': (data['projections'].get(mid) or {}).get('growth')}
+                        for mid, d in data['defs'].items()],
+            'bucket_projections': {k[7:]: v.get('growth') for k, v in data['projections'].items()
+                                   if k.startswith('bucket:')},
+            'notes': [{'metric': m, 'month': mo, 'note': n} for (m, mo), n in data['notes'].items()],
+        }
+
+    class KpiValue(BaseModel):
+        metric: str
+        month: str
+        value: float | None = None
+        note: str = ''
+
+    @app.post("/api/kpi/value")
+    async def kpi_value(req: KpiValue):
+        from lib import kpi as K
+        import re as _re
+        defs = K.load_definitions(get_entity_dir())
+        if req.metric not in defs:
+            raise HTTPException(status_code=404, detail=f"Unknown metric '{req.metric}'")
+        if not _re.fullmatch(r'\d{4}-\d{2}', req.month):
+            raise HTTPException(status_code=400, detail="month is YYYY-MM")
+        K.set_value(get_entity_dir(), req.metric, req.month, req.value, req.note or None)
+        return {'status': 'ok'}
+
+    class KpiDefine(BaseModel):
+        name: str
+        bucket: str
+        unit: str = 'count'
+        formula: str = ''
+        type: str = 'flow'
+
+    @app.post("/api/kpi/define")
+    async def kpi_define(req: KpiDefine):
+        from modules.kpi import define
+        try:
+            d = define(get_entity_dir(), req.name.strip(), req.bucket, req.unit,
+                       req.formula.strip() or None, None, req.type)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {'metric': d}
+
+    @app.delete("/api/kpi/{metric}")
+    async def kpi_remove(metric: str):
+        from lib import kpi as K
+        if not K.remove_custom(get_entity_dir(), metric):
+            raise HTTPException(status_code=404, detail=f"'{metric}' is not a custom metric")
+        return {'status': 'ok'}
+
+    class KpiProjection(BaseModel):
+        key: str                  # metric id or bucket:<id>
+        growth: float | None = None
+
+    @app.post("/api/kpi/projection")
+    async def kpi_projection(req: KpiProjection):
+        from lib import kpi as K
+        if req.growth is not None and not -1 < req.growth < 10:
+            raise HTTPException(status_code=400, detail="growth is a monthly fraction (0.05 = 5%)")
+        K.save_projection(get_entity_dir(), req.key, req.growth)
+        return {'status': 'ok'}
+
     # ─── Budgets (read-only; compared with actuals and scenarios) ───────────
 
     @app.get("/api/budgets")

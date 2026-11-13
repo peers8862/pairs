@@ -144,6 +144,21 @@
     .rw-note { color:var(--fg-dim); font-size:0.7rem; margin-top:0.15rem; }
     .rw-chart { width:100%; height:auto; max-height:220px; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); }
     .rw-tick { fill:var(--fg-dim); font-size:10px; font-family:inherit; }
+    /* Company: profile + KPIs */
+    .profile-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0.6rem 0.9rem; }
+    .profile-field { display:flex; flex-direction:column; gap:0.2rem; font-size:0.75rem; color:var(--fg-dim); }
+    .profile-field.wide { grid-column:1 / -1; }
+    .profile-field em { font-style:normal; font-size:0.68rem; opacity:0.75; }
+    .kpi-table td, .kpi-table th { white-space:nowrap; text-align:right; }
+    .kpi-table td:first-child, .kpi-table th:first-child { text-align:left; position:sticky; left:0; background:var(--bg); }
+    .kpi-in { width:82px; background:var(--bg); border:1px solid var(--border); border-radius:3px; padding:0.15rem 0.3rem; color:var(--fg); font-family:inherit; font-size:0.8rem; text-align:right; }
+    .kpi-in.kpi-g, .kpi-g { width:60px; }
+    .kpi-src { font-variant-numeric:tabular-nums; }
+    .kpi-src.ledger { color:var(--accent); }
+    .kpi-src.derived { color:var(--fg-dim); font-style:italic; }
+    .kpi-src.projected { color:var(--yellow); opacity:0.8; }
+    th.kpi-fut { color:var(--yellow); }
+    #view-company, #view-plan { scrollbar-color: var(--border) var(--bg); }
 </style>
 </head>
     <style>
@@ -310,6 +325,7 @@
             <span class="tab active" id="tab-dashboard" onclick="switchView('dashboard')" style="font-weight:bold;">Dash</span>
             <span class="tab" onclick="switchView('records')">Records</span>
             <span class="tab" data-pack="scenarios" onclick="switchView('plan')">Plan</span>
+            <span class="tab" data-pack="executive captable" onclick="switchView('company')">Company</span>
             <span class="tab" onclick="switchView('accounts')">Accounts</span>
             <span class="tab" onclick="switchView('contacts')">Contacts</span>
             <span class="tab" onclick="switchView('charts')">Charts</span>
@@ -1207,6 +1223,26 @@
         </div>
     </div>
 
+    <div class="view" id="view-company">
+        <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.5rem;">
+            <div class="section-title" style="margin:0;" id="co-title">Company</div>
+            <button class="btn plan-subtab co-subtab" id="co-tab-profile" data-pack="executive" onclick="companyShow('profile')">Profile</button>
+            <button class="btn plan-subtab co-subtab" id="co-tab-kpis" data-pack="executive" onclick="companyShow('kpis')">KPIs</button>
+        </div>
+        <div id="co-profile" style="display:none;"></div>
+        <div id="co-kpis" style="display:none;">
+            <div class="plan-panel">
+                <div class="plan-row">
+                    <label class="plan-lbl">last <input type="number" id="kpi-months" class="plan-in" value="6" min="1" max="36" style="width:56px;" onchange="loadKpis()"> months</label>
+                    <label class="plan-lbl">project <input type="number" id="kpi-project" class="plan-in" value="0" min="0" max="36" style="width:56px;" onchange="loadKpis()"> months ahead</label>
+                    <label class="plan-lbl"><input type="checkbox" id="kpi-all" onchange="loadKpis()"> show every metric</label>
+                    <span class="plan-note" style="margin:0;">Type into a cell to record it. <span class="kpi-src ledger">books</span> <span class="kpi-src derived">worked out</span> <span class="kpi-src projected">projected</span></span>
+                </div>
+            </div>
+            <div id="kpi-content"></div>
+        </div>
+    </div>
+
     <div class="view" id="view-contacts">
         <div class="section-title">Contacts</div>
         <div id="contacts-add-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
@@ -1829,6 +1865,7 @@
         if (view === 'pairs') loadPairsRef();
         if (view === 'accounts') loadAccounts();
         if (view === 'plan') loadPlanView();
+        if (view === 'company') loadCompanyView();
     }
 
     // ─── Entity Switcher ────────────────────────────────────────────────────
@@ -3601,6 +3638,132 @@
             html += '</tbody></table>';
         }
         box.innerHTML = html;
+    }
+
+    // ─── Company: profile and KPIs (executive pack) ─────────────────────────
+    const coState = {tab: 'profile', kpi: null};
+    function loadCompanyView() {
+        const first = ['profile', 'kpis'].find(t => document.getElementById('co-tab-' + t).style.display !== 'none');
+        companyShow(document.getElementById('co-tab-' + coState.tab)?.style.display === 'none' ? (first || 'profile') : coState.tab);
+    }
+    function companyShow(tab) {
+        coState.tab = tab;
+        ['profile', 'kpis'].forEach(t => { const el = document.getElementById('co-' + t); if (el) el.style.display = t === tab ? '' : 'none'; });
+        document.querySelectorAll('.co-subtab').forEach(b => b.classList.toggle('sel', b.id === 'co-tab-' + tab));
+        if (tab === 'profile') loadProfile();
+        if (tab === 'kpis') loadKpis();
+    }
+    async function loadProfile() {
+        const box = document.getElementById('co-profile');
+        let d;
+        try { d = await planFetch('/api/profile'); } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        const p = d.profile;
+        let html = `<div class="plan-panel"><div class="plan-row" style="margin-bottom:0.6rem;"><span style="color:var(--accent);font-weight:bold;">${esc(d.name)}</span>
+            <span class="pack-state ${p.status === 'speculative' ? '' : 'on'}">${esc(p.status)}</span></div><div class="profile-grid">`;
+        for (const f of d.fields) {
+            let v = p[f.key];
+            if (v === undefined || v === null) v = '';
+            if (Array.isArray(v)) v = v.join(', ');
+            let input;
+            if (f.kind.startsWith('choice:')) {
+                input = `<select class="plan-in" data-pf="${f.key}">` + ['', ...f.kind.slice(7).split(',')].map(o => `<option value="${esc(o)}" ${o === String(v) ? 'selected' : ''}>${esc(o || '—')}</option>`).join('') + '</select>';
+            } else if (f.kind === 'percent') {
+                input = `<input class="plan-in" type="number" step="0.1" data-pf="${f.key}" data-pct="1" value="${v === '' ? '' : +(v * 100).toFixed(4)}" placeholder="%">`;
+            } else {
+                const t = ['number', 'money'].includes(f.kind) ? 'number' : 'text';
+                input = `<input class="plan-in" type="${t}" data-pf="${f.key}" value="${esc(String(v))}">`;
+            }
+            html += `<label class="profile-field${f.key === 'one_liner' || f.key === 'notes' ? ' wide' : ''}"><span>${esc(f.label)}</span>${input}${f.help ? `<em>${esc(f.help)}</em>` : ''}</label>`;
+        }
+        html += '</div><div class="plan-sub">Links (pitch deck, one-pager, data room…)</div><div id="pf-links">';
+        html += (p.links || []).map(l => pfLinkRow(l.label, l.url)).join('') + pfLinkRow('', '');
+        html += `</div><div class="plan-row" style="margin-top:0.75rem;"><button class="btn plan-primary" onclick="saveProfile()">Save profile</button></div></div>`;
+        box.innerHTML = html;
+    }
+    function pfLinkRow(label, url) {
+        return `<div class="plan-row pf-link" style="margin-bottom:0.3rem;"><input class="plan-in" placeholder="label" value="${esc(label)}" style="width:160px;">
+            <input class="plan-in" placeholder="https://…" value="${esc(url)}" style="flex:1;min-width:200px;">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" style="font-size:0.8rem;">open</a>` : ''}</div>`;
+    }
+    async function saveProfile() {
+        const changes = {};
+        document.querySelectorAll('#co-profile [data-pf]').forEach(el => {
+            let v = el.value.trim();
+            if (el.dataset.pct && v !== '') v = String(parseFloat(v) / 100);
+            changes[el.dataset.pf] = v === '' ? null : v;
+        });
+        changes.links = [...document.querySelectorAll('#pf-links .pf-link')].map(r => { const [a, b] = r.querySelectorAll('input'); return {label: a.value.trim(), url: b.value.trim()}; }).filter(l => l.url);
+        try { await planFetch('/api/profile', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(changes)}); showToast('Profile saved'); loadProfile(); }
+        catch (e) { showToast(e.message, true); }
+    }
+
+    function kpiFmt(v, unit) {
+        if (v === null || v === undefined) return '';
+        if (unit === 'percent') return (v * 100).toFixed(1) + '%';
+        if (unit === 'ratio' || unit === 'months') return v.toFixed(2);
+        return Math.abs(v) >= 100 || Number.isInteger(v) ? Math.round(v).toLocaleString() : v.toFixed(2);
+    }
+    async function loadKpis() {
+        const box = document.getElementById('kpi-content');
+        const q = new URLSearchParams({months: document.getElementById('kpi-months').value || '6', project: document.getElementById('kpi-project').value || '0'});
+        let d;
+        try { d = await planFetch('/api/kpis?' + q); } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        coState.kpi = d;
+        const all = document.getElementById('kpi-all').checked;
+        const cols = d.months.concat(d.future);
+        let html = '';
+        for (const b of d.buckets) {
+            const ms = d.metrics.filter(m => m.bucket === b.id && (all || Object.values(m.cells).some(c => c.value !== null)));
+            if (!ms.length) continue;
+            const bg = d.bucket_projections[b.id];
+            html += `<div class="plan-sub" style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;"><span>${esc(b.label)}</span><span style="text-transform:none;letter-spacing:0;">${esc(b.description)}</span>
+                <label class="plan-lbl" style="margin-left:auto;text-transform:none;letter-spacing:0;" title="Carry every metric in this group forward by this monthly growth">group growth % <input type="number" step="0.5" class="plan-in kpi-g" value="${bg === undefined ? '' : +(bg * 100).toFixed(3)}" onchange="kpiProject('bucket:${b.id}', this.value)"></label></div>`;
+            html += '<div style="overflow-x:auto;"><table class="kpi-table"><thead><tr><th>Metric</th>' + cols.map(c => `<th class="${d.future.includes(c) ? 'kpi-fut' : ''}">${esc(c)}</th>`).join('') + '<th title="Monthly growth used for projected months">growth %</th></tr></thead><tbody>';
+            for (const m of ms) {
+                html += `<tr><td title="${esc(m.id)}${m.formula ? ' = ' + esc(m.formula) : ''}">${esc(m.name)}${m.builtin ? '' : ` <button class="btn" onclick="kpiRemove('${esc(m.id)}')" title="Remove custom metric" style="font-size:0.65rem;padding:0 0.3rem;">✕</button>`}</td>`;
+                for (const c of cols) {
+                    const cell = m.cells[c] || {value: null, kind: m.source};
+                    const fut = d.future.includes(c);
+                    if (!fut && (m.source === 'manual' || cell.kind === 'manual') && m.unit !== 'text') {
+                        const shown = cell.value === null ? '' : (m.unit === 'percent' ? +(cell.value * 100).toFixed(3) : cell.value);
+                        html += `<td><input class="kpi-in" type="number" step="any" value="${shown}" placeholder="${m.unit === 'percent' ? '%' : ''}" onchange="kpiSet('${esc(m.id)}','${c}',this.value,'${m.unit}')"></td>`;
+                    } else {
+                        html += `<td class="kpi-src ${esc(cell.kind)}">${kpiFmt(cell.value, m.unit)}</td>`;
+                    }
+                }
+                html += `<td><input class="kpi-in kpi-g" type="number" step="0.5" value="${m.projection === null || m.projection === undefined ? '' : +(m.projection * 100).toFixed(3)}" onchange="kpiProject('${esc(m.id)}', this.value)"></td></tr>`;
+            }
+            html += '</tbody></table></div>';
+        }
+        if (!html) html = '<div class="empty">No metrics recorded yet. Tick "show every metric" to start filling them in.</div>';
+        html += `<div class="plan-panel" style="margin-top:1rem;"><div class="plan-sub" style="margin-top:0;">Add your own metric</div><div class="plan-row">
+            <input id="kpi-new-name" class="plan-in" placeholder="name, e.g. Podcast listens" style="flex:2;min-width:160px;">
+            <select id="kpi-new-bucket" class="plan-in">${d.buckets.map(b => `<option value="${b.id}">${esc(b.label)}</option>`).join('')}</select>
+            <select id="kpi-new-unit" class="plan-in">${['count', 'money', 'percent', 'ratio', 'months', 'days', 'hours', 'score'].map(u => `<option>${u}</option>`).join('')}</select>
+            <input id="kpi-new-formula" class="plan-in" placeholder="formula (optional), e.g. mql / demos" style="flex:2;min-width:160px;">
+            <button class="btn plan-primary" onclick="kpiDefine()">Add</button></div>
+            <div class="plan-note" style="margin-top:0.3rem;">Formulas use metric ids (hover a name to see it) with + − × ÷, max, min, avg(x, n), growth(x, n).</div></div>`;
+        box.innerHTML = html;
+    }
+    async function kpiSet(metric, month, raw, unit) {
+        let value = raw === '' ? null : parseFloat(raw);
+        if (value !== null && unit === 'percent') value = value / 100;
+        try { await planFetch('/api/kpi/value', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({metric, month, value})}); loadKpis(); }
+        catch (e) { showToast(e.message, true); }
+    }
+    async function kpiProject(key, raw) {
+        const growth = raw === '' ? null : parseFloat(raw) / 100;
+        try { await planFetch('/api/kpi/projection', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key, growth})}); loadKpis(); }
+        catch (e) { showToast(e.message, true); }
+    }
+    async function kpiDefine() {
+        const body = {name: document.getElementById('kpi-new-name').value.trim(), bucket: document.getElementById('kpi-new-bucket').value,
+            unit: document.getElementById('kpi-new-unit').value, formula: document.getElementById('kpi-new-formula').value.trim()};
+        if (!body.name) { showToast('Give the metric a name', true); return; }
+        try { await planFetch('/api/kpi/define', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}); document.getElementById('kpi-all').checked = true; showToast('Metric added'); loadKpis(); }
+        catch (e) { showToast(e.message, true); }
+    }
+    async function kpiRemove(id) {
+        try { await planFetch(`/api/kpi/${encodeURIComponent(id)}`, {method: 'DELETE'}); loadKpis(); } catch (e) { showToast(e.message, true); }
     }
 
     async function loadScenarios() {

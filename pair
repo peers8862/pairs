@@ -27,6 +27,8 @@ MODULE_MAP = {
     'recurring': 'modules.recurring',
     'budget': 'modules.budget',
     'scenario': 'modules.scenario',
+    'profile': 'modules.profile',
+    'kpi': 'modules.kpi',
     'runway': 'modules.runway',
     'income': 'modules.income',
     'transfer': 'modules.transfer',
@@ -192,6 +194,8 @@ Modules:
   features [enable|disable <pack>]        Optional feature packs (per install or --entity)
   scenario new|list|add|show|report|remove   What-if expenses outside the real books  [scenarios pack]
   runway [--scenario S] [--replace]      Cash, burn, runway and raise target  [runway pack]
+  profile [set|link ...]                 Company profile  [executive pack]
+  kpi [set|add|list|project ...]         Company, product and founder metrics  [executive pack]
   market show|list|fetch|add|edit|remove|verify|chart|tag|sources
   account list|add|show|edit|remove|tree|tag|find|link|reconcile
   dash tui|web|lit|fava|ui  Launch dashboards
