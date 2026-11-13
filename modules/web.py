@@ -2439,6 +2439,26 @@ def create_app():
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+    @app.get("/api/investors/updates")
+    async def investors_updates():
+        from modules.fundraise import updates_list
+        return {'investors': updates_list()}
+
+    @app.post("/api/investors/updates")
+    async def investors_updates_sent(data: dict):
+        from modules.fundraise import mark_update_sent
+        return {'marked': mark_update_sent(data.get('ids') or [], data.get('date') or None)}
+
+    @app.post("/api/investor/{did}/contact")
+    async def investor_contact(did: str):
+        from modules.fundraise import load_deals, link_contact, update_deal
+        d = next((x for x in load_deals() if x['id'] == did), None)
+        if not d:
+            raise HTTPException(status_code=404, detail=f"No investor {did}")
+        slug = link_contact(d, create=True)
+        update_deal(did, {'contact': slug}, config=load_config())
+        return {'contact': slug}
+
     @app.delete("/api/investor/{did}")
     async def investor_remove(did: str):
         from modules.fundraise import remove_deal
@@ -2466,6 +2486,7 @@ def create_app():
         reg = load_register()
         t = C.table(reg)
         return _deep({'table': t, 'groups': C.by_group(reg), 'holders': reg['holders'], 'classes': reg['classes'],
+                      'by_investor_type': C.by_investor_type(reg), 'investor_types': list(C.INVESTOR_TYPES),
                       'pool_size': reg['pool'].get('size', 0), 'grants': reg['grants'],
                       'versions': [{'slug': v, 'name': (load_version(v) or {}).get('name', v)} for v in list_versions()],
                       'currency': get_entity_currency()})
@@ -2479,6 +2500,22 @@ def create_app():
             raise HTTPException(status_code=400, detail=str(e) or 'invalid change')
         save_register(reg)
         return {'status': 'ok'}
+
+    @app.get("/api/captable/waterfall")
+    async def captable_waterfall(exit: float = 0, version: str = '', vested: bool = False):
+        from modules.captable import exit_result, load_register, load_version, version_result
+        from lib.waterfall import sweep
+        if exit <= 0:
+            raise HTTPException(status_code=400, detail="Give an exit value above zero")
+        try:
+            res = exit_result(exit, version or None, vested)
+            reg = load_register()
+            if version:
+                reg, _ = version_result(load_version(version))
+            points = sweep(reg, [exit * k for k in (0.25, 0.5, 1, 2, 4)], vested)
+        except (ValueError, ArithmeticError) as e:
+            raise HTTPException(status_code=400, detail=str(e) or 'cannot compute')
+        return _deep({**res, 'sweep': points})
 
     @app.post("/api/captable/version")
     async def captable_version_new(data: dict):

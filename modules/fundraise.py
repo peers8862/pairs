@@ -104,6 +104,13 @@ def add_deal(data, entity_dir=None, config=None):
     deal['stage'] = None
     F.set_stage(deal, stage, data.get('first_meeting') or today, config)
     deal['notes'] = []
+    if data.get('create_contact') or data.get('contact'):
+        try:
+            c = link_contact({**deal, 'contact': data.get('contact')}, create=bool(data.get('create_contact')))
+            if c:
+                deal['contact'] = c
+        except Exception:          # contacts are optional; the deal still saves
+            pass
     deals.append(deal)
     save_deals(deals, entity_dir)
     return deal
@@ -134,6 +141,59 @@ def update_deal(did, changes, entity_dir=None, config=None):
     raise KeyError(did)
 
 
+def link_contact(deal, create=False):
+    """Find or create a contacts/ record (role investor) for a deal. Returns the slug."""
+    from lib.yaml_store import load_entity, save_entity, list_entities
+    slug = deal.get('contact') or slugify(deal['investor'])
+    existing = load_entity('contacts', slug)
+    if existing:
+        return slug
+    if not create:
+        for other in list_entities('contacts'):
+            c = load_entity('contacts', other) or {}
+            if deal.get('email') and c.get('email') == deal.get('email'):
+                return other
+        return None
+    data = {'name': deal['investor'], 'slug': slug, 'role': 'investor'}
+    if deal.get('email'):
+        data['email'] = deal['email']
+    if deal.get('organization'):
+        data['pair'] = deal['organization']
+    if deal.get('investor_type'):
+        data['notes'] = f"Investor type: {deal['investor_type']}"
+    save_entity('contacts', slug, data)
+    return slug
+
+
+def updates_list(entity_dir=None):
+    """Everyone talked to (including those who passed), for progress updates."""
+    out = []
+    for d in load_deals(entity_dir):
+        notes = d.get('notes') or []
+        last_contact = max([n.get('date', '') for n in notes if n.get('text') != 'Progress update sent']
+                           + [d.get('last_meeting') or '', d.get('first_meeting') or '', d.get('created') or ''])
+        out.append({'id': d['id'], 'investor': d['investor'], 'email': d.get('email', ''),
+                    'organization': d.get('organization', ''), 'stage': d.get('stage', ''),
+                    'round': d.get('round', ''), 'last_contact': last_contact,
+                    'last_update': d.get('last_update', ''), 'updates_off': bool(d.get('updates_off'))})
+    return sorted(out, key=lambda x: (x['updates_off'], x['last_update'] or '', x['investor']))
+
+
+def mark_update_sent(ids, on=None, entity_dir=None):
+    on = on or date.today().isoformat()
+    deals = load_deals(entity_dir)
+    n = 0
+    for d in deals:
+        if not ids or d['id'] in ids:
+            if d.get('updates_off'):
+                continue
+            d['last_update'] = on
+            d.setdefault('notes', []).append({'date': on, 'text': 'Progress update sent', 'meeting': False})
+            n += 1
+    save_deals(deals, entity_dir)
+    return n
+
+
 def remove_deal(did, entity_dir=None):
     deals = load_deals(entity_dir)
     kept = [d for d in deals if d['id'] != did]
@@ -162,6 +222,10 @@ def receive(did, on=None, config=None, entity_dir=None, write=True):
     postings, tags, desc = F.funding_entry(deal, round_, bank, currency, on)
     entry = format_entry(on, desc, postings, tags)
     step = F.captable_step(deal, round_, on)
+    if step:
+        for k in ('investor_type', 'contact'):
+            if deal.get(k):
+                step[k] = deal[k]
     summary = {'entry': entry, 'captable': step, 'journal': f"generated/{on[:4]}/equity.journal"}
     if not write:
         return summary
@@ -254,6 +318,7 @@ def investor_cmd(action, f, pos, config, flags):
         print(f"\n  Stages: {' > '.join(F.stages(config))} (or {F.CLOSED_LOST})\n")
     elif action == 'add' and pos:
         data = {'investor': ' '.join(pos), **{k: v for k, v in f.items() if v is not True}}
+        data['create_contact'] = bool(f.get('create_contact'))
         if 'amount' in data:
             data['amount'] = float(str(data['amount']).replace(',', ''))
         d = add_deal(data, config=config)
@@ -281,6 +346,29 @@ def investor_cmd(action, f, pos, config, flags):
     elif action == 'remove' and pos:
         remove_deal(pos[0])
         print(f"  Removed {pos[0]}.")
+    elif action == 'updates':
+        if f.get('sent'):
+            n = mark_update_sent(pos, f.get('date'))
+            print(f"  Marked an update sent to {n} investor(s).")
+            return
+        rows = updates_list()
+        if f.get('emails'):
+            print(', '.join(r['email'] for r in rows if r['email'] and not r['updates_off']))
+            return
+        print(f"\n  {'Investor':<24} {'Email':<28} {'Stage':<18} {'Last contact':<13} {'Last update':<12}")
+        for r in rows:
+            off = ' (no updates)' if r['updates_off'] else ''
+            print(f"  {r['investor'][:24]:<24} {r['email'][:28]:<28} {r['stage'][:18]:<18} {r['last_contact']:<13} {r['last_update'] or '—':<12}{off}")
+        print("\n  'pair investor updates --emails' prints the address list; '--sent' records an update for all\n"
+              "  (or name ids). Keep people who passed: progress updates bring investors back later.\n")
+    elif action == 'contact' and pos:
+        deals = load_deals()
+        d = next((x for x in deals if x['id'] == pos[0]), None)
+        if not d:
+            raise KeyError(pos[0])
+        slug = link_contact(d, create=True)
+        update_deal(pos[0], {'contact': slug}, config=config)
+        print(f"  {d['investor']} linked to contact '{slug}' (role investor).")
     else:
         print_help()
 
@@ -296,12 +384,14 @@ Rounds:
 
 Investor pipeline:
   pair investor [--round R]                        list
-  pair investor add <name> [--organization O] [--investor-type VC] [--referral R]
+  pair investor add <name> [--organization O] [--investor-type VC] [--referral R] [--create-contact]
                 [--round R] [--amount N] [--first-meeting D] [--next-step TEXT]
   pair investor stage <id> <stage>                 1st call ... capital received, or passed
   pair investor meeting <id> <text> [--date D]     log a meeting (counts in KPIs)
   pair investor note <id> <text>
   pair investor set <id> --amount N --next-step TEXT ...
+  pair investor contact <id>                       create/link a contact record (role investor)
+  pair investor updates [--emails] [--sent [ids]]  everyone to send progress updates to
   pair investor receive <id> [--date D] [--dry-run]
         money arrived: writes the cash entry to the books AND the cap-table
         change (SAFE/note instrument, or shares at the round price)

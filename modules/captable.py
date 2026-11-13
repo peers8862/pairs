@@ -76,6 +76,28 @@ def apply_change(reg, change):
         if change.get('group', 'founder') not in C.GROUPS:
             raise ValueError(f"group must be one of {', '.join(C.GROUPS)}")
         ensure_holder(reg, hid, change['name'], change.get('group', 'founder'))
+        h = next(x for x in reg['holders'] if x['id'] == hid)
+        for k in ('investor_type', 'contact', 'email'):
+            if change.get(k):
+                h[k] = change[k]
+        return reg
+    if kind == 'class':
+        cid = change.get('id') or slugify(change.get('name', ''))
+        if not cid:
+            raise ValueError("A class needs an id or name")
+        cl = next((c for c in reg['classes'] if c['id'] == cid), None)
+        if not cl:
+            cl = {'id': cid, 'name': change.get('name') or cid.title(), 'kind': change.get('kind', 'preferred')}
+            reg['classes'].append(cl)
+        for k in ('name', 'kind'):
+            if change.get(k):
+                cl[k] = change[k]
+        for k in C.CLASS_TERMS:
+            if k in change and change[k] not in (None, ''):
+                cl[k] = bool(change[k]) if k == 'participating' and not isinstance(change[k], str) else (
+                    change[k] in ('yes', 'true', True) if k == 'participating' else float(change[k]))
+        if C.D(cl.get('liq_pref', 1)) < 0 or C.D(cl.get('participation_cap', 0)) < 0:
+            raise ValueError("preference and cap are zero or more")
         return reg
     if kind == 'issue':
         cls = change.get('class') or 'common'
@@ -83,12 +105,19 @@ def apply_change(reg, change):
             reg['classes'].append({'id': cls, 'name': change.get('class_name') or cls.title(),
                                    'kind': 'common' if cls == 'common' else 'preferred'})
         ensure_holder(reg, change['holder'], change.get('holder_name'), change.get('group', 'investor'))
+        h = next(x for x in reg['holders'] if x['id'] == change['holder'])
+        for k in ('investor_type', 'contact'):
+            if change.get(k) and not h.get(k):
+                h[k] = change[k]
         shares = Decimal(str(change['shares']))
         if shares <= 0:
             raise ValueError("shares must be positive")
-        reg['issuances'].append({'date': str(change.get('date') or date.today().isoformat()),
-                                 'holder': change['holder'], 'class': cls, 'shares': float(shares),
-                                 'price': float(Decimal(str(change.get('price') or 0)))})
+        issue = {'date': str(change.get('date') or date.today().isoformat()),
+                 'holder': change['holder'], 'class': cls, 'shares': float(shares),
+                 'price': float(Decimal(str(change.get('price') or 0)))}
+        if change.get('vesting'):
+            issue['vesting'] = _vesting(change['vesting'], issue['date'])
+        reg['issuances'].append(issue)
         return reg
     if kind == 'pool':
         size = Decimal(str(change['size']))
@@ -97,9 +126,36 @@ def apply_change(reg, change):
         reg['pool']['size'] = float(size)
         return reg
     if kind in ('grant', 'safe', 'note'):
-        reg, _ = C.apply_steps(reg, [{**change, 'type': kind}])
+        step = {**change, 'type': kind}
+        if kind == 'grant' and change.get('vesting'):
+            step['vesting'] = _vesting(change['vesting'], change.get('date'))
+        reg, _ = C.apply_steps(reg, [step])
         return reg
     raise ValueError(f"unknown change {kind}")
+
+
+def _vesting(v, default_start=None):
+    """Normalise a vesting block: dict, or text like '48/12' (months/cliff)."""
+    if isinstance(v, str):
+        months, _, cliff = v.partition('/')
+        v = {'months': int(months or 48), 'cliff': int(cliff or 0)}
+    out = {'start': str(v.get('start') or default_start or date.today().isoformat()),
+           'months': int(v.get('months') or 48), 'cliff': int(v.get('cliff') or 0)}
+    if out['months'] <= 0 or out['cliff'] < 0 or out['cliff'] > out['months']:
+        raise ValueError("vesting needs months > 0 and 0 <= cliff <= months")
+    return out
+
+
+def exit_result(value, version=None, vested_only=False, on=None, entity_dir=None):
+    """Waterfall for the current table or a version's end state."""
+    from lib.waterfall import payout
+    reg = load_register(entity_dir)
+    if version:
+        v = load_version(version, entity_dir)
+        if not v:
+            raise ValueError(f"no version {version}")
+        reg, _ = version_result(v, entity_dir)
+    return payout(reg, value, vested_only, on)
 
 
 def version_result(version, entity_dir=None):
@@ -164,19 +220,31 @@ def dispatch(args):
             show_table(reg)
         elif action == 'holder' and pos:
             save_register(apply_change(reg, {'type': 'holder', 'name': ' '.join(pos), 'id': f.get('id'),
-                                             'group': f.get('group', 'founder')}))
-            print(f"  Added holder {' '.join(pos)}.")
+                                             'group': f.get('group', 'founder'), 'investor_type': f.get('investor_type'),
+                                             'contact': f.get('contact')}))
+            print(f"  Saved holder {' '.join(pos)}.")
+        elif action == 'class' and pos:
+            change = {'type': 'class', 'id': pos[0], 'name': f.get('name'), 'kind': f.get('kind')}
+            for k in C.CLASS_TERMS:
+                if f.get(k) is not None:
+                    change[k] = f[k] if k == 'participating' else _num(f[k])
+            save_register(apply_change(reg, change))
+            cl = next(c for c in load_register()['classes'] if c['id'] == pos[0])
+            print(f"  Class {cl['id']}: " + ', '.join(f"{k}={cl[k]}" for k in ('kind', *C.CLASS_TERMS) if k in cl))
+        elif action == 'exit' and pos:
+            show_exit(exit_result(_num(pos[0]), f.get('version'), bool(f.get('vested')), f.get('date')))
         elif action == 'issue' and len(pos) >= 2:
             save_register(apply_change(reg, {'type': 'issue', 'holder': pos[0], 'shares': _num(pos[1]),
                                              'class': f.get('class', 'common'), 'price': f.get('price', 0),
-                                             'date': f.get('date')}))
+                                             'date': f.get('date'), 'vesting': f.get('vesting')}))
             print(f"  Issued {pos[1]} {f.get('class', 'common')} shares to {pos[0]}.")
         elif action == 'pool' and pos:
             save_register(apply_change(reg, {'type': 'pool', 'size': _num(pos[0])}))
             print(f"  Option pool set to {pos[0]}.")
         elif action == 'grant' and len(pos) >= 2:
             save_register(apply_change(reg, {'type': 'grant', 'holder': pos[0], 'shares': _num(pos[1]),
-                                             'strike': f.get('strike'), 'date': f.get('date', date.today().isoformat())}))
+                                             'strike': f.get('strike'), 'date': f.get('date', date.today().isoformat()),
+                                             'vesting': f.get('vesting')}))
             print(f"  Granted {pos[1]} options to {pos[0]}.")
         elif action in ('safe', 'note') and len(pos) >= 2:
             save_register(apply_change(reg, {'type': action, 'holder': pos[0], 'amount': _num(pos[1]),
@@ -219,8 +287,12 @@ def cmd_version(pos, f):
         for k in ('name', 'holder', 'date'):
             if f.get(k):
                 step[k] = f[k]
+        if f.get('pro_rata'):
+            step['pro_rata'] = True
+        if f.get('participating'):
+            step['participating'] = f['participating'] not in ('no', 'false')
         for k in ('investment', 'pre_money', 'percent_sold', 'pool_target', 'amount', 'cap', 'discount',
-                  'interest', 'shares'):
+                  'interest', 'shares', 'liq_pref', 'participation_cap', 'seniority'):
             if f.get(k) not in (None, True):
                 step[k] = _num(f[k])
         if 'post_money' in f:
@@ -252,17 +324,32 @@ def show_table(reg):
         print("  No shares yet. Start with: pair captable holder \"Ana Diaz\" --group founder ; "
               "pair captable issue ana-diaz 4000000\n")
         return
-    print(f"  {'Holder':<24} {'Group':<9} {'Shares':>14} {'Options':>12} {'Fully diluted':>14} {'%':>8}")
+    print(f"  {'Holder':<24} {'Group':<9} {'Shares':>14} {'Options':>12} {'Fully diluted':>14} {'%':>8} {'Unvested':>12}")
     for r in t['rows']:
         shares = sum(r['classes'].values(), Decimal('0'))
         print(f"  {r['name'][:24]:<24} {r['group']:<9} {float(shares):>14,.0f} {float(r['options']):>12,.0f} "
-              f"{float(r['total']):>14,.0f} {_pct(r['pct']):>8}")
+              f"{float(r['total']):>14,.0f} {_pct(r['pct']):>8} {float(r['unvested']) or 0:>12,.0f}")
     print(f"  {'Option pool (available)':<34} {'':>14} {'':>12} {float(t['pool_available']):>14,.0f} {_pct(t['pool_pct']):>8}")
     for i in t['instruments']:
         print(f"  Open {i['kind']}: {i['holder']} {i['amount']:,.0f}" + (f", cap {i['cap']:,.0f}" if i.get('cap') else '')
               + (f", discount {i['discount'] * 100:g}%" if i.get('discount') else '')
               + (' (post-money)' if i.get('post_money') else ''))
     print()
+
+
+def show_exit(res):
+    print(f"\n  Exit at {float(res['exit_value']):,.0f} — common price per share {float(res['price_per_share']):.4f}\n")
+    if res['notes_repaid']:
+        print(f"  Notes repaid first: {float(res['notes_repaid']):,.0f}")
+    for c in res['classes']:
+        print(f"  {c['name']:<24} {c['decision']:<28} {float(c['total']):>14,.0f}  (invested {float(c['invested']):,.0f})")
+    print(f"\n  {'Holder':<24} {'Group':<9} {'Proceeds':>14} {'% of exit':>10} {'Multiple':>9}")
+    for r in res['rows']:
+        mult = f"{float(r['multiple']):.2f}x" if r['multiple'] is not None else ''
+        print(f"  {r['name'][:24]:<24} {r['group']:<9} {float(r['proceeds']):>14,.0f} {float(r['pct']) * 100:>9.1f}% {mult:>9}")
+    if abs(res['undistributed']) > 1:
+        print(f"\n  Not distributed: {float(res['undistributed']):,.0f}")
+    print("\n  Simplified: no dividends, escrow or carve-outs; options net-exercise; unallocated pool ignored.\n")
 
 
 def show_version(slug):
@@ -306,11 +393,16 @@ def print_help():
   pair captable grant <holder> <options> [--strike P]
   pair captable safe <holder> <amount> [--cap N] [--discount 0.2] [--post-money no]
   pair captable note <holder> <amount> [--cap N] [--discount 0.2] [--interest 0.08] [--date D]
+      issue/grant also take --vesting 48/12 (months/cliff; starts on --date)
+  pair captable holder <name> --group investor --investor-type angel [--contact slug]
+  pair captable class <id> [--liq-pref 1] [--participating yes|no] [--participation-cap 3] [--seniority 2]
+  pair captable exit <value> [--version slug] [--vested]      exit waterfall: who gets what
 
 Versions (contemplated rounds, never change the real table):
   pair captable version new <name>
   pair captable version step <slug> --type priced --name Seed --investment 2000000 --pre-money 8000000 [--pool-target 0.1]
-  pair captable version step <slug> --type priced --investment 6000000 --percent-sold 0.2
+  pair captable version step <slug> --type priced --investment 6000000 --percent-sold 0.2 [--pro-rata]
+               [--liq-pref 1 --participating yes --participation-cap 3 --seniority 2]
   pair captable version step <slug> --type safe --holder angels --amount 250000 --cap 5000000 [--discount 0.2]
   pair captable version step <slug> --type grant --holder dev --shares 50000
   pair captable version show <slug> | list | remove <slug>

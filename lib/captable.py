@@ -25,7 +25,14 @@ Conversion rules (priced round):
   post-money SAFE         converts at min(price x (1 - discount), cap / (pre-round fully diluted
                           + all converting shares)) — the SAFE owns amount / cap of that capitalisation
   notes accrue simple interest from their date to the round date.
-Liquidation preferences, pro-rata rights and vesting are not modelled.
+Class terms (for the exit waterfall, lib/waterfall.py):
+    classes: [{id, kind: preferred, liq_pref: 1.0, participating: false,
+               participation_cap: 3.0, seniority: 1}]
+Vesting on a grant or an issuance (founder reverse vesting):
+    vesting: {start: 2026-01-01, months: 48, cliff: 12}
+Holders may carry investor_type (friends & family, angel, VC, ...) and contact
+(a contacts/ slug). Priced steps may set pro_rata: true so existing investors
+take their fully diluted share of the new money.
 """
 
 from copy import deepcopy
@@ -34,6 +41,9 @@ from decimal import Decimal
 
 ZERO = Decimal('0')
 GROUPS = ('founder', 'employee', 'advisor', 'investor', 'other')
+INVESTOR_TYPES = ('friends & family', 'angel', 'angel group', 'accelerator', 'VC', 'corporate', 'family office',
+                  'private equity', 'government', 'other')
+CLASS_TERMS = ('liq_pref', 'participating', 'participation_cap', 'seniority')
 
 
 def D(v):
@@ -83,6 +93,52 @@ def fully_diluted(reg):
     return sum(holdings(reg).values(), ZERO) + sum(granted(reg).values(), ZERO) + max(pool_available(reg), ZERO)
 
 
+def _months_between(a, b):
+    return (b.year - a.year) * 12 + (b.month - a.month) - (1 if b.day < a.day else 0)
+
+
+def vested(entry, on=None):
+    """Shares of a grant or issuance vested on `on` (default today).
+
+    No vesting block = fully vested. Before the cliff nothing vests; after it,
+    vesting is monthly and straight-line to `months`."""
+    total = D(entry.get('shares'))
+    v = entry.get('vesting')
+    if not v:
+        return total
+    start = date.fromisoformat(str(v.get('start') or entry.get('date') or date.today().isoformat()))
+    when = date.fromisoformat(str(on)) if on else date.today()
+    months = int(v.get('months') or 48)
+    cliff = int(v.get('cliff') or 0)
+    elapsed = _months_between(start, when)
+    if elapsed < cliff or elapsed < 0:
+        return ZERO
+    return total * min(Decimal(1), D(elapsed) / D(months))
+
+
+def vested_totals(reg, on=None):
+    """{holder: vested shares + vested options}."""
+    out = {}
+    for e in reg['issuances'] + reg['grants']:
+        out[e['holder']] = out.get(e['holder'], ZERO) + vested(e, on)
+    return out
+
+
+def holder_info(reg, holder_id):
+    return next((h for h in reg['holders'] if h['id'] == holder_id), {}) or {}
+
+
+def by_investor_type(reg):
+    """{investor type: fully diluted %} for investor holders."""
+    t = table(reg)
+    out = {}
+    for r in t['rows']:
+        if r['group'] == 'investor':
+            k = holder_info(reg, r['holder']).get('investor_type') or 'unspecified'
+            out[k] = out.get(k, ZERO) + r['pct']
+    return out
+
+
 def last_price(reg):
     # conversions issue at a discounted price; the round price is the company's price
     priced = [i for i in reg['issuances'] if D(i.get('price')) and not i.get('conversion')]
@@ -103,9 +159,10 @@ def holder_name(reg, holder_id):
     return (h or {}).get('name', holder_id)
 
 
-def table(reg):
-    """Rows per holder (shares by class, options, fully diluted, %) + pool row + totals."""
+def table(reg, on=None):
+    """Rows per holder (shares by class, options, fully diluted, %, vested) + pool row + totals."""
     hold, opts = holdings(reg), granted(reg)
+    vest = vested_totals(reg, on)
     fd = fully_diluted(reg)
     price = last_price(reg)
     ids = []
@@ -119,8 +176,11 @@ def table(reg):
     for h in ids:
         by_class = {c['id']: hold.get((h, c['id']), ZERO) for c in reg['classes']}
         total = sum(by_class.values(), ZERO) + opts.get(h, ZERO)
+        info = holder_info(reg, h)
         rows.append({'holder': h, 'name': holder_name(reg, h), 'group': holder_group(reg, h),
+                     'investor_type': info.get('investor_type', ''), 'contact': info.get('contact', ''),
                      'classes': by_class, 'options': opts.get(h, ZERO), 'total': total,
+                     'vested': vest.get(h, ZERO), 'unvested': total - vest.get(h, ZERO),
                      'pct': total / fd if fd else ZERO, 'value': total * price if price else None})
     rows.sort(key=lambda r: (GROUPS.index(r['group']) if r['group'] in GROUPS else 9, -r['total']))
     avail = max(pool_available(reg), ZERO)
@@ -201,12 +261,32 @@ def priced_round(reg, step):
 
     cls = step.get('class') or (step.get('name') or 'preferred').lower().replace(' ', '-')
     if not any(c['id'] == cls for c in reg['classes']):
-        reg['classes'].append({'id': cls, 'name': f"{step.get('name') or cls} Preferred", 'kind': 'preferred'})
-    investors = step.get('investors') or [{'holder': step.get('holder') or f"{cls}-investors",
-                                           'amount': investment}]
+        new_class = {'id': cls, 'name': f"{step.get('name') or cls} Preferred", 'kind': 'preferred'}
+        for k in CLASS_TERMS:
+            if step.get(k) not in (None, ''):
+                new_class[k] = step[k]
+        reg['classes'].append(new_class)
+    investors = step.get('investors')
+    pro_rata = []
+    if not investors:
+        investors = []
+        if step.get('pro_rata'):
+            t = table(reg)
+            for r in t['rows']:
+                if r['group'] == 'investor' and r['pct'] > 0:
+                    amt = investment * r['pct']
+                    investors.append({'holder': r['holder'], 'amount': amt})
+                    pro_rata.append({'holder': r['holder'], 'name': r['name'], 'amount': amt})
+        taken = sum((D(i['amount']) for i in investors), ZERO)
+        if investment - taken > 0:
+            investors.append({'holder': step.get('holder') or f"{cls}-investors", 'amount': investment - taken,
+                              'investor_type': step.get('investor_type')})
     for inv in investors:
         if not any(h['id'] == inv['holder'] for h in reg['holders']):
-            reg['holders'].append({'id': inv['holder'], 'name': inv.get('name') or inv['holder'], 'group': 'investor'})
+            h = {'id': inv['holder'], 'name': inv.get('name') or inv['holder'], 'group': 'investor'}
+            if inv.get('investor_type'):
+                h['investor_type'] = inv['investor_type']
+            reg['holders'].append(h)
         reg['issuances'].append({'date': on, 'holder': inv['holder'], 'class': cls,
                                  'shares': float(D(inv['amount']) / price), 'price': float(price),
                                  'note': step.get('name', '')})
@@ -222,7 +302,7 @@ def priced_round(reg, step):
     summary = {'name': step.get('name', cls), 'date': on, 'investment': investment,
                'pre_money': pre_money, 'post_money': price * post_fd, 'price': price,
                'new_shares': new_shares, 'conversion_shares': sum(conv.values(), ZERO),
-               'pool_increase': inc, 'pre_fd': pre_fd, 'post_fd': post_fd}
+               'pool_increase': inc, 'pre_fd': pre_fd, 'post_fd': post_fd, 'pro_rata': pro_rata}
     return reg, summary
 
 
@@ -233,7 +313,11 @@ def add_instrument(reg, step):
         raise ValueError("instrument kind is safe or note")
     holder = step.get('holder') or f"{kind}-holders"
     if not any(h['id'] == holder for h in reg['holders']):
-        reg['holders'].append({'id': holder, 'name': step.get('holder_name') or holder, 'group': 'investor'})
+        h = {'id': holder, 'name': step.get('holder_name') or holder, 'group': 'investor'}
+        for k in ('investor_type', 'contact'):
+            if step.get(k):
+                h[k] = step[k]
+        reg['holders'].append(h)
     n = len(reg['instruments']) + 1
     inst = {'id': step.get('id') or f"{kind}{n}", 'holder': holder, 'kind': kind,
             'amount': float(D(step['amount'])), 'date': str(step.get('date') or date.today().isoformat()),
@@ -262,8 +346,11 @@ def apply_steps(reg, steps):
             if not any(h['id'] == step['holder'] for h in reg['holders']):
                 reg['holders'].append({'id': step['holder'], 'name': step.get('name') or step['holder'],
                                        'group': step.get('group', 'employee')})
-            reg['grants'].append({'date': step.get('date', ''), 'holder': step['holder'],
-                                  'shares': float(D(step['shares'])), 'strike': step.get('strike')})
+            grant = {'date': step.get('date', ''), 'holder': step['holder'],
+                     'shares': float(D(step['shares'])), 'strike': step.get('strike')}
+            if step.get('vesting'):
+                grant['vesting'] = step['vesting']
+            reg['grants'].append(grant)
             s = {'name': f"grant {step['holder']}", 'date': step.get('date', '')}
         else:
             raise ValueError(f"unknown step type {kind}")

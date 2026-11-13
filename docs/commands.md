@@ -476,7 +476,22 @@ pair captable version step seed-at-8m-pre --type priced --name Seed --investment
 pair captable compare
 ```
 
-Priced rounds convert open notes and SAFEs (pre-money notes at min(price × (1 − discount), cap ÷ pre-round shares); post-money SAFEs own amount ÷ cap of the post-SAFE capitalisation). Notes accrue simple interest. Liquidation preferences, pro-rata and vesting are not modelled. Web: Company > Fundraising and Company > Cap table.
+Priced rounds convert open notes and SAFEs (pre-money notes at min(price × (1 − discount), cap ÷ pre-round shares); post-money SAFEs own amount ÷ cap of the post-SAFE capitalisation). Notes accrue simple interest. Web: Company > Fundraising and Company > Cap table.
+
+**Class terms and exit waterfall** — preferred classes carry a liquidation preference (`liq_pref`, a multiple of invested), `participating` (with an optional `participation_cap` multiple) and `seniority` (higher is paid first; equal is shared pro rata). `pair captable exit <value>` (or Cap table > Exit waterfall) shows who gets what: open notes are repaid first, preferences by seniority, then the rest per share; non-participating preferred and SAFEs convert when that pays more, capped participating classes stop at the cap or convert. Also shows each holder's multiple on invested and the split at ¼×, ½×, 1×, 2×, 4× the exit. Simplified: no dividends, escrow or carve-outs; options net-exercise; the unallocated pool is ignored.
+
+```bash
+pair captable class seed --liq-pref 1 --participating yes --participation-cap 3 --seniority 2
+pair captable exit 30000000 [--version seed-at-8m-pre] [--vested]
+```
+
+**Vesting** — `--vesting 48/12` (months/cliff) on `issue` (founder reverse vesting) and `grant`, starting at `--date`; the table shows unvested amounts and the waterfall can count vested only.
+
+**Pro-rata** — a version's priced step with `--pro-rata` lets existing investors take their fully diluted share of the new money; the rest goes to new investors. Priced steps can also set the new class's terms.
+
+**Investor types and contacts** — holders carry an investor type (friends & family, angel, VC, …) shown as a breakdown; `pair investor add … --create-contact` or `pair investor contact <id>` creates a Contacts record (role investor), and money received carries the type and contact to the cap table.
+
+**Progress updates list** — `pair investor updates` lists everyone you talked to, including those who passed, with last contact and last update; `--emails` prints the address list and `--sent` records an update. An investor can be marked "no progress updates".
 
 ## Growth Engine  `[growth pack]`
 
