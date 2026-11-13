@@ -303,12 +303,23 @@ def _cash_setup(config):
             config.get('accounts', {}).get('bank', 'Assets:Current:Chequing'))
 
 
+def scenario_occurrences(slug, meta=None):
+    """Dated amounts from a scenario's rules and its growth model."""
+    from lib.plan_rules import expand
+    meta = meta if meta is not None else (load_scenario(slug) or {})
+    occ = expand(list(meta.get('rules') or []))
+    if meta.get('growth'):
+        from lib.growth import occurrences
+        occ += occurrences(meta['growth'])
+    return sorted(occ, key=lambda o: (o['date'], o['rule']))
+
+
 def sync_rules_journal(slug, config=None):
-    """Regenerate rules.journal from the rules in scenario.yaml."""
-    from lib.plan_rules import expand, journal_text
+    """Regenerate rules.journal from the rules (and growth model) in scenario.yaml."""
+    from lib.plan_rules import journal_text
     from lib.journal import write_journal_atomic
     currency, bank = _cash_setup(config)
-    text = journal_text(slug, expand(load_rules(slug)), currency, bank)
+    text = journal_text(slug, scenario_occurrences(slug), currency, bank)
     write_journal_atomic(scenario_dir(slug) / RULES_JOURNAL, text)
 
 
@@ -363,7 +374,7 @@ def remove_rule(slug, rule_id, config=None):
 def scenario_monthly(slug, config=None):
     """Planned amounts by month: ({YYYY-MM: {revenue, expense, funding}},
     {YYYY-MM: {account: expense}}) from rules and manual entries."""
-    from lib.plan_rules import expand, month_key
+    from lib.plan_rules import month_key
     months, by_account = {}, {}
 
     def add(month, kind, account, amount):
@@ -374,11 +385,27 @@ def scenario_monthly(slug, config=None):
             a = by_account.setdefault(month, {})
             a[account] = a.get(account, Decimal('0')) + amount
 
-    for o in expand(load_rules(slug)):
+    for o in scenario_occurrences(slug):
         add(month_key(o['date']), o['kind'], o['account'], o['amount'])
     for e in read_entries(slug):
         add(e['date'][:7], e['kind'], e['account'], e['amount'])
     return dict(sorted(months.items())), by_account
+
+
+def save_growth(slug, model, config=None):
+    """Store (or clear with None) the scenario's growth model and regenerate."""
+    from lib.growth import validate
+    if model is not None:
+        problems = validate(model)
+        if problems:
+            raise ValueError('; '.join(problems))
+    meta = load_scenario(slug) or {}
+    if model is None:
+        meta.pop('growth', None)
+    else:
+        meta['growth'] = _plain(model)
+    _save_meta(slug, meta)
+    sync_rules_journal(slug, config)
 
 
 def copy_scenario(slug, new_name, description=None):
@@ -390,6 +417,8 @@ def copy_scenario(slug, new_name, description=None):
     if src.exists():
         scenario_journal(new_slug).write_text(src.read_text().replace(
             f'scenario:{slug}', f'scenario:{new_slug}'))
+    if meta.get('growth'):
+        save_growth(new_slug, meta['growth'])
     if meta.get('rules'):
         save_rules(new_slug, meta['rules'])
     return new_slug

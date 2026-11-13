@@ -1985,7 +1985,9 @@ def create_app():
             entries = read_entries(slug)
             rules = meta.get('rules') or []
             spend = sum((e['amount'] for e in entries if e['kind'] == 'expense'), Decimal('0'))
-            spend += sum((o['amount'] for o in expand(rules) if o['kind'] == 'expense'), Decimal('0'))
+            from modules.scenario import scenario_occurrences
+            spend += sum((o['amount'] for o in scenario_occurrences(slug, meta) if o['kind'] == 'expense'),
+                         Decimal('0'))
             items.append({'slug': slug, 'name': meta.get('name', slug),
                           'description': meta.get('description', ''),
                           'items': len(entries) + len(rules),
@@ -2041,7 +2043,8 @@ def create_app():
             months.setdefault(month, {})
             months[month][e['account']] = months[month].get(e['account'], 0.0) + float(e['amount'])
         rules = load_rules(slug)
-        occ = [o for o in expand(rules)
+        from modules.scenario import scenario_occurrences
+        occ = [o for o in scenario_occurrences(slug, meta)
                if not begin or begin <= o['date'].isoformat() < end]
         for o in occ:
             if o['kind'] == 'funding':
@@ -2207,6 +2210,49 @@ def create_app():
         except IndexError as e:
             raise HTTPException(status_code=404, detail=str(e))
         return {'status': 'ok', 'message': 'Entry removed'}
+
+    # ─── Growth engine (growth pack) ────────────────────────────────────────
+
+    def _growth_payload(model):
+        from lib import growth as G
+        problems = G.validate(model)
+        if problems:
+            return {'model': model, 'problems': problems}
+        rows, ue = G.run(model)
+        f = lambda v: float(v) if isinstance(v, Decimal) else v
+        return {'model': model, 'problems': [],
+                'rows': [{k: (f(v) if k != 'by_channel' else {n: {kk: f(vv) for kk, vv in c.items()} for n, c in v.items()})
+                          for k, v in r.items()} for r in rows],
+                'economics': {k: f(v) for k, v in ue.items()}}
+
+    @app.get("/api/growth/{slug}")
+    async def growth_get(slug: str):
+        from lib import growth as G
+        meta = _scenario_or_404(slug)
+        model = meta.get('growth')
+        out = _growth_payload(model) if model else {'model': None}
+        out['template'] = G.template()
+        out['channel_types'] = list(G.CHANNEL_TYPES)
+        out['currency'] = get_entity_currency()
+        return out
+
+    @app.post("/api/growth/{slug}/preview")
+    async def growth_preview(slug: str, data: dict):
+        _scenario_or_404(slug)
+        try:
+            return _growth_payload(data.get('model') or {})
+        except (ArithmeticError, ValueError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=str(e) or 'invalid model')
+
+    @app.put("/api/growth/{slug}")
+    async def growth_save(slug: str, data: dict):
+        from modules.scenario import save_growth
+        _scenario_or_404(slug)
+        try:
+            save_growth(slug, data.get('model'), load_config())
+        except (ValueError, ArithmeticError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=str(e) or 'invalid model')
+        return {'status': 'ok'}
 
     # ─── Runway (runway pack) ───────────────────────────────────────────────
 

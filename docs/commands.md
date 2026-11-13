@@ -319,7 +319,7 @@ The baseline (books, reports, contacts, budgets, payroll…) is always on. Optio
 | `runway` | `pair runway`, Plan > Runway | scenarios |
 | `executive` | `pair profile`, `pair kpi`, web Company tab (Profile, KPIs) | |
 | `captable` | `pair round`, `pair investor`, `pair captable`, Company > Fundraising / Cap table | |
-| `growth` | `pair growth`, Plan > Growth | scenarios |
+| `growth` | `pair growth`, Plan > Growth (with what-if sliders) | scenarios |
 
 ```bash
 pair features                         # list packs, on/off and where it is set
@@ -477,6 +477,30 @@ pair captable compare
 ```
 
 Priced rounds convert open notes and SAFEs (pre-money notes at min(price × (1 − discount), cap ÷ pre-round shares); post-money SAFEs own amount ÷ cap of the post-SAFE capitalisation). Notes accrue simple interest. Liquidation preferences, pro-rata and vesting are not modelled. Web: Company > Fundraising and Company > Cap table.
+
+## Growth Engine  `[growth pack]`
+
+A growth model lives in a scenario. Channels bring sign-ups each month, one funnel turns them into paying customers (sales deals arrive as paying), monthly cohorts shrink by a retention curve, and pricing tiers plus cost to serve turn customers into money. The results are added to the scenario as revenue, acquisition spend, sales cost and cost to serve, so **Runway includes them automatically**.
+
+| Channel | Inputs |
+|---|---|
+| `paid` | spend, spend change %, cost per 1000 views, click rate, sign-up rate |
+| `paid_cpa` | spend, spend change %, cost per sign-up |
+| `viral` | invites per new user × invite acceptance (builds on last month's new users) |
+| `organic` | visitors, visitor growth, sign-up rate |
+| `sales` | reps, add a rep every N months, deals per rep, ramp months, cost per rep |
+| `partners` | partners, new partners per month, sign-ups per partner |
+
+```bash
+pair growth init lean
+pair growth channel add lean --type viral --name Referrals --invites 1.5 --invite-conversion 0.15
+pair growth set lean retention 0.8,0.9,0.95      # month-on-month; last value repeats
+pair growth set lean funnel.paid_conversion 0.12
+pair growth show lean                             # month by month + LTV, CAC, LTV:CAC, payback
+pair runway --scenario lean --replace
+```
+
+Unit economics: revenue per customer (tier mix), gross margin after cost to serve, expected lifetime (sum of the retention curve, 60-month cap), LTV, CAC (acquisition + sales cost ÷ new paying), LTV:CAC and payback months, and the first month contribution turns positive. Web: Plan > Growth, with **what-if sliders** (spend, conversion, retention, price) that preview without saving.
 
 ## Income Module
 

@@ -156,6 +156,8 @@ def dispatch(args):
         return
     action = rest[0] if rest else 'show'
     f, pos = _flags(rest[1:])
+    if flags.get('date'):            # the global parser takes --date first
+        f['date'] = flags['date']
     reg = load_register()
     try:
         if action == 'show':

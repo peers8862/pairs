@@ -174,6 +174,7 @@
     .cap-bar { display:flex; height:10px; border-radius:4px; overflow:hidden; background:var(--bg); border:1px solid var(--border); margin:0.3rem 0; }
     .cap-bar span { display:block; height:100%; }
     #co-cap a { color:var(--accent); }
+    .gr-sliders input[type=range] { width:120px; accent-color: var(--accent); }
 </style>
 </head>
     <style>
@@ -1196,6 +1197,7 @@
         <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.5rem;">
             <div class="section-title" style="margin:0;">Plan</div>
             <button class="btn plan-subtab" id="plan-tab-scenarios" onclick="planShow('scenarios')">Scenarios</button>
+            <button class="btn plan-subtab" id="plan-tab-growth" data-pack="growth" onclick="planShow('growth')">Growth</button>
             <button class="btn plan-subtab" id="plan-tab-runway" data-pack="runway" onclick="planShow('runway')">Runway</button>
             <button class="btn plan-subtab" id="plan-tab-budgets" onclick="planShow('budgets')">Budget vs scenario</button>
         </div>
@@ -1211,6 +1213,14 @@
             </div>
             <div id="scn-list"></div>
             <div id="scn-detail"></div>
+        </div>
+
+        <div id="plan-growth" style="display:none;">
+            <div class="plan-panel"><div class="plan-row">
+                <label class="plan-lbl">Scenario <select id="gr-scenario" class="plan-in" onchange="loadGrowth()"></select></label>
+                <span class="plan-note" style="margin:0;">Channels bring sign-ups; one funnel turns them into paying customers; cohorts shrink by retention. Saved results feed the scenario and Runway.</span>
+            </div></div>
+            <div id="gr-content"></div>
         </div>
 
         <div id="plan-runway" style="display:none;">
@@ -3583,9 +3593,11 @@
         document.getElementById('plan-scenarios').style.display = tab === 'scenarios' ? '' : 'none';
         document.getElementById('plan-budgets').style.display = tab === 'budgets' ? '' : 'none';
         document.getElementById('plan-runway').style.display = tab === 'runway' ? '' : 'none';
+        document.getElementById('plan-growth').style.display = tab === 'growth' ? '' : 'none';
         document.querySelectorAll('.plan-subtab').forEach(b => b.classList.toggle('sel', b.id === 'plan-tab-' + tab));
         if (tab === 'scenarios') loadScenarios();
         else if (tab === 'runway') loadRunwayPlan();
+        else if (tab === 'growth') loadGrowthPlan();
         else loadBudgetsPlan();
     }
 
@@ -4032,6 +4044,133 @@
     async function capRemoveStep(i) {
         const steps = capState.v.steps.filter((_, j) => j !== i);
         try { await jpost(`/api/captable/version/${encodeURIComponent(capState.version)}`, {steps}, 'PUT'); loadCapTable(); } catch (e) { showToast(e.message, true); }
+    }
+
+    // ─── Growth engine (growth pack) ────────────────────────────────────────
+    const grState = {model: null, base: null, k: {spend: 1, conv: 1, ret: 1, price: 1}};
+    const CH_FIELDS = {
+        paid: [['spend', 'spend/mo'], ['spend_growth', 'spend change %', 1], ['cpm', 'cost / 1000 views'], ['ctr', 'click rate %', 1], ['conversion', 'sign-up rate %', 1]],
+        paid_cpa: [['spend', 'spend/mo'], ['spend_growth', 'spend change %', 1], ['cpa', 'cost per sign-up']],
+        viral: [['invites', 'invites per new user'], ['invite_conversion', 'invite accept %', 1]],
+        organic: [['visitors', 'visitors/mo'], ['growth', 'visitor growth %', 1], ['conversion', 'sign-up rate %', 1], ['spend', 'spend/mo']],
+        sales: [['reps', 'reps'], ['add_rep_every', 'add a rep every N months'], ['deals_per_rep', 'deals/rep/mo'], ['ramp_months', 'ramp months'], ['cost_per_rep', 'cost/rep/mo']],
+        partners: [['partners', 'partners'], ['new_partners', 'new partners/mo'], ['users_per_partner', 'sign-ups/partner/mo'], ['cost_per_partner', 'cost/partner/mo']],
+    };
+    async function loadGrowthPlan() {
+        const sel = document.getElementById('gr-scenario');
+        const res = await planFetch('/api/scenarios').catch(() => ({scenarios: []}));
+        const keep = sel.value || planState.slug || '';
+        sel.innerHTML = res.scenarios.map(x => `<option value="${esc(x.slug)}">${esc(x.name)}</option>`).join('');
+        if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+        if (!res.scenarios.length) { document.getElementById('gr-content').innerHTML = '<div class="empty">Create a scenario first (Plan &gt; Scenarios).</div>'; return; }
+        loadGrowth();
+    }
+    async function loadGrowth() {
+        const slug = document.getElementById('gr-scenario').value;
+        const d = await planFetch(`/api/growth/${encodeURIComponent(slug)}`).catch(e => ({error: e.message}));
+        if (d.error) { document.getElementById('gr-content').innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
+        grState.slug = slug; grState.meta = d; grState.k = {spend: 1, conv: 1, ret: 1, price: 1};
+        if (!d.model) {
+            document.getElementById('gr-content').innerHTML = `<div class="empty">No growth model in this scenario yet. <button class="btn plan-primary" onclick="growthStart()">Start from a template</button></div>`;
+            return;
+        }
+        grState.base = JSON.parse(JSON.stringify(d.model));
+        renderGrowth(d);
+    }
+    async function growthStart() {
+        await jpost(`/api/growth/${encodeURIComponent(grState.slug)}`, {model: grState.meta.template}, 'PUT');
+        loadGrowth();
+    }
+    function grModelFromForm() {
+        const m = JSON.parse(JSON.stringify(grState.base));
+        const v = id => document.getElementById(id).value.trim();
+        m.start = v('gr-start'); m.months = parseInt(v('gr-months') || '24', 10);
+        m.funnel = {activation: parseFloat(v('gr-act')) / 100, paid_conversion: parseFloat(v('gr-conv')) / 100};
+        m.retention = v('gr-ret').split(',').map(x => parseFloat(x) / 100).filter(x => !Number.isNaN(x));
+        m.revenue = {tiers: [...document.querySelectorAll('.gr-tier')].map(r => { const [n, p, sh] = r.querySelectorAll('input'); return {name: n.value, price: parseFloat(p.value) || 0, share: (parseFloat(sh.value) || 0) / 100}; }).filter(t => t.name || t.price),
+                     expansion: (parseFloat(v('gr-exp')) || 0) / 100};
+        m.cost_to_serve = parseFloat(v('gr-serve')) || 0;
+        m.channels = [...document.querySelectorAll('.gr-ch')].map(r => {
+            const c = {type: r.dataset.type, name: r.querySelector('[data-k="name"]').value};
+            r.querySelectorAll('[data-k]').forEach(el => { if (el.dataset.k !== 'name' && el.value !== '') c[el.dataset.k] = parseFloat(el.value) / (el.dataset.pct ? 100 : 1); });
+            return c;
+        });
+        return m;
+    }
+    function grApplySliders(m) {
+        const k = grState.k, out = JSON.parse(JSON.stringify(m));
+        out.channels.forEach(c => { for (const f of ['spend', 'cost_per_rep']) if (c[f]) c[f] *= k.spend; });
+        out.funnel.paid_conversion = Math.min(1, out.funnel.paid_conversion * k.conv);
+        out.retention = out.retention.map(r => Math.min(1, r * k.ret));
+        out.revenue.tiers.forEach(t => t.price *= k.price);
+        return out;
+    }
+    function renderGrowth(d) {
+        const m = d.model, pctv = v => v === undefined || v === null ? '' : +(v * 100).toFixed(3);
+        let html = `<div class="plan-panel"><div class="plan-row">
+            <label class="plan-lbl">start <input class="plan-in" id="gr-start" value="${esc(m.start)}" style="width:90px;" placeholder="YYYY-MM"></label>
+            <label class="plan-lbl">months <input class="plan-in" type="number" id="gr-months" value="${m.months}" style="width:60px;"></label>
+            <label class="plan-lbl">activation % <input class="plan-in" type="number" id="gr-act" value="${pctv(m.funnel?.activation)}" style="width:70px;"></label>
+            <label class="plan-lbl">active → paying % <input class="plan-in" type="number" id="gr-conv" value="${pctv(m.funnel?.paid_conversion)}" style="width:70px;"></label>
+            <label class="plan-lbl" title="month-on-month; the last value repeats">retention % <input class="plan-in" id="gr-ret" value="${(Array.isArray(m.retention) ? m.retention : [m.retention]).map(pctv).join(', ')}" style="width:120px;"></label>
+            <label class="plan-lbl">cost to serve/customer <input class="plan-in" type="number" id="gr-serve" value="${m.cost_to_serve ?? ''}" style="width:70px;"></label>
+            <label class="plan-lbl">expansion %/mo <input class="plan-in" type="number" id="gr-exp" value="${pctv(m.revenue?.expansion)}" style="width:60px;"></label></div>
+            <div class="plan-sub">Pricing tiers</div><div id="gr-tiers">${(m.revenue?.tiers || []).concat([{name: '', price: '', share: ''}]).map(t => `<div class="plan-row gr-tier" style="margin-bottom:0.3rem;"><input class="plan-in" placeholder="tier" value="${esc(t.name || '')}" style="width:120px;"><input class="plan-in" type="number" placeholder="price/mo" value="${t.price ?? ''}" style="width:90px;"><input class="plan-in" type="number" placeholder="share %" value="${t.share === '' ? '' : pctv(t.share)}" style="width:80px;"></div>`).join('')}</div>
+            <div class="plan-sub">Channels</div><div id="gr-channels">`;
+        for (const c of m.channels || []) {
+            html += `<div class="plan-row gr-ch" data-type="${esc(c.type)}" style="margin-bottom:0.35rem;"><input class="plan-in" data-k="name" value="${esc(c.name || c.type)}" style="width:130px;"><span class="pack-state">${esc(c.type)}</span>`;
+            for (const [k, label, pct] of CH_FIELDS[c.type] || []) html += `<label class="plan-lbl">${label} <input class="plan-in" type="number" step="any" data-k="${k}" ${pct ? 'data-pct="1"' : ''} value="${c[k] === undefined ? '' : (pct ? pctv(c[k]) : c[k])}" style="width:80px;"></label>`;
+            html += `<button class="btn" style="font-size:0.7rem;padding:0.1rem 0.45rem;" onclick="this.parentElement.remove()">✕</button></div>`;
+        }
+        html += `</div><div class="plan-row"><select class="plan-in" id="gr-new-type">${d.channel_types.map(t => `<option>${t}</option>`).join('')}</select><button class="btn" onclick="growthAddChannel()">Add channel</button>
+            <button class="btn" onclick="growthPreview()" style="margin-left:auto;">Preview</button><button class="btn plan-primary" onclick="growthSave()">Save to scenario</button>
+            <button class="btn" style="color:var(--red);border-color:var(--red);" onclick="if(this.dataset.ok){jpost('/api/growth/${esc(grState.slug)}',{model:null},'PUT').then(loadGrowth)}else{this.dataset.ok=1;this.textContent='Click again to remove';}">Remove model</button></div></div>
+            <div class="plan-panel"><div class="plan-sub" style="margin-top:0;">What if (not saved)</div><div class="plan-row gr-sliders">
+            ${[['spend', 'Acquisition spend'], ['conv', 'Paid conversion'], ['ret', 'Retention'], ['price', 'Price']].map(([k, l]) => `<label class="plan-lbl">${l} <input type="range" min="0.5" max="1.5" step="0.05" value="${grState.k[k]}" oninput="grState.k.${k}=parseFloat(this.value);this.nextElementSibling.textContent='×'+this.value;growthPreview()"><span>×${grState.k[k]}</span></label>`).join('')}
+            </div></div><div id="gr-results"></div>`;
+        document.getElementById('gr-content').innerHTML = html;
+        renderGrowthResults(d);
+    }
+    function growthAddChannel() {
+        const t = document.getElementById('gr-new-type').value;
+        grState.base = grModelFromForm();
+        grState.base.channels.push({type: t, name: t});
+        renderGrowth({...grState.meta, model: grState.base});
+        growthPreview();
+    }
+    async function growthPreview() {
+        grState.base = grModelFromForm();
+        try { const r = await jpost(`/api/growth/${encodeURIComponent(grState.slug)}/preview`, {model: grApplySliders(grState.base)}); renderGrowthResults(r, true); }
+        catch (e) { showToast(e.message, true); }
+    }
+    async function growthSave() {
+        const m = grApplySliders(grModelFromForm());
+        try { await jpost(`/api/growth/${encodeURIComponent(grState.slug)}`, {model: m}, 'PUT'); showToast('Saved: the scenario and Runway now use this model'); loadGrowth(); }
+        catch (e) { showToast(e.message, true); }
+    }
+    function renderGrowthResults(d, preview) {
+        const box = document.getElementById('gr-results');
+        if (!box) return;
+        if (d.problems && d.problems.length) { box.innerHTML = `<div style="color:var(--red);font-size:0.8rem;">${d.problems.map(esc).join('<br>')}</div>`; return; }
+        const e = d.economics, f = v => v === null || v === undefined ? '—' : fm(v);
+        let html = `<div class="rw-cards">`;
+        html += rwCard('Paying at end', f(e.paying_end), `monthly revenue ${f(e.mrr_end)}`);
+        html += rwCard('CAC', f(e.cac), 'acquisition cost per paying customer');
+        html += rwCard('LTV', f(e.ltv), `${e.expected_lifetime_months.toFixed(1)} months × margin ${(e.gross_margin * 100).toFixed(0)}%`);
+        html += rwCard('LTV : CAC', e.ltv_cac === null ? '—' : e.ltv_cac.toFixed(2), '3 or more is healthy', e.ltv_cac !== null && e.ltv_cac < 1 ? 'amt-neg' : (e.ltv_cac !== null && e.ltv_cac < 3 ? 'rw-warn' : ''));
+        html += rwCard('Payback', e.payback_months === null ? '—' : e.payback_months.toFixed(1) + ' mo', 'months of margin to earn back CAC');
+        html += rwCard('Contribution +', esc(e.contribution_positive_month || 'never'), `total ${f(e.contribution_total)}`);
+        html += `</div>${preview ? '<div class="plan-note">Preview — not saved.</div>' : ''}`;
+        const rows = d.rows;
+        const W = 720, H = 160, P = 26, maxP = Math.max(1, ...rows.map(r => r.paying)), cs = rows.map(r => r.contribution), lo = Math.min(0, ...cs), hi = Math.max(1, ...cs);
+        const x = i => P + (W - 2 * P) * (rows.length === 1 ? 0.5 : i / (rows.length - 1));
+        html += `<svg viewBox="0 0 ${W} ${H}" class="rw-chart"><polyline fill="none" stroke="var(--green)" stroke-width="2" points="${rows.map((r, i) => `${x(i)},${H - P - (H - 2 * P) * r.paying / maxP}`).join(' ')}"/>
+            <polyline fill="none" stroke="var(--yellow)" stroke-width="1.5" points="${rows.map((r, i) => `${x(i)},${H - P - (H - 2 * P) * (r.contribution - lo) / ((hi - lo) || 1)}`).join(' ')}"/>
+            <line x1="${P}" x2="${W - P}" y1="${H - P - (H - 2 * P) * (0 - lo) / ((hi - lo) || 1)}" y2="${H - P - (H - 2 * P) * (0 - lo) / ((hi - lo) || 1)}" stroke="var(--red)" stroke-dasharray="3 3" opacity="0.6"/>
+            <text x="${P}" y="14" class="rw-tick" fill="var(--green)">paying customers</text><text x="${P + 120}" y="14" class="rw-tick">contribution (yellow)</text></svg>`;
+        html += '<div style="overflow-x:auto;"><table><thead><tr><th>Month</th><th style="text-align:right">Sign-ups</th><th style="text-align:right">New paying</th><th style="text-align:right">Paying</th><th style="text-align:right">Revenue</th><th style="text-align:right">Acq. spend</th><th style="text-align:right">Sales</th><th style="text-align:right">Serve</th><th style="text-align:right">Contribution</th></tr></thead><tbody>';
+        for (const r of rows) html += `<tr><td>${esc(r.month)}</td><td style="text-align:right">${fm(r.signups)}</td><td style="text-align:right">${r.new_paying.toFixed(1)}</td><td style="text-align:right">${fm(r.paying)}</td><td style="text-align:right;color:var(--green)">${fm(r.revenue)}</td><td style="text-align:right">${fm(r.spend)}</td><td style="text-align:right">${fm(r.sales_cost)}</td><td style="text-align:right">${fm(r.serve)}</td>${planAmt(r.contribution, true)}</tr>`;
+        box.innerHTML = html + '</tbody></table></div>';
     }
 
     async function loadScenarios() {
