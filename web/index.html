@@ -3561,25 +3561,40 @@
                 <span style="color:var(--fg-dim);font-size:0.8rem;flex:1;">${esc(d.description)}</span>
                 <label class="plan-lbl">from <input type="date" class="plan-in" value="${esc(planState.start)}" onchange="planState.start=this.value;openScenario('${esc(slug)}',false)"></label>
                 <label class="plan-lbl">for <input type="number" class="plan-in" min="1" style="width:64px;" placeholder="all" value="${esc(planState.months)}" onchange="planState.months=this.value;openScenario('${esc(slug)}',false)"> months</label>
+                <button class="btn" onclick="copyScenario('${esc(slug)}')" style="font-size:0.75rem;padding:0.3rem 0.6rem;">Copy</button>
                 <button class="btn" onclick="deleteScenario('${esc(slug)}')" style="font-size:0.75rem;padding:0.3rem 0.6rem;color:var(--red);border-color:var(--red);">Delete scenario</button>
             </div>`;
         if ((d.leaks || []).length) {
             html += `<div style="color:var(--red);font-size:0.8rem;margin-bottom:0.5rem;">Warning: ${d.leaks.map(esc).join(', ')} include scenario entries, so real totals are wrong.</div>`;
         }
-        const opts = list => list.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
-        html += `<div class="plan-sub">Add a planned expense or revenue</div>
-            <div class="plan-row">
-                <input type="text" id="scn-item-desc" class="plan-in" placeholder="description" style="flex:2;min-width:160px;">
-                <input type="number" id="scn-item-amount" class="plan-in" placeholder="amount" min="0" step="0.01" style="width:110px;text-align:right;">
-                <select id="scn-item-account" class="plan-in" style="flex:2;min-width:180px;"><option value="">account…</option>
-                    <optgroup label="Expense">${opts(d.expense_accounts || [])}</optgroup><optgroup label="Revenue">${opts(d.revenue_accounts || [])}</optgroup></select>
-                <select id="scn-item-method" class="plan-in"><option value="bank">bank</option><option value="credit-card">credit card</option></select>
-                <input type="date" id="scn-item-date" class="plan-in" value="${new Date().toISOString().slice(0, 10)}">
-                <select id="scn-item-every" class="plan-in"><option value="weekly">weekly</option><option value="monthly" selected>monthly</option><option value="quarterly">quarterly</option><option value="semiannual">semi-annual</option><option value="annual">annual</option></select>
-                <label class="plan-lbl">× <input type="number" id="scn-item-repeat" class="plan-in" value="1" min="1" max="600" style="width:60px;"> times</label>
-                <label class="plan-lbl">or for <input type="number" id="scn-item-months" class="plan-in" min="1" placeholder="—" style="width:60px;"> months</label>
-                <button class="btn plan-primary" onclick="addScenarioItem('${esc(slug)}')">Add</button>
-            </div>`;
+        planState.detail = d;
+        html += ruleFormHtml(d, slug);
+
+        // Rules
+        html += `<div class="plan-sub">Rules (${(d.rules || []).length}) — each line is stored once; amounts are worked out from it</div>`;
+        if (!(d.rules || []).length) {
+            html += '<div class="empty">No rules yet. Add one above.</div>';
+        } else {
+            html += '<table><thead><tr><th>Name</th><th>Kind</th><th>Account</th><th>How</th><th></th></tr></thead><tbody>';
+            for (const r of d.rules) {
+                const col = r.kind === 'revenue' ? 'var(--green)' : r.kind === 'funding' ? 'var(--accent)' : 'var(--fg-dim)';
+                html += `<tr${r.disabled ? ' style="opacity:0.5"' : ''}><td>${esc(r.name || r.id)}</td><td style="color:${col}">${esc(r.kind)}${r.instrument ? ' · ' + esc(r.instrument) : ''}</td>
+                    <td style="color:var(--fg-dim)">${esc(r.account || '(default)')}</td><td style="font-size:0.8rem">${esc(r.summary)}</td>
+                    <td style="text-align:right;white-space:nowrap"><button class="btn" title="Edit rule" onclick="editRule('${esc(r.id)}')" style="font-size:0.7rem;padding:0.1rem 0.45rem;">Edit</button>
+                    <button class="btn" title="Remove rule" onclick="removeRule('${esc(slug)}','${esc(r.id)}')" style="font-size:0.7rem;padding:0.1rem 0.45rem;">✕</button></td></tr>`;
+            }
+            html += '</tbody></table>';
+        }
+
+        // Monthly totals (expense / revenue / funding / net)
+        if ((d.monthly || []).length) {
+            html += `<div class="plan-sub">Scenario cash by month (${esc(d.currency)})</div><div style="overflow-x:auto;"><table><thead><tr><th></th>`;
+            html += d.monthly.map(m => `<th style="text-align:right">${esc(m.month)}</th>`).join('') + '</tr></thead><tbody>';
+            for (const [label, key, col] of [['Revenue', 'revenue', 'var(--green)'], ['Expenses', 'expense', ''], ['Net (revenue − expenses)', 'net', ''], ['Funding in', 'funding', 'var(--accent)']]) {
+                html += `<tr${key === 'net' ? ' style="font-weight:bold"' : ''}><td${col ? ` style="color:${col}"` : ''}>${label}</td>` + d.monthly.map(m => planAmt(m[key], key === 'net')).join('') + '</tr>';
+            }
+            html += '</tbody></table></div>';
+        }
 
         // Report: actual vs scenario vs both
         const span = d.begin ? `${d.begin} to ${d.end}` : 'all dates';
@@ -3615,10 +3630,8 @@
         }
 
         // Entries
-        html += `<div class="plan-sub">Entries (${d.entries.length})</div>`;
-        if (!d.entries.length) {
-            html += '<div class="empty">No entries yet.</div>';
-        } else {
+        if (d.entries.length) {
+            html += `<div class="plan-sub">Manual entries (${d.entries.length}) <button class="btn" onclick="migrateScenario('${esc(slug)}')" style="font-size:0.7rem;padding:0.1rem 0.5rem;margin-left:0.5rem;" title="Group repeated entries into rules">Turn into rules</button></div>`;
             html += '<table><thead><tr><th>Date</th><th>Description</th><th>Account</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>';
             for (const e of d.entries) {
                 html += `<tr><td style="color:var(--fg-dim)">${esc(e.date)}</td><td>${esc(e.description)}</td><td style="color:${e.kind === 'revenue' ? 'var(--green)' : 'var(--fg-dim)'}">${esc(e.account)}</td>${planAmt(e.amount)}
@@ -3627,8 +3640,126 @@
             html += '</tbody></table>';
         }
         box.innerHTML = html + '</div>';
+        rfKindChange();
     }
 
+
+    // ─── Scenario rules (form, edit, remove, copy, migrate) ─────────────────
+    const RULE_DRIVERS = {
+        expense: [['fixed', 'Fixed amount'], ['growth', 'Grows / shrinks % each time'], ['step', 'Changes on a date'], ['percent', '% of revenue (or of another rule)'], ['salary', 'A hire (salary)']],
+        revenue: [['fixed', 'Fixed amount'], ['growth', 'Grows % each time'], ['step', 'Changes on a date'], ['units', 'Units × price'], ['percent', '% of another rule']],
+        funding: [['fixed', 'One amount']],
+    };
+    function ruleFormHtml(d, slug) {
+        const opts = list => list.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+        const today = new Date().toISOString().slice(0, 10);
+        return `<div class="plan-sub" id="rf-title">Add a rule</div>
+            <div class="plan-row rule-form">
+                <select id="rf-kind" class="plan-in" onchange="rfKindChange()"><option value="expense">Expense</option><option value="revenue">Revenue</option><option value="funding">Funding (not P&amp;L)</option></select>
+                <input type="text" id="rf-name" class="plan-in" placeholder="name, e.g. Studio rent" style="flex:2;min-width:150px;">
+                <select id="rf-driver" class="plan-in" onchange="rfDriverChange()"></select>
+                <select id="rf-account" class="plan-in" data-k="expense revenue" style="flex:2;min-width:170px;"><option value="">account (default)</option>
+                    <optgroup label="Expense" data-k="expense">${opts(d.expense_accounts || [])}</optgroup><optgroup label="Revenue" data-k="revenue">${opts(d.revenue_accounts || [])}</optgroup></select>
+                <select id="rf-instrument" class="plan-in" data-k="funding"><option value="equity">equity</option><option value="safe">SAFE</option><option value="note">convertible note</option><option value="debt">loan</option><option value="grant">grant</option></select>
+            </div>
+            <div class="plan-row rule-form" style="margin-top:0.4rem;">
+                <label class="plan-lbl" data-d="fixed growth step funding">amount <input type="number" id="rf-amount" class="plan-in" step="0.01" style="width:110px;text-align:right;"></label>
+                <label class="plan-lbl" data-d="growth">change % <input type="number" id="rf-rate" class="plan-in" step="0.1" style="width:70px;" placeholder="5"></label>
+                <label class="plan-lbl" data-d="step">from <input type="date" id="rf-step-date" class="plan-in"> becomes <input type="number" id="rf-step-amount" class="plan-in" step="0.01" style="width:100px;"></label>
+                <label class="plan-lbl" data-d="percent">% <input type="number" id="rf-percent" class="plan-in" step="0.1" style="width:70px;" placeholder="2.9"> of <select id="rf-of" class="plan-in"><option value="revenue">scenario revenue</option>${(d.rules || []).map(r => `<option value="${esc(r.id)}">${esc(r.name || r.id)}</option>`).join('')}</select></label>
+                <label class="plan-lbl" data-d="units">units <input type="number" id="rf-units" class="plan-in" style="width:80px;"> × price <input type="number" id="rf-price" class="plan-in" step="0.01" style="width:80px;"></label>
+                <label class="plan-lbl" data-d="units">units change % <input type="number" id="rf-unit-growth" class="plan-in" step="0.1" style="width:60px;"> cost/unit <input type="number" id="rf-unit-cost" class="plan-in" step="0.01" style="width:70px;"></label>
+                <label class="plan-lbl" data-d="salary">salary/yr <input type="number" id="rf-salary" class="plan-in" style="width:100px;"> benefits % <input type="number" id="rf-benefits" class="plan-in" step="0.5" style="width:60px;" placeholder="15"> raise %/yr <input type="number" id="rf-raise" class="plan-in" step="0.5" style="width:60px;"> setup <input type="number" id="rf-setup" class="plan-in" style="width:80px;" placeholder="equip."></label>
+            </div>
+            <div class="plan-row rule-form" style="margin-top:0.4rem;">
+                <label class="plan-lbl">start <input type="date" id="rf-start" class="plan-in" value="${today}"></label>
+                <select id="rf-every" class="plan-in" data-nd="salary"><option value="once">once</option><option value="weekly">weekly</option><option value="monthly" selected>monthly</option><option value="quarterly">quarterly</option><option value="semiannual">semi-annual</option><option value="annual">annual</option></select>
+                <label class="plan-lbl">for <input type="number" id="rf-months" class="plan-in" min="1" style="width:64px;" value="12"> months</label>
+                <label class="plan-lbl">or until <input type="date" id="rf-end" class="plan-in"></label>
+                <button class="btn plan-primary" id="rf-save" onclick="saveRule('${esc(slug)}')">Add rule</button>
+                <button class="btn" id="rf-cancel" onclick="rfReset()" style="display:none;font-size:0.8rem;">Cancel edit</button>
+            </div>
+            <div class="plan-note" style="margin-top:0.3rem;">Percentages are typed as percents (5 = 5%). Funding adds cash without counting as revenue.</div>`;
+    }
+    function rfKindChange() {
+        const kind = document.getElementById('rf-kind').value;
+        const drv = document.getElementById('rf-driver');
+        const keep = drv.value;
+        drv.innerHTML = RULE_DRIVERS[kind].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+        if ([...drv.options].some(o => o.value === keep)) drv.value = keep;
+        document.querySelectorAll('.rule-form [data-k]').forEach(el => { el.style.display = el.dataset.k.split(' ').includes(kind) ? '' : 'none'; });
+        if (kind === 'funding') document.getElementById('rf-every').value = 'once';
+        rfDriverChange();
+    }
+    function rfDriverChange() {
+        const kind = document.getElementById('rf-kind').value;
+        const drv = kind === 'funding' ? 'funding' : document.getElementById('rf-driver').value;
+        document.querySelectorAll('.rule-form [data-d]').forEach(el => { el.style.display = el.dataset.d.split(' ').includes(drv) ? '' : 'none'; });
+        document.querySelectorAll('.rule-form [data-nd]').forEach(el => { el.style.display = el.dataset.nd.split(' ').includes(drv) ? 'none' : ''; });
+    }
+    function rfVal(id) { return document.getElementById(id).value.trim(); }
+    function rfNum(id, pct = false) { const v = rfVal(id); if (v === '') return undefined; const n = parseFloat(v); return pct ? n / 100 : n; }
+    function rfBody() {
+        const kind = rfVal('rf-kind'), driver = kind === 'funding' ? 'fixed' : rfVal('rf-driver');
+        const b = {name: rfVal('rf-name'), kind, driver, start: rfVal('rf-start'), every: driver === 'salary' ? 'monthly' : rfVal('rf-every')};
+        if (kind !== 'funding' && rfVal('rf-account')) b.account = rfVal('rf-account');
+        if (kind === 'funding') b.instrument = rfVal('rf-instrument');
+        if (rfVal('rf-end')) b.end = rfVal('rf-end'); else if (rfVal('rf-months') && b.every !== 'once') b.months = parseInt(rfVal('rf-months'), 10);
+        const set = (k, v) => { if (v !== undefined && !Number.isNaN(v)) b[k] = v; };
+        if (['fixed', 'growth', 'step'].includes(driver)) set('amount', rfNum('rf-amount'));
+        if (driver === 'growth') set('rate', rfNum('rf-rate', true));
+        if (driver === 'step' && rfVal('rf-step-date')) b.steps = [{from: rfVal('rf-step-date'), amount: rfNum('rf-step-amount') || 0}];
+        if (driver === 'percent') { set('percent', rfNum('rf-percent', true)); b.of = rfVal('rf-of'); }
+        if (driver === 'units') { set('units', rfNum('rf-units')); set('price', rfNum('rf-price')); set('unit_growth', rfNum('rf-unit-growth', true)); set('unit_cost', rfNum('rf-unit-cost')); }
+        if (driver === 'salary') { set('salary', rfNum('rf-salary')); set('benefits', rfNum('rf-benefits', true)); set('raise', rfNum('rf-raise', true)); set('setup_cost', rfNum('rf-setup')); }
+        return b;
+    }
+    async function saveRule(slug) {
+        const b = rfBody();
+        if (!b.name) { showToast('Give the rule a name', true); return; }
+        const id = planState.editRule;
+        try {
+            await planFetch(`/api/scenario/${encodeURIComponent(slug)}/rule${id ? '/' + encodeURIComponent(id) : ''}`, {
+                method: id ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)});
+            showToast(id ? 'Rule updated' : 'Rule added');
+            planState.editRule = null;
+            openScenario(slug, false);
+        } catch (e) { showToast(e.message, true); }
+    }
+    function editRule(id) {
+        const r = (planState.detail.rules || []).find(x => x.id === id);
+        if (!r) return;
+        planState.editRule = id;
+        const put = (el, v) => { const e = document.getElementById(el); if (e) e.value = v === undefined || v === null ? '' : v; };
+        const pct = v => v === undefined || v === null ? '' : +(v * 100).toFixed(4);
+        put('rf-kind', r.kind || 'expense'); rfKindChange(); put('rf-driver', r.driver || 'fixed'); rfDriverChange();
+        put('rf-name', r.name); put('rf-account', r.account || ''); put('rf-instrument', r.instrument || 'equity');
+        put('rf-amount', r.amount); put('rf-rate', pct(r.rate)); put('rf-percent', pct(r.percent)); put('rf-of', r.of || 'revenue');
+        put('rf-units', r.units); put('rf-price', r.price); put('rf-unit-growth', pct(r.unit_growth)); put('rf-unit-cost', r.unit_cost);
+        put('rf-salary', r.salary); put('rf-benefits', pct(r.benefits)); put('rf-raise', pct(r.raise)); put('rf-setup', r.setup_cost);
+        put('rf-start', r.start); put('rf-every', r.every || 'monthly'); put('rf-months', r.months || ''); put('rf-end', r.end || '');
+        const st = (r.steps || [])[0] || {}; put('rf-step-date', st.from || ''); put('rf-step-amount', st.amount);
+        document.getElementById('rf-title').textContent = `Edit rule ${id}`;
+        document.getElementById('rf-save').textContent = 'Save rule';
+        document.getElementById('rf-cancel').style.display = '';
+        document.getElementById('rf-title').scrollIntoView({behavior: 'smooth', block: 'center'});
+    }
+    function rfReset() { planState.editRule = null; openScenario(planState.slug, false); }
+    async function removeRule(slug, id) {
+        try { await planFetch(`/api/scenario/${encodeURIComponent(slug)}/rule/${encodeURIComponent(id)}`, {method: 'DELETE'}); showToast('Rule removed'); openScenario(slug, false); }
+        catch (e) { showToast(e.message, true); }
+    }
+    async function copyScenario(slug) {
+        const name = `${planState.detail.name} copy`;
+        try {
+            const res = await planFetch(`/api/scenario/${encodeURIComponent(slug)}/copy`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name})});
+            showToast(`Copied to ${res.slug}`); planState.slug = res.slug; loadScenarios();
+        } catch (e) { showToast(e.message, true); }
+    }
+    async function migrateScenario(slug) {
+        try { const res = await planFetch(`/api/scenario/${encodeURIComponent(slug)}/migrate`, {method: 'POST'}); showToast(`${res.rules} rule(s) created`); openScenario(slug, false); }
+        catch (e) { showToast(e.message, true); }
+    }
 
     async function addScenarioItem(slug) {
         const body = {

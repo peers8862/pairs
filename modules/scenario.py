@@ -145,18 +145,22 @@ def account_balances(files, query, begin=None, end=None, currency=None):
     return balances
 
 
-def scenario_report_rows(real_file, scen_file, slug, begin=None, end=None,
+def scenario_report_rows(real_file, scen_files, slug, begin=None, end=None,
                          currency=None):
     """Rows of (account, actual, scenario, actual + scenario) for expense and
-    revenue accounts; revenue is shown as a positive amount."""
+    revenue accounts; revenue is shown as a positive amount. scen_files is a
+    path or a list of paths (manual entries and rule entries)."""
+    if isinstance(scen_files, (str, Path)):
+        scen_files = [scen_files]
+    scen_files = [f for f in scen_files if Path(f).exists()]
     real_exists = real_file is not None and Path(real_file).exists()
-    files = [real_file, scen_file] if real_exists else [scen_file]
+    files = ([real_file] if real_exists else []) + scen_files
     accounts = '^(Expenses|Income|Revenue)'
     actual = (account_balances([real_file], [accounts], begin, end, currency)
               if real_exists else {})
     planned = (account_balances(files, [accounts, f'tag:scenario={slug}'],
                                 begin, end, currency)
-               if Path(scen_file).exists() else {})
+               if scen_files else {})
     zero = Decimal('0')
     rows = []
     for acct in sorted(set(actual) | set(planned)):
@@ -260,6 +264,169 @@ def delete_scenario(slug):
     shutil.rmtree(scenario_dir(slug))
 
 
+# ─── Rules (one stored line per planned item; see lib/plan_rules.py) ─────────
+
+RULES_JOURNAL = 'rules.journal'
+
+
+def scenario_files(slug, entity_dir=None):
+    """Journal files holding a scenario's entries (manual entries + rules)."""
+    d = scenario_dir(slug, entity_dir)
+    return [p for p in (d / JOURNAL_NAME, d / RULES_JOURNAL) if p.exists()]
+
+
+def _plain(value):
+    """YAML-safe copy of a rule value (Decimal -> float, date -> ISO)."""
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items() if v not in (None, '')}
+    if isinstance(value, list):
+        return [_plain(v) for v in value]
+    return value
+
+
+def _save_meta(slug, meta):
+    with open(scenario_dir(slug) / META_NAME, 'w') as f:
+        yaml.dump(meta, f, default_flow_style=False, sort_keys=False)
+
+
+def load_rules(slug):
+    return list((load_scenario(slug) or {}).get('rules') or [])
+
+
+def _cash_setup(config):
+    config = config or load_config()
+    return (config.get('pair', {}).get('currency', 'CAD'),
+            config.get('accounts', {}).get('bank', 'Assets:Current:Chequing'))
+
+
+def sync_rules_journal(slug, config=None):
+    """Regenerate rules.journal from the rules in scenario.yaml."""
+    from lib.plan_rules import expand, journal_text
+    from lib.journal import write_journal_atomic
+    currency, bank = _cash_setup(config)
+    text = journal_text(slug, expand(load_rules(slug)), currency, bank)
+    write_journal_atomic(scenario_dir(slug) / RULES_JOURNAL, text)
+
+
+def save_rules(slug, rules, config=None):
+    meta = load_scenario(slug) or {}
+    meta['rules'] = [_plain(r) for r in rules]
+    _save_meta(slug, meta)
+    sync_rules_journal(slug, config)
+
+
+def add_rule(slug, rule, config=None):
+    """Validate, give an id, store and regenerate. Returns the stored rule."""
+    from lib.plan_rules import validate
+    rule = _plain(dict(rule))
+    problems = validate(rule)
+    if problems:
+        raise ValueError('; '.join(problems))
+    rules = load_rules(slug)
+    used = {r.get('id') for r in rules}
+    n = len(rules) + 1
+    while f'r{n}' in used:
+        n += 1
+    rule = {'id': f'r{n}', **{k: v for k, v in rule.items() if k != 'id'}}
+    rules.append(rule)
+    save_rules(slug, rules, config)
+    return rule
+
+
+def update_rule(slug, rule_id, changes, config=None):
+    from lib.plan_rules import validate
+    rules = load_rules(slug)
+    for i, r in enumerate(rules):
+        if r.get('id') == rule_id:
+            merged = _plain({**r, **changes, 'id': rule_id})
+            problems = validate(merged)
+            if problems:
+                raise ValueError('; '.join(problems))
+            rules[i] = merged
+            save_rules(slug, rules, config)
+            return merged
+    raise KeyError(rule_id)
+
+
+def remove_rule(slug, rule_id, config=None):
+    rules = load_rules(slug)
+    kept = [r for r in rules if r.get('id') != rule_id]
+    if len(kept) == len(rules):
+        raise KeyError(rule_id)
+    save_rules(slug, kept, config)
+
+
+def copy_scenario(slug, new_name, description=None):
+    """New scenario with the same rules and manual entries."""
+    meta = load_scenario(slug) or {}
+    new_slug = create_scenario(new_name, description if description is not None
+                               else meta.get('description', ''))
+    src = scenario_journal(slug)
+    if src.exists():
+        scenario_journal(new_slug).write_text(src.read_text().replace(
+            f'scenario:{slug}', f'scenario:{new_slug}'))
+    if meta.get('rules'):
+        save_rules(new_slug, meta['rules'])
+    return new_slug
+
+
+def migrate_entries(slug, config=None):
+    """Turn manual entries into rules: runs of the same description, account
+    and amount at a regular monthly-based spacing become one rule. Returns
+    the number of rules created; the manual journal is emptied."""
+    entries = read_entries(slug)
+    if not entries:
+        return 0
+    groups = []
+    for e in entries:
+        key = (e['description'], e['account'], e['amount'])
+        if groups and groups[-1]['key'] == key:
+            groups[-1]['dates'].append(e['date'])
+        else:
+            groups.append({'key': key, 'dates': [e['date']], 'kind': e['kind']})
+    step_names = {v: k for k, v in FREQUENCIES.items() if v}
+    rules = load_rules(slug)
+    created = 0
+    for g in groups:
+        desc, account, amount = g['key']
+        dates = [date.fromisoformat(d) for d in g['dates']]
+        every = 'once'
+        if len(dates) > 1:
+            gaps = {(b.year - a.year) * 12 + b.month - a.month for a, b in zip(dates, dates[1:])}
+            days = {(b - a).days for a, b in zip(dates, dates[1:])}
+            if days == {7}:
+                every = 'weekly'
+            elif len(gaps) == 1 and gaps.pop() in step_names:
+                every = step_names[(dates[1].year - dates[0].year) * 12 + dates[1].month - dates[0].month]
+        if every == 'once' and len(dates) > 1:
+            for d in dates:   # irregular: keep each as its own one-off rule
+                rules.append({'name': desc, 'kind': g['kind'], 'account': account, 'driver': 'fixed',
+                              'amount': float(amount), 'start': d.isoformat(), 'every': 'once'})
+                created += 1
+            continue
+        rule = {'name': desc, 'kind': g['kind'], 'account': account, 'driver': 'fixed',
+                'amount': float(amount), 'start': dates[0].isoformat(), 'every': every}
+        if len(dates) > 1:
+            rule['repeat'] = len(dates)
+        rules.append(rule)
+        created += 1
+    used = {r.get('id') for r in rules}
+    n = 1
+    for r in rules:
+        if not r.get('id'):
+            while f'm{n}' in used:
+                n += 1
+            r['id'] = f'm{n}'
+            used.add(r['id'])
+    save_rules(slug, rules, config)
+    scenario_journal(slug).write_text('')
+    return created
+
+
 # ─── Dispatch ────────────────────────────────────────────────────────────────
 
 def dispatch(args):
@@ -271,6 +438,7 @@ def dispatch(args):
     actions = {
         'new': cmd_new, 'list': cmd_list, 'add': cmd_add,
         'show': cmd_show, 'report': cmd_report, 'remove': cmd_remove,
+        'rule': cmd_rule, 'rules': cmd_rule, 'copy': cmd_copy, 'migrate': cmd_migrate,
     }
     if action not in actions:
         print(f"Unknown scenario action: {action}")
@@ -292,6 +460,26 @@ Actions:
   show <slug>         List the scenario's entries
   report <slug>       Expenses per account: actual, scenario, actual + scenario
   remove <slug>       Delete a scenario and its entries
+  rule add <slug>     Add a rule (one stored line; amounts worked out from its driver)
+  rule list <slug>    List rules
+  rule remove <slug> <id>
+  copy <slug> <name>  New scenario with the same rules and entries
+  migrate <slug>      Turn manual entries into rules
+
+Rule flags ('rule add'):
+  --name TEXT         What it is
+  --kind KIND         expense | revenue | funding (default expense)
+  --driver D          fixed | growth | step | percent | units | salary (default fixed)
+  --amount NUM        Amount (fixed, growth, step)
+  --rate F            growth: change per occurrence as a fraction (0.05 = +5%)
+  --step DATE=AMOUNT  step: new amount from DATE (repeatable)
+  --percent F         percent: share of revenue (0.029 = 2.9%)
+  --of RULE           percent: of another rule's amount instead of revenue
+  --units N --price P [--unit-growth F] [--unit-cost C]   units: units x price (+ cost)
+  --salary N [--benefits F] [--raise F] [--setup-cost N]  salary: a hire
+  --instrument I      funding: equity | safe | note | debt | grant
+  --account ACCOUNT   Account (defaults by kind) ; --category NAME
+  --start DATE --every FREQ (weekly..annual, once) and --end DATE | --months N | --repeat N
 
 Flags for 'new':
   --desc TEXT         What the scenario is about
@@ -369,11 +557,11 @@ def cmd_list(flags, args):
     print(f"  {'─' * 72}")
     for slug in slugs:
         meta = load_scenario(slug) or {}
-        journal = scenario_journal(slug)
-        text = journal.read_text() if journal.exists() else ''
-        items = sum(1 for line in text.splitlines() if f'scenario:{slug}' in line)
-        total = sum(account_balances([journal], ['^Expenses'], currency=currency).values(),
-                    Decimal('0')) if items else Decimal('0')
+        files = scenario_files(slug)
+        text = ''.join(f.read_text() for f in files)
+        items = len(load_rules(slug)) + len(read_entries(slug))
+        total = sum(account_balances(files, ['^Expenses'], currency=currency).values(),
+                    Decimal('0')) if text.strip() else Decimal('0')
         print(f"  {slug:<24} {items:>5} {currency} {float(total):>10,.2f}  "
               f"{meta.get('description', '')}")
     print()
@@ -469,11 +657,14 @@ def cmd_show(flags, args):
     _require(slug)
     meta = load_scenario(slug) or {}
     print(f"\n  Scenario '{slug}': {meta.get('description', '')}\n", flush=True)
-    journal = scenario_journal(slug)
-    if not journal.read_text().strip():
-        print("  No entries yet. Add one with 'pair scenario add'.")
+    files = scenario_files(slug)
+    if not any(f.read_text().strip() for f in files):
+        print("  No entries yet. Add one with 'pair scenario rule add' or 'pair scenario add'.")
         return
-    subprocess.run(['hledger', '-f', str(journal), 'reg', '^Expenses'])
+    cmd = ['hledger']
+    for f in files:
+        cmd += ['-f', str(f)]
+    subprocess.run(cmd + ['reg', '^(Expenses|Income|Revenue|Equity|Liabilities)'])
 
 
 def cmd_report(flags, args):
@@ -483,7 +674,7 @@ def cmd_report(flags, args):
     config = load_config()
     currency = config.get('pair', {}).get('currency', 'CAD')
     real = real_journal(config)
-    journal = scenario_journal(slug)
+    journal = scenario_files(slug)
     year = _flag(args, '--year')
     begin, end = report_window(_flag(args, '--start'), _flag(args, '--months'), year)
 
@@ -493,7 +684,7 @@ def cmd_report(flags, args):
 
     if '--monthly' in args:
         print(f"\n  [{co}] Scenario '{slug}' by month ({span})\n", flush=True)
-        files = [real, journal] if real and real.exists() else [journal]
+        files = ([real] if real and real.exists() else []) + journal
         cmd = ['hledger']
         for f in files:
             cmd += ['-f', str(f)]
@@ -534,3 +725,115 @@ def cmd_remove(flags, args):
         return
     delete_scenario(slug)
     print(f"  Removed scenario '{slug}'.")
+
+
+# ─── Rule commands ───────────────────────────────────────────────────────────
+
+RULE_FLAGS = {
+    '--name': 'name', '--kind': 'kind', '--driver': 'driver', '--account': 'account',
+    '--category': 'category', '--amount': 'amount', '--rate': 'rate', '--percent': 'percent',
+    '--of': 'of', '--units': 'units', '--price': 'price', '--unit-growth': 'unit_growth',
+    '--unit-cost': 'unit_cost', '--salary': 'salary', '--benefits': 'benefits',
+    '--raise': 'raise', '--setup-cost': 'setup_cost', '--instrument': 'instrument',
+    '--start': 'start', '--every': 'every', '--end': 'end', '--months': 'months',
+    '--repeat': 'repeat', '--round': 'round',
+}
+NUMERIC = {'amount', 'rate', 'percent', 'units', 'price', 'unit_growth', 'unit_cost', 'salary',
+           'benefits', 'raise', 'setup_cost'}
+
+
+def rule_from_args(args):
+    rule, steps = {}, []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--step' and i + 1 < len(args):
+            d, _, amt = args[i + 1].partition('=')
+            steps.append({'from': d, 'amount': float(amt)})
+            i += 2
+            continue
+        if a in RULE_FLAGS and i + 1 < len(args):
+            key, val = RULE_FLAGS[a], args[i + 1]
+            if key in NUMERIC:
+                val = float(val)
+            elif key in ('months', 'repeat'):
+                val = int(val)
+            rule[key] = val
+            i += 2
+            continue
+        i += 1
+    if steps:
+        rule['steps'] = steps
+        rule.setdefault('driver', 'step')
+    rule.setdefault('start', date.today().isoformat())
+    return rule
+
+
+def cmd_rule(flags, args):
+    sub = args[0] if args else 'list'
+    rest = args[1:]
+    positional = [a for a in rest if not a.startswith('--')]
+    slug = positional[0] if positional else None
+    _require(slug)
+    from lib.plan_rules import describe
+    if sub in ('list', 'ls'):
+        rules = load_rules(slug)
+        if not rules:
+            print(f"  No rules in '{slug}'. Add one with 'pair scenario rule add {slug} --name ...'.")
+            return
+        print(f"\n  Rules in '{slug}'\n")
+        for r in rules:
+            off = ' (off)' if r.get('disabled') else ''
+            print(f"  {r['id']:<5} {r.get('kind', 'expense'):<8} {r.get('name', ''):<28} {describe(r)}{off}")
+        print()
+        return
+    if sub == 'add':
+        rule = rule_from_args(rest)
+        if flags.get('dry_run'):
+            from lib.plan_rules import expand, validate
+            problems = validate(rule)
+            if problems:
+                print('  ' + '; '.join(problems))
+                return
+            for o in expand([rule]):
+                print(f"  {o['date']}  {o['kind']:<8} {o['account']:<40} {o['amount']:>12,.2f}")
+            return
+        try:
+            stored = add_rule(slug, rule)
+        except ValueError as e:
+            print(f"  {e}")
+            sys.exit(1)
+        warn_if_included(load_config())
+        print(f"  Added rule {stored['id']} to '{slug}': {stored.get('name', '')} — {describe(stored)}")
+        return
+    if sub in ('remove', 'rm') and len(positional) > 1:
+        try:
+            remove_rule(slug, positional[1])
+        except KeyError:
+            print(f"  No rule {positional[1]} in '{slug}'.")
+            sys.exit(1)
+        print(f"  Removed rule {positional[1]} from '{slug}'.")
+        return
+    print_help()
+
+
+def cmd_copy(flags, args):
+    positional = [a for a in args if not a.startswith('--')]
+    if len(positional) < 2:
+        print("  Usage: pair scenario copy <slug> <new name>")
+        sys.exit(1)
+    _require(positional[0])
+    try:
+        new_slug = copy_scenario(positional[0], positional[1])
+    except ValueError as e:
+        print(f"  {e}")
+        sys.exit(1)
+    print(f"  Copied '{positional[0]}' to '{new_slug}'.")
+
+
+def cmd_migrate(flags, args):
+    positional = [a for a in args if not a.startswith('--')]
+    slug = positional[0] if positional else None
+    _require(slug)
+    n = migrate_entries(slug)
+    print(f"  Turned the manual entries of '{slug}' into {n} rule(s).")
