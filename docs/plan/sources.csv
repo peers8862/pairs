@@ -1,0 +1,4 @@
+id,title,location,kind,analyzed,notes
+S01,"Runway, cash budget & KPI tracking workbook (accelerator template, 2022)",private (not published),xlsx (5 sheets),2026-11-12,"Five sheets: KPI guidance, KPI tracker, setup + cap table, key reports, forecast. Concepts and logic only; no numbers or data carried over. Ignored: KPI guidance sheet and accelerator KPIs"
+S02,Master launch workbook (collection of financial-model templates),private (not published),ods (12 sheets),2026-11-12,"3-statement model, MRR sample, paid acquisition / funnel / retention / LTV chain, hiring plan. Concepts and logic only. Ignored: a scorecard sheet"
+S03,"Investor meetings & commitments tracker (accelerator template, empty)",private (not published),xlsx (7 sheets),2026-11-12,"Analyzed sheets 2-4 only (meeting tracker, commitments, round information + calculator)"

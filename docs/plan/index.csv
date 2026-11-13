@@ -1,0 +1,10 @@
+id,file,sheet_name,title,description,owner,source,generated_by,updated,rows
+items,items.csv,Items,Backlog items,Features and chores under consideration; status idea/candidate/selected/doing/done/dropped,mp,conversation,,2026-11-13,54
+decisions,decisions.csv,Decisions,Decisions,Open and decided questions with proposed answer,mp,conversation,,2026-11-13,18
+artifacts,artifacts.csv,Artifacts,Artifacts,"PRs, branches, code, docs and installs produced",mp,conversation,,2026-11-13,18
+log,log.csv,Log,Log,Dated one-line entries of what happened,mp,conversation,,2026-11-13,20
+sources,sources.csv,Sources,Source documents,Documents analyzed for integration,mp,conversation,,2026-11-12,3
+observations,observations.csv,Observations,Observations,Findings per source and what they imply for Pairs,mp,conversation,,2026-11-12,41
+buckets,metric_buckets.csv,Metric buckets,Metric buckets,Categories for company and product metrics,mp,conversation,,2026-11-12,11
+metrics,metrics.csv,Metrics,Metric catalogue,Candidate metrics with bucket unit kind and source,mp,conversation,,2026-11-12,75
+phases,phases.csv,Phases,Work plan phases,Ordered phases with grouped and blended items,mp,conversation,,2026-11-13,8

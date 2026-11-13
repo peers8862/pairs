@@ -1,0 +1,21 @@
+date,entry,refs
+2026-11-11,Installed pairs locally,A08
+2026-11-11,Built scenarios (CLI + budget hooks + web Plan tab); opened PR #1,A01;A03;A04;A05
+2026-11-12,"Added frequencies, month spans, report windows and revenue (5cd7360)",A01
+2026-11-12,Recorded 9 startup-planning suggestions (I01-I09) and feature opt-in plan (I10-I15),I01;I10
+2026-11-12,Created this sheet set,D07
+2026-11-12,"Analyzed S01 runway/KPI workbook: 21 observations, 11 metric buckets, 75 metrics, items I17-I28, decisions D08-D13",S01;A09
+2026-11-12,"Analyzed S02 launch workbook: O22-O34, items I29-I41, decisions D14-D16; cleaned figures from S01 notes (concepts only)",S02
+2026-11-12,"Analyzed S03 investor tracker (sheets 2-4): O35-O41, items I42-I46, decisions D17-D18",S03
+2026-11-13,Work plan: 7 phases P0-P6; items tagged with phase,phases.csv
+2026-11-13,"Decided D02 D03 D05 D13; user: take control, start all phases",decisions.csv
+2026-11-13,PR #1 merged (merge commit); P0 feature packs merged (PR #2); P1 rule engine merged (PR #3); scenarios pack enabled on local install,A10;A11
+2026-11-13,P2 runway merged (PR #4); D01 decided (add + replace modes); D08 D09 D10 D14 taken as proposed for P3,A12
+2026-11-13,P3 executive pack merged (PR #5); D11 D12 D17 D18 taken as proposed for P4,A13
+2026-11-13,P4 fundraising + cap table merged (PR #6); D15 decided monthly for growth models,A14
+2026-11-13,P5 growth engine merged (PR #7); I08 sliders delivered in Plan > Growth; D16 valuation later; D04 kept label,A15
+2026-11-13,P6 views merged (PR #8). All phases P0-P6 merged to peers8862/pairs master (91428ec); local install on master with all 5 packs enabled; worktrees removed; remote feature branches left (deletion needs user permission),A16
+2026-11-13,Fixes found while building: pack API gating now matches whole roots (kept /api/metrics); --date is consumed by the global flag parser (round/investor/captable now read it); SAFE conversion price no longer counts as the company's last price,P1;P4;P5
+2026-11-13,Gap review: logged I47-I56 (intake ideas not yet built),items.csv
+2026-11-13,"P7 cap table depth built and tested (168 tests); PR #9 open — merge was blocked by the permission check, awaiting user",A17
+2026-11-13,"P7 merged (PR #9, 9a21921). Redacted copy of this plan published to the repo at docs/plan",A17;A18

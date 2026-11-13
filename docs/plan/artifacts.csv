@@ -1,0 +1,19 @@
+id,kind,location,description,related,status
+A01,pr,https://github.com/peers8862/pairs/pull/1,PR #1 feat/scenarios (commits 1f5f54e and 5cd7360),I15;I16,merged
+A02,worktree,the feature worktree,Branch feat/scenarios,I16,removed
+A03,code,modules/scenario.py,Scenario module: rules for frequencies/months/revenue; CLI new/list/add/show/report/remove,I01,merged locally
+A04,code,modules/budget.py,vs/forecast --scenario; project_with_scenario TODO,I07;D01,merged locally
+A05,code,modules/web.py + web/index.html,Scenario and budget-compare APIs; Plan tab,I13,merged locally
+A06,test,tests/test_scenario.py,Scenario tests (suite 94 passing),,merged locally
+A07,doc,docs/commands.md,Scenario Module section,,merged locally
+A08,install,the local install,local install on master,,active
+A09,analysis,docs/plan/observations.csv,Observations from S01 (21 rows),S01,active
+A10,pr,https://github.com/peers8862/pairs/pull/2,P0 feature packs (merged),P0,merged
+A11,pr,https://github.com/peers8862/pairs/pull/3,P1 scenario rule engine (merged),P1,merged
+A12,pr,https://github.com/peers8862/pairs/pull/4,P2 runway (merged),P2,merged
+A13,pr,https://github.com/peers8862/pairs/pull/5,P3 executive pack (merged),P3,merged
+A14,pr,https://github.com/peers8862/pairs/pull/6,P4 fundraising and cap table (merged),P4,merged
+A15,pr,https://github.com/peers8862/pairs/pull/7,P5 growth engine (merged),P5,merged
+A16,pr,https://github.com/peers8862/pairs/pull/8,P6 views (merged),P6,merged
+A17,pr,https://github.com/peers8862/pairs/pull/9,P7 cap table depth (merged),P7,merged
+A18,doc,docs/plan/ (peers8862/pairs),Redacted public copy of this plan,D07,published

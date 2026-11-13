@@ -1,0 +1,12 @@
+id,bucket,description,typical_source
+B01,Profile,Mostly static facts about the company and market (stage; team size; TAM; exit multiple),manual
+B02,Financial (books),"Cash, revenue, COGS, expenses, burn, runway",ledger
+B03,Unit economics,"MRR, ARR, ASP, gross/net margin, take rate, CAC, payback, LTV, LTV:CAC, magic number",derived
+B04,Customers & product usage,"Users, DAU/MAU, retention, churn, activation, NPS, product-specific stats",manual or import
+B05,Sales pipeline & traction,"Contracts signed and in pipeline (count and value), LOIs, sales cycle, order velocity",manual
+B06,Marketing & audience,"Newsletter list, open/click rates, leads (MQL/SQL), cost per lead, press, community, referrals",manual or import
+B07,Fundraising (financial),"Round size, valuation/cap, committed, secured this month",manual or cap table
+B08,Founder momentum,"Activity counts that predict outcomes: investor connections/meetings/conversions, customer interviews, demos, partner intros, applications",manual
+B09,Product delivery,"Releases shipped, milestones hit, open bugs, uptime",manual or import
+B10,Team & operations,"Headcount, hires, contractor hours, hours per person/service",manual or payroll
+B11,Non-dilutive & compliance,"Grants applied/awarded, tax credits (SR&ED), filings due/done",manual
