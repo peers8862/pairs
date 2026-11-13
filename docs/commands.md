@@ -317,7 +317,7 @@ The baseline (books, reports, contacts, budgets, payroll…) is always on. Optio
 |---|---|---|
 | `scenarios` | `pair scenario`, web Plan tab | |
 | `runway` | `pair runway`, Plan > Runway | scenarios |
-| `executive` | `pair profile`, `pair kpi`, web Company tab | |
+| `executive` | `pair profile`, `pair kpi`, web Company tab (Profile, KPIs) | |
 | `captable` | `pair round`, `pair investor`, `pair captable` | |
 | `growth` | `pair growth`, Plan > Growth | scenarios |
 
@@ -420,6 +420,34 @@ runway:
 ```
 
 Web: Plan > Runway. Budget forecasts with `--scenario` use the same rule as `add` mode: actuals to date, the run rate for the rest of the year, plus the scenario's planned items.
+
+## Profile and KPI Modules  `[executive pack]`
+
+**Profile** — who the company is (stored under `profile:` in the entity config). `status` is `real` or `speculative` (an idea or a company not formed yet; scenarios, runway and KPIs work without books).
+
+```bash
+pair profile
+pair profile set stage seed
+pair profile set founders "Ana Diaz, Raj Patel"
+pair profile set market_share_5y 0.02
+pair profile link "Pitch deck" https://...
+```
+
+**KPIs** — company, product and founder metrics in 11 buckets (profile, financial, unit economics, usage, pipeline, marketing, fundraising, founder momentum, delivery, team, non-dilutive). Each metric is `manual` (typed in), `ledger` (from the books: revenue, expenses, cogs, cash) or `derived` (a formula over other metrics that month).
+
+```bash
+pair kpi                                   # metrics with data, last 6 months
+pair kpi list --bucket momentum            # ids, units, sources, formulas
+pair kpi set investor_meetings 5 --month 2026-11
+pair kpi set churn 3%                      # percents can be typed with %
+pair kpi add "Podcast listens" --bucket marketing
+pair kpi add "Demo to close" --bucket pipeline --unit percent --formula "sales_count / demos"
+pair kpi project mrr 0.08                  # carry MRR forward 8% a month
+pair kpi project bucket:marketing 0.05     # gear a whole group
+pair kpi --months 6 --project 6
+```
+
+Files: `kpis/values.csv` (metric, month, value, note), `kpis/definitions.yaml` (your own metrics), `kpis/projections.yaml`. Web: Company > Profile and Company > KPIs (type into a cell to record it).
 
 ## Income Module
 
