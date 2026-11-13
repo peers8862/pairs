@@ -3885,8 +3885,10 @@
             <input class="plan-in" type="number" data-f="amount" placeholder="amount" style="width:110px;">
             <input class="plan-in" type="date" data-f="first_meeting" title="first meeting">
             <input class="plan-in" data-f="next_step" placeholder="next step" style="flex:1;min-width:140px;">
+            <label class="plan-lbl"><input type="checkbox" data-f="create_contact" checked> add to Contacts</label>
             <button class="btn plan-primary" onclick="addInvestor()">Add</button></div>
             <div class="plan-note" style="margin-top:0.3rem;">Log every conversation, even ones that end: those investors get your updates later. Connections, meetings and conversions count into Company &gt; KPIs.</div></details>`;
+        html += `<details class="plan-panel" id="fund-updates-box"><summary class="plan-lbl" style="cursor:pointer;" onclick="loadUpdates()">Progress updates list (everyone you talked to)</summary><div id="fund-updates"></div></details>`;
         box.innerHTML = html;
         if (fundState.open) fundOpen(fundState.open);
     }
@@ -3920,6 +3922,9 @@
         const hist = (d.history || []).map(h => `<div class="rw-note">${esc(h.date)} → ${esc(h.stage)}</div>`).join('');
         const notes = (d.notes || []).slice().reverse().map(n => `<div class="rw-note">${esc(n.date)} ${n.meeting ? '<strong>meeting</strong> ' : ''}${esc(n.text)}</div>`).join('');
         html += `<div class="fund-cols2"><div><div class="plan-sub">Notes</div>${notes || '<div class="rw-note">none yet</div>'}</div><div><div class="plan-sub">Stage history</div>${hist}</div></div>`;
+        html += `<div class="plan-row" style="margin-top:0.5rem;">${d.contact ? `<span class="rw-note">Contact: ${esc(d.contact)}</span>` : `<button class="btn" style="font-size:0.75rem;" onclick="jpost('/api/investor/${esc(id)}/contact').then(r=>{showToast('Linked to contact '+r.contact);loadFundraising();})">Add to Contacts</button>`}
+            <label class="plan-lbl"><input type="checkbox" ${d.updates_off ? 'checked' : ''} onchange="jpost('/api/investor/${esc(id)}', {updates_off: this.checked || null}, 'PUT').then(loadFundraising)"> no progress updates</label>
+            ${d.last_update ? `<span class="rw-note">last update ${esc(d.last_update)}</span>` : ''}</div>`;
         if (d.received) html += `<div class="plan-note">Money received ${esc(d.received)} — recorded in the books and the cap table.</div>`;
         else html += `<div class="plan-row" style="margin-top:0.6rem;"><button class="btn" onclick="dealReceive('${esc(id)}')" id="fund-receive">Record money received…</button><input class="plan-in" type="date" id="fund-recv-date"><span class="rw-note">writes the cash entry to the books and the cap-table change</span></div><div id="fund-preview"></div>`;
         html += `<div style="margin-top:0.6rem;"><button class="btn" style="font-size:0.7rem;color:var(--red);border-color:var(--red);" onclick="if(this.dataset.ok){jpost('/api/investor/${esc(id)}',{}, 'DELETE').then(()=>{fundState.open=null;loadFundraising();})}else{this.dataset.ok=1;this.textContent='Click again to remove';}">Remove</button></div></div>`;
@@ -3955,15 +3960,17 @@
     const capState = {version: null};
     const pc = v => ((v || 0) * 100).toFixed(2) + '%';
     const CAP_FIELDS = {
-        holder: [['name', 'name', 'text'], ['group', 'group', 'select:founder,employee,advisor,investor,other']],
-        issue: [['holder', 'holder', 'holder'], ['shares', 'shares', 'number'], ['class', 'class (common)', 'text'], ['price', 'price/share', 'number'], ['date', '', 'date']],
+        holder: [['name', 'name', 'text'], ['group', 'group', 'select:founder,employee,advisor,investor,other'], ['investor_type', 'investor type', 'itype'], ['contact', 'contact slug', 'text']],
+        issue: [['holder', 'holder', 'holder'], ['shares', 'shares', 'number'], ['class', 'class (common)', 'text'], ['price', 'price/share', 'number'], ['date', 'vesting starts', 'date'], ['vest_months', 'vest months', 'number'], ['vest_cliff', 'cliff months', 'number']],
+        class: [['id', 'class id, e.g. seed', 'text'], ['name', 'name', 'text'], ['liq_pref', 'preference ×', 'number'], ['participating', 'participating', 'check0'], ['participation_cap', 'cap × (participating)', 'number'], ['seniority', 'seniority (higher first)', 'number']],
         pool: [['size', 'options authorised', 'number']],
-        grant: [['holder', 'holder', 'holder'], ['shares', 'options', 'number'], ['strike', 'strike', 'number'], ['date', '', 'date']],
+        grant: [['holder', 'holder', 'holder'], ['shares', 'options', 'number'], ['strike', 'strike', 'number'], ['date', 'vesting starts', 'date'], ['vest_months', 'vest months (48)', 'number'], ['vest_cliff', 'cliff (12)', 'number']],
         safe: [['holder', 'holder', 'holder'], ['amount', 'amount', 'number'], ['cap', 'valuation cap', 'number'], ['discount', 'discount %', 'pct'], ['post_money', 'post-money', 'check'], ['date', '', 'date']],
         note: [['holder', 'holder', 'holder'], ['amount', 'amount', 'number'], ['cap', 'valuation cap', 'number'], ['discount', 'discount %', 'pct'], ['interest', 'interest %/yr', 'pct'], ['date', '', 'date']],
     };
     const STEP_FIELDS = {
-        priced: [['name', 'round name', 'text'], ['investment', 'investment', 'number'], ['pre_money', 'pre-money', 'number'], ['percent_sold', 'or % sold', 'pct'], ['pool_target', 'pool after %', 'pct'], ['date', '', 'date']],
+        priced: [['name', 'round name', 'text'], ['investment', 'investment', 'number'], ['pre_money', 'pre-money', 'number'], ['percent_sold', 'or % sold', 'pct'], ['pool_target', 'pool after %', 'pct'], ['date', '', 'date'],
+                 ['pro_rata', 'existing investors take pro-rata', 'check0'], ['liq_pref', 'preference ×', 'number'], ['participating', 'participating', 'check0'], ['participation_cap', 'cap ×', 'number'], ['seniority', 'seniority', 'number']],
         safe: [['holder', 'holder', 'text'], ['amount', 'amount', 'number'], ['cap', 'valuation cap', 'number'], ['discount', 'discount %', 'pct'], ['post_money', 'post-money', 'check']],
         note: [['holder', 'holder', 'text'], ['amount', 'amount', 'number'], ['cap', 'valuation cap', 'number'], ['discount', 'discount %', 'pct'], ['interest', 'interest %/yr', 'pct'], ['date', '', 'date']],
         grant: [['holder', 'holder', 'text'], ['shares', 'options', 'number']],
@@ -3973,6 +3980,8 @@
             if (t.startsWith('select:')) return `<select class="plan-in" data-f="${k}">${t.slice(7).split(',').map(o => `<option>${o}</option>`).join('')}</select>`;
             if (t === 'holder') return `<select class="plan-in" data-f="${k}">${holders.map(h => `<option value="${esc(h.id)}">${esc(h.name)}</option>`).join('')}</select>`;
             if (t === 'check') return `<label class="plan-lbl"><input type="checkbox" data-f="${k}" checked> ${ph}</label>`;
+            if (t === 'check0') return `<label class="plan-lbl"><input type="checkbox" data-f="${k}"> ${ph}</label>`;
+            if (t === 'itype') return `<select class="plan-in" data-f="${k}"><option value="">${ph}…</option>${((capState.data && capState.data.investor_types) || []).map(o => `<option>${esc(o)}</option>`).join('')}</select>`;
             if (t === 'date') return `<input class="plan-in" type="date" data-f="${k}">`;
             return `<input class="plan-in" ${t === 'text' ? '' : 'type="number" step="any"'} ${t === 'pct' ? 'data-pct="1"' : ''} data-f="${k}" placeholder="${ph}" style="width:${t === 'text' ? 150 : 110}px;">`;
         }).join('');
@@ -3993,10 +4002,18 @@
         if (!t.rows.length) html += '<div class="empty">No shares yet. Add the founders below, then issue their shares.</div>';
         else {
             html += `<table><thead><tr><th>Holder</th><th>Group</th>${d.classes.map(c => `<th style="text-align:right">${esc(c.name)}</th>`).join('')}<th style="text-align:right">Options</th><th style="text-align:right">Fully diluted</th><th style="text-align:right">%</th>${t.price ? '<th style="text-align:right">Value</th>' : ''}</tr></thead><tbody>`;
-            for (const r of t.rows) html += `<tr><td>${esc(r.name)}</td><td style="color:var(--fg-dim)">${esc(r.group)}</td>${d.classes.map(c => `<td style="text-align:right">${fm(r.classes[c.id])}</td>`).join('')}<td style="text-align:right">${fm(r.options)}</td><td style="text-align:right">${fm(r.total)}</td><td style="text-align:right">${pc(r.pct)}</td>${t.price ? `<td style="text-align:right">${fm(r.value)}</td>` : ''}</tr>`;
+            for (const r of t.rows) html += `<tr><td>${esc(r.name)}${r.unvested > 0.5 ? ` <span class="rw-note" title="unvested shares/options">(${fm(r.unvested)} unvested)</span>` : ''}</td><td style="color:var(--fg-dim)">${esc(r.group)}${r.investor_type ? ' · ' + esc(r.investor_type) : ''}</td>${d.classes.map(c => `<td style="text-align:right">${fm(r.classes[c.id])}</td>`).join('')}<td style="text-align:right">${fm(r.options)}</td><td style="text-align:right">${fm(r.total)}</td><td style="text-align:right">${pc(r.pct)}</td>${t.price ? `<td style="text-align:right">${fm(r.value)}</td>` : ''}</tr>`;
             html += `<tr style="color:var(--fg-dim)"><td>Option pool (available)</td><td></td>${d.classes.map(() => '<td></td>').join('')}<td></td><td style="text-align:right">${fm(t.pool_available)}</td><td style="text-align:right">${pc(t.pool_pct)}</td>${t.price ? '<td></td>' : ''}</tr></tbody></table>`;
         }
         for (const i of t.instruments) html += `<div class="rw-note">Open ${esc(i.kind)}: ${esc(i.holder)} ${fm(i.amount)}${i.cap ? ', cap ' + fm(i.cap) : ''}${i.discount ? ', ' + (i.discount * 100) + '% discount' : ''}${i.interest ? ', ' + (i.interest * 100) + '%/yr' : ''}${i.post_money ? ' (post-money)' : ''}</div>`;
+        const prefs = d.classes.filter(c => c.kind === 'preferred');
+        if (prefs.length) html += '<div class="rw-note">' + prefs.map(c => `${esc(c.name)}: ${c.liq_pref ?? 1}× ${c.participating ? 'participating' + (c.participation_cap ? ` (cap ${c.participation_cap}×)` : '') : 'non-participating'}, seniority ${c.seniority ?? 1}`).join(' · ') + '</div>';
+        const types = Object.entries(d.by_investor_type || {});
+        if (types.length) html += '<div class="rw-note">Investors by type: ' + types.map(([k, v]) => `${esc(k)} ${pc(v)}`).join(' · ') + '</div>';
+        if (t.rows.length) html += `<div class="plan-panel" style="margin-top:0.75rem;"><div class="plan-sub" style="margin-top:0;">Exit waterfall — who gets what if the company sells</div>
+            <div class="plan-row"><label class="plan-lbl">exit value <input type="number" id="wf-exit" class="plan-in" value="${capState.exit || Math.round((t.value || 10000000) * 2)}" style="width:130px;"></label>
+            <label class="plan-lbl">cap table <select id="wf-version" class="plan-in"><option value="">current</option>${d.versions.map(v => `<option value="${esc(v.slug)}">${esc(v.name)}</option>`).join('')}</select></label>
+            <label class="plan-lbl"><input type="checkbox" id="wf-vested"> vested only</label><button class="btn plan-primary" onclick="loadWaterfall()">Run</button></div><div id="wf-result"></div></div>`;
         html += `<details class="plan-panel" ${t.rows.length ? '' : 'open'} style="margin-top:0.75rem;"><summary class="plan-lbl" style="cursor:pointer;">Record a real change</summary>
             <div class="plan-row" style="margin-top:0.5rem;"><select class="plan-in" id="cap-kind" onchange="capKind()">${Object.keys(CAP_FIELDS).map(k => `<option>${k}</option>`).join('')}</select><span id="cap-fields" class="plan-row"></span>
             <button class="btn plan-primary" onclick="capRecord()">Record</button></div></details>`;
@@ -4016,6 +4033,42 @@
         capKind();
         if (capState.version) capOpen(capState.version);
     }
+    async function loadWaterfall() {
+        const box = document.getElementById('wf-result');
+        const exit = parseFloat(document.getElementById('wf-exit').value);
+        capState.exit = exit;
+        const q = new URLSearchParams({exit, version: document.getElementById('wf-version').value, vested: document.getElementById('wf-vested').checked});
+        let d;
+        try { d = await planFetch('/api/captable/waterfall?' + q); } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        let html = `<div class="rw-note" style="margin-top:0.4rem;">Common price per share ${d.price_per_share.toFixed(4)}${d.notes_repaid ? ` · notes repaid first ${fm(d.notes_repaid)}` : ''}</div>`;
+        if (d.classes.length) html += '<table><thead><tr><th>Class / SAFE</th><th>Decision</th><th style="text-align:right">Invested</th><th style="text-align:right">Preference</th><th style="text-align:right">Participation / as common</th><th style="text-align:right">Total</th></tr></thead><tbody>' +
+            d.classes.map(c => `<tr><td>${esc(c.name)}</td><td style="color:var(--fg-dim)">${esc(c.decision)}</td><td style="text-align:right">${fm(c.invested)}</td><td style="text-align:right">${fm(c.preference)}</td><td style="text-align:right">${fm(c.participation)}</td><td style="text-align:right">${fm(c.total)}</td></tr>`).join('') + '</tbody></table>';
+        html += '<table><thead><tr><th>Holder</th><th>Group</th><th style="text-align:right">Proceeds</th><th style="text-align:right">% of exit</th><th style="text-align:right">Multiple on invested</th></tr></thead><tbody>' +
+            d.rows.map(r => `<tr><td>${esc(r.name)}</td><td style="color:var(--fg-dim)">${esc(r.group)}</td><td style="text-align:right">${fm(r.proceeds)}</td><td style="text-align:right">${pc(r.pct)}</td><td style="text-align:right">${r.multiple === null ? '' : r.multiple.toFixed(2) + '×'}</td></tr>`).join('') + '</tbody></table>';
+        // proceeds by group at several exit values
+        const groups = ['founder', 'employee', 'advisor', 'investor', 'other'], colors = {founder: 'var(--accent)', employee: 'var(--green)', advisor: '#c678dd', investor: 'var(--yellow)', other: 'var(--fg-dim)'};
+        html += '<div class="plan-sub">Share of proceeds at other exit values</div><table><tbody>' + d.sweep.map(p => {
+            const tot = Object.values(p.groups).reduce((a, b) => a + b, 0) || 1;
+            return `<tr><td style="width:120px;">${fm(p.exit_value)}</td><td><div class="cap-bar">${groups.map(g => p.groups[g] ? `<span style="width:${(p.groups[g] / tot * 100).toFixed(2)}%;background:${colors[g]}" title="${g} ${fm(p.groups[g])}"></span>` : '').join('')}</div></td>
+                <td class="rw-note" style="white-space:nowrap;">${groups.filter(g => p.groups[g]).map(g => `${g} ${(p.groups[g] / tot * 100).toFixed(0)}%`).join(' · ')}</td></tr>`; }).join('') + '</tbody></table>';
+        box.innerHTML = html + '<div class="plan-note">Preferences are paid first (most senior first); non-participating preferred and SAFEs convert when that pays more. Simplified: no dividends, escrow or carve-outs; options net-exercise; the unallocated pool is ignored.</div>';
+    }
+
+    async function loadUpdates() {
+        const box = document.getElementById('fund-updates');
+        const d = await planFetch('/api/investors/updates').catch(e => ({error: e.message}));
+        if (d.error) { box.innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
+        const on = d.investors.filter(r => !r.updates_off);
+        const emails = on.filter(r => r.email).map(r => r.email).join(', ');
+        let html = `<div class="plan-row" style="margin:0.5rem 0;"><input class="plan-in" readonly value="${esc(emails)}" style="flex:1;min-width:200px;" onclick="this.select()" title="click to select, then copy">
+            <button class="btn" onclick="const i=this.previousElementSibling; i.select(); (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.resolve()).then(()=>showToast('Emails copied'))">Copy emails</button>
+            <button class="btn plan-primary" onclick="jpost('/api/investors/updates', {}).then(r=>{showToast('Update recorded for '+r.marked);loadUpdates();})">Mark update sent to all</button></div>
+            <div class="rw-note">${on.length} to update · ${on.filter(r => !r.email).length} without email. People who passed stay on the list: progress updates bring investors back.</div>`;
+        html += '<table><thead><tr><th>Investor</th><th>Email</th><th>Stage</th><th>Last contact</th><th>Last update</th></tr></thead><tbody>' +
+            d.investors.map(r => `<tr${r.updates_off ? ' style="opacity:0.5"' : ''}><td>${esc(r.investor)}${r.organization ? ` <span class="rw-note">${esc(r.organization)}</span>` : ''}</td><td>${esc(r.email)}</td><td style="color:var(--fg-dim)">${esc(r.stage)}</td><td>${esc(r.last_contact || '—')}</td><td>${esc(r.last_update || '—')}</td></tr>`).join('') + '</tbody></table>';
+        box.innerHTML = html;
+    }
+
     function capKind() {
         const k = document.getElementById('cap-kind').value;
         document.getElementById('cap-fields').innerHTML = fieldsHtml(CAP_FIELDS[k], capState.data.holders);
@@ -4023,6 +4076,9 @@
     async function capRecord() {
         const k = document.getElementById('cap-kind').value;
         const b = {type: k, ...formVals(document.getElementById('cap-fields'))};
+        if (b.vest_months || b.vest_cliff) b.vesting = {months: b.vest_months || 48, cliff: b.vest_cliff || 0, start: b.date};
+        delete b.vest_months; delete b.vest_cliff;
+        if (k === 'class' && b.participating === false && !b.participation_cap) b.participating = 'no';
         try { await jpost('/api/captable/change', b); showToast('Recorded'); loadCapTable(); } catch (e) { showToast(e.message, true); }
     }
     async function capNewVersion() {
