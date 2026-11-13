@@ -910,8 +910,13 @@ def project_with_scenario(actual_ytd, elapsed_count, total_periods, scenario_ahe
     Without a scenario, forecast projects actual_ytd's run rate over the whole
     year. Decide how scenario items combine with that run rate.
     """
-    # TODO(owner): return the projected year-end amount as a Decimal.
-    raise NotImplementedError("project_with_scenario: choose how scenarios combine with the run rate")
+    # Decision D01 (pairs-plan): actuals to date, then the business keeps its
+    # run rate and the scenario's planned items are added on top. Runway's
+    # 'replace' mode covers scenarios that are a complete plan.
+    if elapsed_count <= 0:
+        return scenario_ahead
+    run_rate = actual_ytd / elapsed_count
+    return actual_ytd + run_rate * (total_periods - elapsed_count) + scenario_ahead
 
 
 def cmd_forecast(flags, args):

@@ -393,6 +393,34 @@ pair scenario migrate lean                  # group old manual entries into rule
 
 Report categories (`report_categories` in config.yaml) group accounts into Salaries & Benefits, Marketing & Sales, Product & Materials, Legal & Accounting and Overhead by default.
 
+## Runway Module  `[runway pack]`
+
+Cash, burn and runway. Past months come from the books (revenue, expenses, real cash balance); future months from a scenario. With no transactions yet, give a starting cash.
+
+```bash
+pair runway                                   # recent pace only, 18 months
+pair runway --scenario lean                   # recent pace + the scenario on top (what-ifs)
+pair runway --scenario full-model --replace   # the scenario is the whole plan
+pair runway --scenario lean --cash 40000 --months 24 --raise 250000
+```
+
+Shows cash by month, burn (actual and planned), runway in months and the month cash runs out, the cash floor (N months of expenses, or a fixed amount) and when cash dips below it, the break-even month, a **raise target** (planned burn × buffer months, 15 by default, because founders tend to underestimate costs and build time by about a third) and **Sources & Uses** (the raise split by report category in proportion to planned spend).
+
+Settings in config.yaml:
+
+```yaml
+runway:
+  starting_cash: 25000
+  cash_accounts: [Assets:Current:Chequing, Assets:Current:Savings]
+  min_cash_months: 3
+  min_cash: 10000
+  buffer_months: 15
+  trailing_months: 3
+  burn_window: 12
+```
+
+Web: Plan > Runway. Budget forecasts with `--scenario` use the same rule as `add` mode: actuals to date, the run rate for the rest of the year, plus the scenario's planned items.
+
 ## Income Module
 
 ### `pair income add`

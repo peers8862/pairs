@@ -135,6 +135,15 @@
     .pack-state.on { color:var(--accent); border-color:var(--accent); }
     .pack-ctl { font-size:0.75rem; color:var(--fg-dim); background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:0.2rem 0.3rem; }
     @media (max-width: 600px) { .pack-row { grid-template-columns:1fr; } }
+    /* Runway */
+    .rw-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:0.5rem; margin:0.75rem 0; }
+    .rw-card { background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:0.6rem 0.75rem; }
+    .rw-label { color:var(--fg-dim); font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; }
+    .rw-value { font-size:1.15rem; font-weight:bold; margin-top:0.2rem; font-variant-numeric:tabular-nums; }
+    .rw-value.rw-warn { color:var(--yellow); }
+    .rw-note { color:var(--fg-dim); font-size:0.7rem; margin-top:0.15rem; }
+    .rw-chart { width:100%; height:auto; max-height:220px; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); }
+    .rw-tick { fill:var(--fg-dim); font-size:10px; font-family:inherit; }
 </style>
 </head>
     <style>
@@ -1156,6 +1165,7 @@
         <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.5rem;">
             <div class="section-title" style="margin:0;">Plan</div>
             <button class="btn plan-subtab" id="plan-tab-scenarios" onclick="planShow('scenarios')">Scenarios</button>
+            <button class="btn plan-subtab" id="plan-tab-runway" data-pack="runway" onclick="planShow('runway')">Runway</button>
             <button class="btn plan-subtab" id="plan-tab-budgets" onclick="planShow('budgets')">Budget vs scenario</button>
         </div>
         <div class="plan-note">Scenario expenses live in <code>scenarios/&lt;name&gt;/</code> and are never included in the real books: ledgers, reports, charts and totals elsewhere stay unchanged.</div>
@@ -1170,6 +1180,19 @@
             </div>
             <div id="scn-list"></div>
             <div id="scn-detail"></div>
+        </div>
+
+        <div id="plan-runway" style="display:none;">
+            <div class="plan-panel">
+                <div class="plan-row">
+                    <label class="plan-lbl">Scenario <select id="rw-scenario" class="plan-in" onchange="loadRunway()"></select></label>
+                    <label class="plan-lbl">Plan is <select id="rw-mode" class="plan-in" onchange="loadRunway()"><option value="add">recent pace + scenario</option><option value="replace">the whole plan (scenario only)</option></select></label>
+                    <label class="plan-lbl">months <input type="number" id="rw-months" class="plan-in" value="18" min="1" max="120" style="width:64px;" onchange="loadRunway()"></label>
+                    <label class="plan-lbl">starting cash <input type="number" id="rw-cash" class="plan-in" placeholder="from books" style="width:110px;" onchange="loadRunway()"></label>
+                    <label class="plan-lbl">raise <input type="number" id="rw-raise" class="plan-in" placeholder="target" style="width:110px;" onchange="loadRunway()"></label>
+                </div>
+            </div>
+            <div id="rw-content"></div>
         </div>
 
         <div id="plan-budgets" style="display:none;">
@@ -3503,9 +3526,81 @@
         planState.tab = tab;
         document.getElementById('plan-scenarios').style.display = tab === 'scenarios' ? '' : 'none';
         document.getElementById('plan-budgets').style.display = tab === 'budgets' ? '' : 'none';
+        document.getElementById('plan-runway').style.display = tab === 'runway' ? '' : 'none';
         document.querySelectorAll('.plan-subtab').forEach(b => b.classList.toggle('sel', b.id === 'plan-tab-' + tab));
         if (tab === 'scenarios') loadScenarios();
+        else if (tab === 'runway') loadRunwayPlan();
         else loadBudgetsPlan();
+    }
+
+    // ─── Runway (runway pack) ───────────────────────────────────────────────
+    async function loadRunwayPlan() {
+        const sel = document.getElementById('rw-scenario');
+        try {
+            const res = await planFetch('/api/scenarios');
+            const keep = sel.value || planState.slug || '';
+            sel.innerHTML = '<option value="">(no scenario)</option>' + res.scenarios.map(x => `<option value="${esc(x.slug)}">${esc(x.name)}</option>`).join('');
+            if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+        } catch (e) { /* scenarios pack off: runway still works on the books */ }
+        loadRunway();
+    }
+    function rwCard(label, value, note, cls = '') {
+        return `<div class="rw-card"><div class="rw-label">${esc(label)}</div><div class="rw-value ${cls}">${value}</div>${note ? `<div class="rw-note">${note}</div>` : ''}</div>`;
+    }
+    function rwChart(rows, floor) {
+        if (!rows.length) return '';
+        const W = 720, H = 180, P = 28;
+        const vals = rows.map(r => r.end ?? 0).concat([0, floor || 0]);
+        const lo = Math.min(...vals), hi = Math.max(...vals) || 1;
+        const x = i => P + (W - 2 * P) * (rows.length === 1 ? 0.5 : i / (rows.length - 1));
+        const y = v => H - P - (H - 2 * P) * ((v - lo) / ((hi - lo) || 1));
+        const pts = rows.map((r, i) => `${x(i).toFixed(1)},${y(r.end ?? 0).toFixed(1)}`).join(' ');
+        const firstPlan = rows.findIndex(r => r.source === 'plan');
+        let svg = `<svg viewBox="0 0 ${W} ${H}" class="rw-chart" role="img" aria-label="Cash at month end">`;
+        if (firstPlan > 0) svg += `<rect x="${x(firstPlan)}" y="${P / 2}" width="${W - P - x(firstPlan)}" height="${H - P * 1.5}" fill="var(--accent)" opacity="0.06"/>`;
+        svg += `<line x1="${P}" x2="${W - P}" y1="${y(0)}" y2="${y(0)}" stroke="var(--red)" stroke-dasharray="3 3" opacity="0.7"/>`;
+        if (floor) svg += `<line x1="${P}" x2="${W - P}" y1="${y(floor)}" y2="${y(floor)}" stroke="var(--yellow)" stroke-dasharray="2 4" opacity="0.7"/>`;
+        svg += `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2"/>`;
+        rows.forEach((r, i) => { if (i === 0 || i === rows.length - 1 || i === firstPlan || r.month.endsWith('-01')) svg += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" class="rw-tick">${esc(r.month)}</text>`; });
+        return svg + '</svg>';
+    }
+    async function loadRunway() {
+        const box = document.getElementById('rw-content');
+        const q = new URLSearchParams({scenario: document.getElementById('rw-scenario').value, mode: document.getElementById('rw-mode').value,
+            months: document.getElementById('rw-months').value || '18'});
+        const cash = document.getElementById('rw-cash').value, raise = document.getElementById('rw-raise').value;
+        if (cash) q.set('cash', cash);
+        if (raise) q.set('raise', raise);
+        const seq = ++planState.seq;
+        let d;
+        try { d = await planFetch('/api/runway?' + q); }
+        catch (e) { if (seq === planState.seq) box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        if (seq !== planState.seq) return;
+        const s = d.summary, m = v => planMoney(v).replace(/\.00$/, '');
+        const runway = s.runway_months !== null ? `${s.runway_months.toFixed(1)} mo` : esc(s.runway_text);
+        let html = '<div class="rw-cards">';
+        html += rwCard('Cash now', m(s.cash_now), d.books ? 'from the books' : 'starting cash');
+        html += rwCard('Burn / month', m(s.avg_burn_plan), `plan, next ${s.burn_window} months` + (s.avg_burn_actual !== null ? ` · actual ${m(s.avg_burn_actual)}` : ''));
+        html += rwCard('Runway', runway, s.cash_out_month ? `cash runs out ${esc(s.cash_out_month)}` : '', s.cash_out_month ? 'amt-neg' : '');
+        html += rwCard('Cash floor', m(s.floor), s.below_floor_month ? `dips below ${esc(s.below_floor_month)}` : 'never below in this window', s.below_floor_month ? 'rw-warn' : '');
+        html += rwCard('Break-even', s.breakeven_month ? esc(s.breakeven_month) : '—', 'first month revenue covers costs');
+        html += rwCard('Raise target', m(s.raise_target), `burn × ${s.buffer_months} months · gap ${m(s.raise_gap)}`);
+        html += '</div>';
+        html += rwChart(d.rows, s.floor);
+        html += `<div class="plan-note">Line: cash at month end (${esc(d.currency)}). Shaded: planned months. Red dashes: zero. Yellow: cash floor. Buffer months exist because founders tend to underestimate costs and build time by about a third.</div>`;
+        html += `<div class="plan-sub">By month (${esc(d.currency)})</div><div style="overflow-x:auto;"><table><thead><tr><th>Month</th><th></th><th style="text-align:right">Begin</th><th style="text-align:right">Revenue</th><th style="text-align:right">Expenses</th><th style="text-align:right">Net</th><th style="text-align:right">Funding / other</th><th style="text-align:right">End cash</th></tr></thead><tbody>`;
+        for (const r of d.rows) {
+            const out = r.month === s.cash_out_month ? ' style="background:rgba(224,108,117,0.12)"' : '';
+            html += `<tr${out}><td>${esc(r.month)}</td><td style="color:var(--fg-dim);font-size:0.75rem">${esc(r.source)}</td>${planAmt(r.begin ?? 0)}<td style="text-align:right;color:var(--green)">${planMoney(r.revenue)}</td>${planAmt(r.expense)}${planAmt(r.net, true)}<td style="text-align:right;color:var(--accent)">${planMoney(r.funding)}</td>${planAmt(r.end ?? 0, true)}</tr>`;
+        }
+        html += '</tbody></table></div>';
+        const u = d.uses;
+        if (u.rows.length) {
+            html += `<div class="plan-sub">Uses of ${m(u.amount)}${u.covers_months ? ` — covers ${u.covers_months.toFixed(1)} months of planned spend` : ''}</div><table><tbody>`;
+            for (const r of u.rows) html += `<tr><td>${esc(r.category)}</td><td style="text-align:right;color:var(--fg-dim)">${(r.share * 100).toFixed(1)}%</td>${planAmt(r.amount)}</tr>`;
+            html += '</tbody></table>';
+        }
+        box.innerHTML = html;
     }
 
     async function loadScenarios() {
