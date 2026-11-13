@@ -257,6 +257,16 @@
         }
         .ct-note { color: var(--fg-dim); font-size: 0.68rem; margin-top: 0.4rem; }
 
+        .plan-note { color: var(--fg-dim); font-size: 0.75rem; margin-bottom: 0.75rem; }
+        .plan-panel { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+        .plan-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+        .plan-in { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.6rem; color: var(--fg); font-family: inherit; font-size: 0.85rem; }
+        .plan-lbl { color: var(--fg-dim); font-size: 0.75rem; display: flex; gap: 0.4rem; align-items: center; }
+        .plan-sub { color: var(--fg-dim); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin: 1rem 0 0.4rem; }
+        .plan-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-size: 0.8rem; padding: 0.4rem 0.8rem; }
+        .plan-subtab { font-size: 0.75rem; padding: 0.3rem 0.6rem; }
+        .plan-subtab.sel { color: var(--accent); border-color: var(--accent); }
+        @media (max-width: 640px) { #view-plan table { display: block; overflow-x: auto; white-space: nowrap; } }
         #data-content { margin-top: 0.5rem; overflow-x: auto; }
         #data-content table { min-width: 600px; }
         #data-content .empty, .account-list .empty { padding: 2rem; text-align: center; color: var(--fg-dim); }
@@ -282,6 +292,7 @@
             <span class="tab" onclick="switchView('entry')">Pairs</span>
             <span class="tab active" id="tab-dashboard" onclick="switchView('dashboard')" style="font-weight:bold;">Dash</span>
             <span class="tab" onclick="switchView('records')">Records</span>
+            <span class="tab" onclick="switchView('plan')">Plan</span>
             <span class="tab" onclick="switchView('accounts')">Accounts</span>
             <span class="tab" onclick="switchView('contacts')">Contacts</span>
             <span class="tab" onclick="switchView('charts')">Charts</span>
@@ -1128,6 +1139,39 @@
     </div>
 
     <!-- Contacts View -->
+    <!-- Plan View: scenarios (what-if expenses outside the real books) and budgets -->
+    <div class="view" id="view-plan">
+        <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.5rem;">
+            <div class="section-title" style="margin:0;">Plan</div>
+            <button class="btn plan-subtab" id="plan-tab-scenarios" onclick="planShow('scenarios')">Scenarios</button>
+            <button class="btn plan-subtab" id="plan-tab-budgets" onclick="planShow('budgets')">Budget vs scenario</button>
+        </div>
+        <div class="plan-note">Scenario expenses live in <code>scenarios/&lt;name&gt;/</code> and are never included in the real books: ledgers, reports, charts and totals elsewhere stay unchanged.</div>
+
+        <div id="plan-scenarios">
+            <div class="plan-panel">
+                <div class="plan-row">
+                    <input type="text" id="scn-new-name" class="plan-in" placeholder="new scenario name, e.g. Studio move" style="flex:1;min-width:180px;" onkeydown="if(event.key==='Enter')createScenario()">
+                    <input type="text" id="scn-new-desc" class="plan-in" placeholder="what it is about (optional)" style="flex:2;min-width:180px;" onkeydown="if(event.key==='Enter')createScenario()">
+                    <button class="btn plan-primary" onclick="createScenario()">Create</button>
+                </div>
+            </div>
+            <div id="scn-list"></div>
+            <div id="scn-detail"></div>
+        </div>
+
+        <div id="plan-budgets" style="display:none;">
+            <div class="plan-panel">
+                <div class="plan-row">
+                    <label class="plan-lbl">Budget <select id="bud-select" class="plan-in" onchange="loadBudgetCompare()"></select></label>
+                    <label class="plan-lbl">Scenario <select id="bud-scenario" class="plan-in" onchange="loadBudgetCompare()"></select></label>
+                    <span style="color:var(--fg-dim);font-size:0.75rem;">Whole budget year (expense lines)</span>
+                </div>
+            </div>
+            <div id="bud-content"></div>
+        </div>
+    </div>
+
     <div class="view" id="view-contacts">
         <div class="section-title">Contacts</div>
         <div id="contacts-add-form" style="display:none;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem 1rem;margin-bottom:0.75rem;"></div>
@@ -1708,6 +1752,7 @@
         if (view === 'charts') loadChart('networth');
         if (view === 'pairs') loadPairsRef();
         if (view === 'accounts') loadAccounts();
+        if (view === 'plan') loadPlanView();
     }
 
     // ─── Entity Switcher ────────────────────────────────────────────────────
@@ -3378,6 +3423,269 @@
         showAddForm('contacts', form);
         content.innerHTML = '<div class="empty">Loading...</div>';
         await loadDataInto('contacts', content);
+    }
+
+    // ─── Plan: scenarios & budgets ──────────────────────────────────────────
+    // Scenario entries live outside the real books (scenarios/<slug>/), so
+    // nothing here changes ledgers or totals shown in the other views.
+    const planState = { tab: 'scenarios', slug: null, start: new Date().getFullYear() + '-01-01', months: '12', seq: 0 };
+
+    function planMoney(v) {
+        return (v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+    function planAmt(v, flagNegative) {
+        const cls = flagNegative && v < 0 ? ' class="amt-neg"' : '';
+        return `<td style="text-align:right"${cls}>${planMoney(v)}</td>`;
+    }
+    async function planFetch(url, opts) {
+        const r = await fetch(url, opts);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || r.statusText);
+        return data;
+    }
+
+    function loadPlanView() { planShow(planState.tab); }
+
+    function planShow(tab) {
+        planState.tab = tab;
+        document.getElementById('plan-scenarios').style.display = tab === 'scenarios' ? '' : 'none';
+        document.getElementById('plan-budgets').style.display = tab === 'budgets' ? '' : 'none';
+        document.querySelectorAll('.plan-subtab').forEach(b => b.classList.toggle('sel', b.id === 'plan-tab-' + tab));
+        if (tab === 'scenarios') loadScenarios();
+        else loadBudgetsPlan();
+    }
+
+    async function loadScenarios() {
+        const box = document.getElementById('scn-list');
+        let data;
+        try { data = await planFetch('/api/scenarios'); }
+        catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        const list = data.scenarios || [];
+        if (!list.length) {
+            box.innerHTML = '<div class="empty">No scenarios yet. Name one above to start planning.</div>';
+            document.getElementById('scn-detail').innerHTML = '';
+            return;
+        }
+        let html = `<table><thead><tr><th>Scenario</th><th>Description</th><th style="text-align:right">Entries</th><th style="text-align:right">Planned (${esc(data.currency)})</th></tr></thead><tbody>`;
+        for (const s of list) {
+            const sel = s.slug === planState.slug ? ' style="cursor:pointer;background:var(--bg-alt);"' : ' style="cursor:pointer;"';
+            html += `<tr${sel} onclick="openScenario('${esc(s.slug)}')"><td style="color:var(--accent);font-weight:bold;">${esc(s.name)}</td><td style="color:var(--fg-dim)">${esc(s.description)}</td><td style="text-align:right">${s.items}</td>${planAmt(s.total)}</tr>`;
+        }
+        box.innerHTML = html + '</tbody></table>';
+        if (planState.slug && list.some(s => s.slug === planState.slug)) openScenario(planState.slug, false);
+        else document.getElementById('scn-detail').innerHTML = '';
+    }
+
+    async function createScenario() {
+        const name = document.getElementById('scn-new-name').value.trim();
+        const description = document.getElementById('scn-new-desc').value.trim();
+        if (!name) { showToast('Give the scenario a name', true); return; }
+        try {
+            const res = await planFetch('/api/scenario', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                          body: JSON.stringify({name, description})});
+            document.getElementById('scn-new-name').value = '';
+            document.getElementById('scn-new-desc').value = '';
+            planState.slug = res.slug;
+            showToast(res.message);
+            loadScenarios();
+        } catch (e) { showToast(e.message, true); }
+    }
+
+    async function openScenario(slug, refreshList = true) {
+        planState.slug = slug;
+        if (refreshList) { loadScenarios(); return; }
+        const box = document.getElementById('scn-detail');
+        const yearQ = planState.months ? `?start=${planState.start}&months=${planState.months}` : '';
+        const seq = ++planState.seq;   // a slower, older response must not overwrite a newer one
+        let d;
+        try { d = await planFetch(`/api/scenario/${encodeURIComponent(slug)}${yearQ}`); }
+        catch (e) { if (seq === planState.seq) box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        if (seq !== planState.seq) return;
+
+        let html = `<div class="plan-panel" style="margin-top:1rem;">
+            <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.5rem;">
+                <span style="color:var(--accent);font-weight:bold;">${esc(d.name)}</span>
+                <span style="color:var(--fg-dim);font-size:0.8rem;flex:1;">${esc(d.description)}</span>
+                <label class="plan-lbl">from <input type="date" class="plan-in" value="${esc(planState.start)}" onchange="planState.start=this.value;openScenario('${esc(slug)}',false)"></label>
+                <label class="plan-lbl">for <input type="number" class="plan-in" min="1" style="width:64px;" placeholder="all" value="${esc(planState.months)}" onchange="planState.months=this.value;openScenario('${esc(slug)}',false)"> months</label>
+                <button class="btn" onclick="deleteScenario('${esc(slug)}')" style="font-size:0.75rem;padding:0.3rem 0.6rem;color:var(--red);border-color:var(--red);">Delete scenario</button>
+            </div>`;
+        if ((d.leaks || []).length) {
+            html += `<div style="color:var(--red);font-size:0.8rem;margin-bottom:0.5rem;">Warning: ${d.leaks.map(esc).join(', ')} include scenario entries, so real totals are wrong.</div>`;
+        }
+        const opts = list => list.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+        html += `<div class="plan-sub">Add a planned expense or revenue</div>
+            <div class="plan-row">
+                <input type="text" id="scn-item-desc" class="plan-in" placeholder="description" style="flex:2;min-width:160px;">
+                <input type="number" id="scn-item-amount" class="plan-in" placeholder="amount" min="0" step="0.01" style="width:110px;text-align:right;">
+                <select id="scn-item-account" class="plan-in" style="flex:2;min-width:180px;"><option value="">account…</option>
+                    <optgroup label="Expense">${opts(d.expense_accounts || [])}</optgroup><optgroup label="Revenue">${opts(d.revenue_accounts || [])}</optgroup></select>
+                <select id="scn-item-method" class="plan-in"><option value="bank">bank</option><option value="credit-card">credit card</option></select>
+                <input type="date" id="scn-item-date" class="plan-in" value="${new Date().toISOString().slice(0, 10)}">
+                <select id="scn-item-every" class="plan-in"><option value="weekly">weekly</option><option value="monthly" selected>monthly</option><option value="quarterly">quarterly</option><option value="semiannual">semi-annual</option><option value="annual">annual</option></select>
+                <label class="plan-lbl">× <input type="number" id="scn-item-repeat" class="plan-in" value="1" min="1" max="600" style="width:60px;"> times</label>
+                <label class="plan-lbl">or for <input type="number" id="scn-item-months" class="plan-in" min="1" placeholder="—" style="width:60px;"> months</label>
+                <button class="btn plan-primary" onclick="addScenarioItem('${esc(slug)}')">Add</button>
+            </div>`;
+
+        // Report: actual vs scenario vs both
+        const span = d.begin ? `${d.begin} to ${d.end}` : 'all dates';
+        const isRev = a => /^(Income|Revenue)/.test(a);
+        html += `<div class="plan-sub">By account (${esc(span)}, ${esc(d.currency)})</div>`;
+        if (!d.report.length) {
+            html += '<div class="empty">Nothing to compare yet.</div>';
+        } else {
+            const sum = rows => rows.reduce((t, r) => [t[0] + r.actual, t[1] + r.scenario, t[2] + r.combined], [0, 0, 0]);
+            const exp = sum(d.report.filter(r => !isRev(r.account))), rev = sum(d.report.filter(r => isRev(r.account)));
+            const net = rev.map((v, i) => v - exp[i]);
+            html += '<table><thead><tr><th>Account</th><th style="text-align:right">Actual</th><th style="text-align:right">Scenario</th><th style="text-align:right">Actual + scenario</th></tr></thead><tbody>';
+            for (const r of d.report) {
+                const c = isRev(r.account) ? ' style="color:var(--green)"' : '';
+                html += `<tr><td${c}>${esc(r.account)}</td>${planAmt(r.actual)}<td style="text-align:right;color:var(--yellow)">${planMoney(r.scenario)}</td>${planAmt(r.combined)}</tr>`;
+            }
+            for (const [label, t] of [['Expenses', exp], ['Revenue', rev], ['Net (revenue − expenses)', net]]) {
+                html += `<tr style="font-weight:bold;"><td>${label}</td>${planAmt(t[0], true)}<td style="text-align:right;color:var(--yellow)">${planMoney(t[1])}</td>${planAmt(t[2], true)}</tr>`;
+            }
+            html += '</tbody></table>';
+        }
+
+        // Month by month (scenario entries only)
+        if (d.months.length) {
+            const accounts = [...new Set(d.months.flatMap(m => Object.keys(m.accounts)))].sort();
+            html += '<div class="plan-sub">Scenario by month</div><div style="overflow-x:auto;"><table><thead><tr><th>Account</th>';
+            html += d.months.map(m => `<th style="text-align:right">${esc(m.month)}</th>`).join('') + '</tr></thead><tbody>';
+            for (const a of accounts) {
+                html += `<tr><td${isRev(a) ? ' style="color:var(--green)"' : ''}>${esc(a)}</td>` + d.months.map(m => planAmt(m.accounts[a] || 0)).join('') + '</tr>';
+            }
+            html += '<tr style="font-weight:bold;"><td>Net (revenue − expenses)</td>' + d.months.map(m => planAmt(Object.entries(m.accounts).reduce((s, [a, v]) => s + (isRev(a) ? v : -v), 0), true)).join('') + '</tr>';
+            html += '</tbody></table></div>';
+        }
+
+        // Entries
+        html += `<div class="plan-sub">Entries (${d.entries.length})</div>`;
+        if (!d.entries.length) {
+            html += '<div class="empty">No entries yet.</div>';
+        } else {
+            html += '<table><thead><tr><th>Date</th><th>Description</th><th>Account</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>';
+            for (const e of d.entries) {
+                html += `<tr><td style="color:var(--fg-dim)">${esc(e.date)}</td><td>${esc(e.description)}</td><td style="color:${e.kind === 'revenue' ? 'var(--green)' : 'var(--fg-dim)'}">${esc(e.account)}</td>${planAmt(e.amount)}
+                    <td style="text-align:right"><button class="btn" title="Remove entry" onclick="removeScenarioItem('${esc(slug)}', ${e.index})" style="font-size:0.7rem;padding:0.1rem 0.45rem;">✕</button></td></tr>`;
+            }
+            html += '</tbody></table>';
+        }
+        box.innerHTML = html + '</div>';
+    }
+
+
+    async function addScenarioItem(slug) {
+        const body = {
+            description: document.getElementById('scn-item-desc').value.trim(),
+            amount: parseFloat(document.getElementById('scn-item-amount').value),
+            account: document.getElementById('scn-item-account').value,
+            method: document.getElementById('scn-item-method').value,
+            date: document.getElementById('scn-item-date').value,
+            every: document.getElementById('scn-item-every').value,
+            repeat: parseInt(document.getElementById('scn-item-repeat').value || '1', 10),
+            months: parseInt(document.getElementById('scn-item-months').value || '0', 10),
+        };
+        if (body.months) body.repeat = 0;
+        if (!body.description || !(body.amount > 0) || !body.account) {
+            showToast('Description, a positive amount and an account are needed', true);
+            return;
+        }
+        try {
+            const res = await planFetch(`/api/scenario/${encodeURIComponent(slug)}/item`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+            showToast(res.message);
+            loadScenarios();
+        } catch (e) { showToast(e.message, true); }
+    }
+
+    async function removeScenarioItem(slug, index) {
+        try {
+            const res = await planFetch(`/api/scenario/${encodeURIComponent(slug)}/item/${index}`, {method: 'DELETE'});
+            showToast(res.message);
+            loadScenarios();
+        } catch (e) { showToast(e.message, true); }
+    }
+
+    async function deleteScenario(slug) {
+        if (!confirm(`Delete scenario "${slug}" and all its entries? The real books are not affected.`)) return;
+        try {
+            const res = await planFetch(`/api/scenario/${encodeURIComponent(slug)}`, {method: 'DELETE'});
+            planState.slug = null;
+            showToast(res.message);
+            loadScenarios();
+        } catch (e) { showToast(e.message, true); }
+    }
+
+    async function loadBudgetsPlan() {
+        const content = document.getElementById('bud-content');
+        const [b, s] = await Promise.all([
+            planFetch('/api/budgets').catch(() => ({budgets: []})),
+            planFetch('/api/scenarios').catch(() => ({scenarios: []})),
+        ]);
+        const budgets = b.budgets || [];
+        const budSel = document.getElementById('bud-select');
+        const scnSel = document.getElementById('bud-scenario');
+        if (!budgets.length) {
+            budSel.innerHTML = ''; scnSel.innerHTML = '';
+            content.innerHTML = '<div class="empty">No budgets yet. Create one with <code>pair budget create</code>.</div>';
+            return;
+        }
+        const keepBud = budSel.value, keepScn = scnSel.value;
+        const thisYear = String(new Date().getFullYear());
+        const preferred = budgets.find(x => x.active && x.year === thisYear) || budgets.find(x => x.active) || budgets[0];
+        budSel.innerHTML = budgets.map(x => `<option value="${esc(x.slug)}">${esc(x.name)} (${esc(x.year)}${x.active ? ', active' : ''})</option>`).join('');
+        budSel.value = budgets.some(x => x.slug === keepBud) ? keepBud : preferred.slug;
+        scnSel.innerHTML = '<option value="">none (actuals only)</option>' +
+            (s.scenarios || []).map(x => `<option value="${esc(x.slug)}">${esc(x.name)}</option>`).join('');
+        scnSel.value = (s.scenarios || []).some(x => x.slug === keepScn) ? keepScn : (planState.slug || '');
+        if (scnSel.value !== (planState.slug || '') && !keepScn) scnSel.value = '';
+        loadBudgetCompare();
+    }
+
+    async function loadBudgetCompare() {
+        const content = document.getElementById('bud-content');
+        const slug = document.getElementById('bud-select').value;
+        const scenario = document.getElementById('bud-scenario').value;
+        if (!slug) return;
+        content.innerHTML = '<div class="empty">Loading...</div>';
+        let d;
+        try { d = await planFetch(`/api/budget/${encodeURIComponent(slug)}/compare${scenario ? '?scenario=' + encodeURIComponent(scenario) : ''}`); }
+        catch (e) { content.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+        const withScn = !!d.scenario;
+        let html = `<div class="plan-sub">${esc(d.budget.name)} — whole year ${esc(d.budget.year)} (${esc(d.currency)})</div>`;
+        html += '<table><thead><tr><th>Account</th><th style="text-align:right">Budget</th><th style="text-align:right">Actual</th>';
+        if (withScn) html += '<th style="text-align:right">Actual + scenario</th>';
+        html += '<th style="text-align:right">Remaining</th></tr></thead><tbody>';
+        const tot = {budget: 0, actual: 0, with_scenario: 0, variance: 0};
+        for (const r of d.vs) {
+            for (const k of Object.keys(tot)) tot[k] += r[k] || 0;
+            html += `<tr><td>${esc(r.account.replace(/^Expenses:/, ''))}</td>${planAmt(r.budget)}${planAmt(r.actual)}`;
+            if (withScn) html += `<td style="text-align:right;color:var(--yellow)">${planMoney(r.with_scenario)}</td>`;
+            html += `${planAmt(r.variance, true)}</tr>`;
+        }
+        html += `<tr style="font-weight:bold;"><td>Total</td>${planAmt(tot.budget)}${planAmt(tot.actual)}`;
+        if (withScn) html += `<td style="text-align:right;color:var(--yellow)">${planMoney(tot.with_scenario)}</td>`;
+        html += `${planAmt(tot.variance, true)}</tr></tbody></table>`;
+        html += `<div class="plan-note" style="margin-top:0.4rem;">Remaining = budget − ${withScn ? 'actual − scenario' : 'actual'}; red means over budget.</div>`;
+
+        html += '<div class="plan-sub">Year-end forecast</div>';
+        if (d.forecast_note) {
+            html += `<div class="empty">${esc(d.forecast_note)}</div>`;
+        } else if (!d.forecast || !d.forecast.elapsed) {
+            html += '<div class="empty">No completed periods yet, so there is nothing to project.</div>';
+        } else {
+            html += `<div class="plan-note">${d.forecast.elapsed} of ${d.forecast.total} periods elapsed${withScn ? ', with planned scenario items' : ', at the current run rate'}.</div>`;
+            html += '<table><thead><tr><th>Account</th><th style="text-align:right">Budget (year)</th><th style="text-align:right">Actual (to date)</th><th style="text-align:right">Projected</th><th style="text-align:right">Projected − budget</th></tr></thead><tbody>';
+            for (const r of d.forecast.rows) {
+                const over = r.vs_budget > 0 ? ' class="amt-neg"' : '';
+                html += `<tr><td>${esc(r.account.replace(/^Expenses:/, ''))}</td>${planAmt(r.budget_year)}${planAmt(r.actual_ytd)}${planAmt(r.projected)}<td style="text-align:right"${over}>${planMoney(r.vs_budget)}</td></tr>`;
+            }
+            html += '</tbody></table>';
+        }
+        content.innerHTML = html;
     }
 
     // Standalone Commodities view

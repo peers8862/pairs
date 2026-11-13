@@ -26,6 +26,7 @@ MODULE_MAP = {
     'tax': 'modules.tax',
     'recurring': 'modules.recurring',
     'budget': 'modules.budget',
+    'scenario': 'modules.scenario',
     'income': 'modules.income',
     'transfer': 'modules.transfer',
     'division': 'modules.division',
@@ -180,7 +181,8 @@ Modules:
   division list             Show divisions with counts
   tax summary|remit
   recurring add|list|generate
-  budget set|vs
+  budget set|vs|forecast
+  scenario new|list|add|show|report|remove   What-if expenses outside the real books
   market show|list|fetch|add|edit|remove|verify|chart|tag|sources
   account list|add|show|edit|remove|tree|tag|find|link|reconcile
   dash tui|web|lit|fava|ui  Launch dashboards
