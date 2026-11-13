@@ -787,6 +787,10 @@ def cmd_vs(flags, args):
         elif a == '--full':
             full = True
         elif a == '--scenario' and i + 1 < len(args):
+            from lib.features import is_enabled, gate_message
+            if not is_enabled('scenarios'):
+                print(gate_message('scenarios'))
+                return
             scenario = args[i + 1]
         elif a == '--division' and i + 1 < len(args):
             division = args[i + 1]
@@ -921,6 +925,10 @@ def cmd_forecast(flags, args):
         if a == '--year' and i + 1 < len(args):
             year = args[i + 1]
         elif a == '--scenario' and i + 1 < len(args):
+            from lib.features import is_enabled, gate_message
+            if not is_enabled('scenarios'):
+                print(gate_message('scenarios'))
+                return
             scenario = args[i + 1]
 
     budget = _get_active_budget(year)
