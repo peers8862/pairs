@@ -502,6 +502,24 @@ pair runway --scenario lean --replace
 
 Unit economics: revenue per customer (tier mix), gross margin after cost to serve, expected lifetime (sum of the retention curve, 60-month cap), LTV, CAC (acquisition + sales cost ÷ new paying), LTV:CAC and payback months, and the first month contribution turns positive. Web: Plan > Growth, with **what-if sliders** (spend, conversion, retention, price) that preview without saving.
 
+## Views: compare, layers, budgets, statements, overview
+
+**Layers** — a scenario can build on others: `pair scenario layer hire-editor base` makes "hire-editor" = its own lines + everything in "base". Changing the base updates every scenario built on it. Loops are refused.
+
+**Compare** (runway pack) — side by side revenue, expenses, net, funding, end and lowest cash, burn, runway, cash-out month, break-even and raise target:
+
+```bash
+pair scenario compare base hire-editor aggressive --replace --cash 60000 --months 18
+```
+
+**Scenario → budget** — `pair scenario budget hire-editor --year 2027 --activate` writes a monthly budget from the plan's expense lines (then `pair budget vs --full`).
+
+**Statements** — Plan > Runway > Statements: monthly profit & loss (revenue, cost of goods sold, gross profit, operating expenses by report category, operating income, non-operating, net income) and cash, actual months from the books then the plan. Balance sheet projection is not modelled.
+
+**Export** — Plan > Runway: download runway, statements or the comparison as CSV.
+
+**Company > Overview** (executive pack) — one page in order: who we are (profile) → traction (latest metrics, change over 3 months, founder momentum) → money (cash, burn, runway, raise target) → plan (the profile's `plan_scenario`) → fundraising (open rounds) → ownership (cap table). Set the plan with `pair profile set plan_scenario <slug>`.
+
 ## Income Module
 
 ### `pair income add`

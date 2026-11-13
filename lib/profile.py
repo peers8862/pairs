@@ -24,6 +24,7 @@ FIELDS = [
     ('tam', 'Total addressable market', 'money', 'Whole market size'),
     ('market_share_5y', 'Market share in 5 years', 'percent', 'As a fraction (0.02 = 2%)'),
     ('exit_multiple', 'Industry exit multiple', 'number', 'Typical revenue multiple at exit'),
+    ('plan_scenario', 'Plan scenario', 'text', 'Scenario slug the Overview uses for runway and plan'),
     ('notes', 'Notes', 'text', ''),
 ]
 KEYS = {k for k, *_ in FIELDS}
