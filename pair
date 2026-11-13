@@ -29,6 +29,9 @@ MODULE_MAP = {
     'scenario': 'modules.scenario',
     'profile': 'modules.profile',
     'kpi': 'modules.kpi',
+    'round': 'modules.fundraise',
+    'investor': 'modules.fundraise',
+    'captable': 'modules.captable',
     'runway': 'modules.runway',
     'income': 'modules.income',
     'transfer': 'modules.transfer',
@@ -196,6 +199,7 @@ Modules:
   runway [--scenario S] [--replace]      Cash, burn, runway and raise target  [runway pack]
   profile [set|link ...]                 Company profile  [executive pack]
   kpi [set|add|list|project ...]         Company, product and founder metrics  [executive pack]
+  round | investor | captable            Rounds, investor pipeline, cap table and versions  [captable pack]
   market show|list|fetch|add|edit|remove|verify|chart|tag|sources
   account list|add|show|edit|remove|tree|tag|find|link|reconcile
   dash tui|web|lit|fava|ui  Launch dashboards

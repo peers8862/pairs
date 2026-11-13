@@ -4,7 +4,9 @@ Each metric has a definition (bucket, unit, kind, source) and monthly values.
 Sources:
 
     manual    typed in (founder activity, users, pipeline…)
-    ledger    read from the books each month (revenue, expenses, cash…)
+    ledger    filled automatically each month — from the books (revenue, expenses,
+              cash…) or the investor pipeline (connections, meetings, conversions);
+              a typed value wins, and with no feed the cell can be typed in
     derived   worked out from other metrics in the same month (formula)
 
 Built-in definitions cover the usual early-stage set; an entity adds its own
@@ -96,9 +98,9 @@ _B = [
     ('round_valuation', 'fundraising', 'Valuation / cap of current round', 'money', 'manual', '', 'stock'),
     ('round_committed', 'fundraising', 'Committed to current round', 'money', 'manual', '', 'stock'),
     ('funding_secured', 'fundraising', 'Funding secured this month', 'money', 'manual', '', 'flow'),
-    ('investor_connections', 'momentum', 'Investor connections made', 'count', 'manual', '', 'flow'),
-    ('investor_meetings', 'momentum', 'Investor meetings held', 'count', 'manual', '', 'flow'),
-    ('investors_converted', 'momentum', 'Investors converted', 'count', 'manual', '', 'flow'),
+    ('investor_connections', 'momentum', 'Investor connections made', 'count', 'ledger', 'investor_connections', 'flow'),
+    ('investor_meetings', 'momentum', 'Investor meetings held', 'count', 'ledger', 'investor_meetings', 'flow'),
+    ('investors_converted', 'momentum', 'Investors converted', 'count', 'ledger', 'investors_converted', 'flow'),
     ('customer_interviews', 'momentum', 'Customer discovery interviews', 'count', 'manual', '', 'flow'),
     ('demos', 'momentum', 'Demos given', 'count', 'manual', '', 'flow'),
     ('intros', 'momentum', 'Partner / advisor intros', 'count', 'manual', '', 'flow'),
