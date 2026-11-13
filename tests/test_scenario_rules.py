@@ -71,3 +71,17 @@ def test_report_counts_rules_and_entries(entity):
                        'start': '2026-01-01', 'every': 'once'})
     rows = {a: p for a, _, p, _ in sc.scenario_report_rows(None, sc.scenario_files(slug), slug)}
     assert float(rows['Expenses:Rent']) == 2000 and float(rows['Income:Sales']) == 500
+
+
+def test_growth_model_feeds_scenario_months(entity):
+    slug = sc.create_scenario('Grow')
+    sc.save_growth(slug, {'start': '2027-01', 'months': 2,
+                          'channels': [{'name': 'Ads', 'type': 'paid_cpa', 'spend': 500, 'cpa': 5}],
+                          'funnel': {'activation': 1, 'paid_conversion': 0.1}, 'retention': [1],
+                          'revenue': {'tiers': [{'name': 'A', 'price': 20, 'share': 1}]}})
+    months, by_account = sc.scenario_monthly(slug)
+    assert float(months['2027-01']['revenue']) == 200 and float(months['2027-02']['revenue']) == 400
+    assert float(months['2027-01']['expense']) == 500
+    assert 'rule:growth-revenue' in (entity / 'scenarios' / slug / 'rules.journal').read_text()
+    with pytest.raises(ValueError):
+        sc.save_growth(slug, {'start': 'x'})

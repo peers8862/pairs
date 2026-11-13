@@ -192,6 +192,8 @@ def dispatch(args):
     config = load_config()
     action = rest[0] if rest else 'list'
     f, pos = _flags(rest[1:])
+    if flags.get('date'):            # the global parser takes --date first
+        f['date'] = flags['date']
     try:
         if command == 'round':
             round_cmd(action, f, pos, config)
