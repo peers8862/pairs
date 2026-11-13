@@ -1,0 +1,76 @@
+id,bucket,metric,unit,kind,source,origin,notes
+M01,B01,Stage,text,static,manual,S01,Pre-seed/Seed/Series A
+M02,B01,Business type,text,static,manual,S01,e.g. Canadian C Corp / CCPC
+M03,B01,Team size,count,stock,manual,S01,Could derive from payroll
+M04,B01,Founding year,year,static,manual,S01,
+M05,B01,Industry,text,static,manual,S01,
+M06,B01,TAM,currency,static,manual,S01,
+M07,B01,Potential market share 5 yrs,percent,static,manual,S01,
+M08,B01,Industry exit multiple,ratio,static,manual,S01,
+M09,B07,Funding to date,currency,stock,cap table,S01,
+M10,B02,Revenue,currency,flow,ledger,S01,
+M11,B02,COGS,currency,flow,ledger,S01,Needs COGS accounts
+M12,B02,Net revenue,currency,flow,derived,S01,Revenue - COGS
+M13,B02,Burn rate,currency,flow,ledger,S01,Net cash out per month
+M14,B02,Runway remaining,months,stock,derived,S01,Cash / avg burn
+M15,B02,Cash balance,currency,stock,ledger,S01,
+M16,B03,MRR,currency,stock,manual or derived,S01,Recurring revenue accounts tagged
+M17,B03,Revenue growth rate (3 mo),percent,ratio,derived,S01,
+M18,B03,ARR,currency,stock,derived,S01,12 x MRR
+M19,B03,Average sale price,currency,ratio,derived,S01,Revenue / sales count
+M20,B03,Gross margin,percent,ratio,derived,S01,
+M21,B03,Net margin,percent,ratio,derived,S01,
+M22,B03,Rake / take rate,percent,ratio,manual,S01,Marketplaces
+M23,B03,CAC,currency,ratio,derived,S01,Allocated acquisition cost / customers acquired
+M24,B03,CAC payback,days,ratio,derived,S01,
+M25,B03,LTV:CAC,ratio,ratio,derived,S01,
+M26,B03,Magic number,ratio,ratio,derived,S01,New ARR / prior-quarter S&M spend
+M27,B04,User type,text,static,manual,S01,
+M28,B04,DAU,count,stock,manual,S01,
+M29,B04,MAU,count,stock,manual,S01,
+M30,B04,Total users,count,stock,manual,S01,
+M31,B04,User growth rate (3 mo),percent,ratio,derived,S01,
+M32,B04,User retention (3 mo),percent,ratio,manual,S01,
+M33,B04,Churn,percent,ratio,manual,S01,
+M34,B04,Net Promoter Score,score,stock,manual,S01,
+M35,B04,K-value (virality),ratio,ratio,manual,S01,
+M36,B05,Signed contracts,count,stock,manual,S01,Could link to Pairs contracts module
+M37,B05,Annual value signed contracts,currency,stock,manual,S01,
+M38,B05,Contracts in pipeline,count,stock,manual,S01,
+M39,B05,Annual value of pipeline,currency,stock,manual,S01,
+M40,B05,LOIs signed,count,flow,manual,S01,
+M41,B05,Order velocity,count,flow,manual,S01,
+M42,B05,Average sales cycle,days,ratio,manual,S01,
+M43,B07,Valuation/cap of current round,currency,stock,rounds register,S01,
+M44,B07,Current round size,currency,stock,rounds register,S01,
+M45,B07,Committed to current round,currency,stock,rounds register,S01,
+M46,B07,Valuation before current round,currency,stock,cap table,S01,
+M47,B07,Funding secured this month,currency,flow,ledger,S01,Equity/debt/grant inflows
+M48,B08,Investor connections made,count,flow,investor pipeline,S01,User's example momentum metric; Counted from pipeline log (I46)
+M49,B08,Investor meetings held,count,flow,investor pipeline,S01,Counted from pipeline log (I46)
+M50,B08,Investors converted,count,flow,investor pipeline,S01,Counted from pipeline log (I46)
+M51,B06,Newsletter subscribers,count,stock,manual,S01,
+M52,B10,Service performance (hrs per person),hours,ratio,manual,S01,Could derive from timesheets
+M53,B06,Community growth rate,percent,ratio,manual,S01,
+M54,B06,Press mentions,count,flow,manual,S01,
+M55,B06,Full articles,count,flow,manual,S01,
+M56,B04,Installs,count,flow,manual,S01,
+M57,B06,Referrals,count,flow,manual,S01,
+M58,B06,Marketing qualified leads,count,flow,manual,S01,
+M59,B06,Sales qualified leads,count,flow,manual,S01,
+M60,B06,Cost per lead,currency,ratio,derived,S01,
+M61,B06,Bounce rate,percent,ratio,manual,S01,
+M62,B04,Weekly sign-ups,count,flow,manual,S01,
+M63,B06,Email open rate,percent,ratio,manual,S01,
+M64,B06,Email click-through rate,percent,ratio,manual,S01,
+M65,B04,Product-specific app stats,various,custom,manual,S01,"Per-product usage stats (e.g. launch rate, connections, notes/day, shares); add as custom metrics per product"
+M66,B08,Customer discovery interviews,count,flow,manual,anticipated,
+M67,B08,Demos given,count,flow,manual,anticipated,
+M68,B08,Partner/advisor intros,count,flow,manual,anticipated,
+M69,B08,"Applications submitted (grants, programs, competitions)",count,flow,manual,anticipated,
+M70,B09,Releases shipped,count,flow,manual or import,anticipated,Could pull from GitHub
+M71,B09,Milestones hit vs planned,count,flow,manual,anticipated,
+M72,B10,Headcount (FTE),count,stock,payroll,anticipated,
+M73,B10,Hires made,count,flow,manual,anticipated,
+M74,B11,Grants applied / awarded,currency,flow,manual,anticipated,
+M75,B11,Filings due / done,count,stock,manual,anticipated,
