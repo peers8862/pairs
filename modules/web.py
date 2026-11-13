@@ -165,6 +165,36 @@ def create_app():
 
     app = FastAPI(title="Pairs", docs_url=None, redoc_url=None)
 
+    # ─── Feature packs: optional APIs answer 404 when their pack is off ─────
+    from fastapi.responses import JSONResponse
+
+    @app.middleware("http")
+    async def feature_pack_gate(request, call_next):
+        from lib.features import pack_for_path, is_enabled, gate_message
+        pack = pack_for_path(request.url.path)
+        if pack and not is_enabled(pack):
+            return JSONResponse({'detail': gate_message(pack), 'pack': pack}, status_code=404)
+        return await call_next(request)
+
+    @app.get("/api/features")
+    async def features():
+        from lib.features import describe
+        return {'packs': describe()}
+
+    class FeatureSet(BaseModel):
+        enabled: bool | None = True
+        scope: str = 'global'   # 'global' (this install) or 'entity' (this company)
+
+    @app.post("/api/features/{name}")
+    async def features_set(name: str, req: FeatureSet):
+        from lib.features import PACKS, set_pack, describe
+        if name not in PACKS:
+            raise HTTPException(status_code=404, detail=f"Unknown pack '{name}'")
+        if req.scope != 'entity' and req.enabled is None:
+            raise HTTPException(status_code=400, detail="Only a company setting can inherit")
+        set_pack(name, req.enabled, 'entity' if req.scope == 'entity' else 'global')
+        return {'packs': describe()}
+
     static_dir = BASE_DIR / 'web' / 'static'
 
     # Serve static files

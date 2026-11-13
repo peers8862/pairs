@@ -309,6 +309,27 @@ pair expense list --division operations
 
 ---
 
+## Feature Packs
+
+The baseline (books, reports, contacts, budgets, payroll…) is always on. Optional packs add commands and web views. `pair init` asks which to turn on.
+
+| Pack | Adds | Needs |
+|---|---|---|
+| `scenarios` | `pair scenario`, web Plan tab | |
+| `runway` | `pair runway`, Plan > Runway | scenarios |
+| `executive` | `pair profile`, `pair metric`, web Company tab | |
+| `captable` | `pair round`, `pair investor`, `pair captable` | |
+| `growth` | `pair growth`, Plan > Growth | scenarios |
+
+```bash
+pair features                         # list packs, on/off and where it is set
+pair features enable runway           # this install (global.yaml: features: [...])
+pair features disable growth --entity # this company only (config.yaml features: {growth: false})
+pair features inherit growth          # drop the company override
+```
+
+A company setting wins over the install setting. Turning a pack on also turns on what it needs. When a pack is off its commands print how to enable it and its web APIs answer 404. Web: ⚙ settings > Feature packs.
+
 ## Scenario Module
 
 What-if expenses and revenue kept outside the real books. Items repeat weekly,

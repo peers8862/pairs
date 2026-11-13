@@ -40,6 +40,7 @@ MODULE_MAP = {
     'report': 'modules.report',
     'link': 'modules.link',
     'web': 'modules.web',
+    'features': 'lib.features',
 }
 
 CORE_COMMANDS = ['init', 'generate', 'worth', 'journal', 'year', 'status', 'where', 'pairs', 'config', 'entry', 'switch', 'prices']
@@ -131,6 +132,11 @@ def main():
         dot_dispatch(sys.argv[2:])
     # Module dispatch
     elif command in MODULE_MAP:
+        from lib.features import pack_for_command, is_enabled, gate_message
+        pack = pack_for_command(command)
+        if pack and not is_enabled(pack):
+            print(gate_message(pack))
+            sys.exit(1)
         module = __import__(MODULE_MAP[command], fromlist=['dispatch'])
         module.dispatch(sys.argv[2:])
     else:
@@ -182,7 +188,8 @@ Modules:
   tax summary|remit
   recurring add|list|generate
   budget set|vs|forecast
-  scenario new|list|add|show|report|remove   What-if expenses outside the real books
+  features [enable|disable <pack>]        Optional feature packs (per install or --entity)
+  scenario new|list|add|show|report|remove   What-if expenses outside the real books  [scenarios pack]
   market show|list|fetch|add|edit|remove|verify|chart|tag|sources
   account list|add|show|edit|remove|tree|tag|find|link|reconcile
   dash tui|web|lit|fava|ui  Launch dashboards

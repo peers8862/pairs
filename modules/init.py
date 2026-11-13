@@ -58,9 +58,13 @@ def cmd_init():
     # Fiscal year
     fiscal_start = prompt("Fiscal year start month (1-12)", default="1")
 
+    from lib.features import prompt_packs
+    packs = prompt_packs()
+
     # Create global.yaml
     global_config = {
         'active': slug,
+        'features': packs,
         'entities': [
             {
                 'name': entity_name,
