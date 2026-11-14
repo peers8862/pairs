@@ -11,7 +11,7 @@ from lib.helpers import (
     validate_date, parse_global_flags
 )
 from lib.journal import (
-    format_entry, write_journal_atomic, ensure_year_structure,
+    build_tags, format_entry, write_journal_atomic, ensure_year_structure,
     get_journal_dir, get_generated_dir
 )
 
@@ -137,7 +137,7 @@ def cmd_close(flags, args):
         print("  No postings to generate.")
         return
 
-    tags = {'pair': '1101', 'period': year_str}
+    tags = build_tags('1101', period=year_str)
     entry = format_entry(close_date, f"Closing entries for {year}", postings, tags)
 
     # Write to journal/<year>/closing.journal

@@ -13,7 +13,7 @@ from lib.helpers import (
 )
 from lib.yaml_store import load_entity, save_entity, list_entities, entity_exists
 from lib.journal import (
-    format_entry, generated_header, write_journal_atomic, append_journal,
+    build_tags, format_entry, generated_header, write_journal_atomic, append_journal,
     ensure_year_structure, get_generated_dir
 )
 
@@ -204,12 +204,7 @@ def _write_creation_entry(liab, config):
     liability_account = liab['accounts']['liability']
     bank = liab['accounts']['payment_source']
 
-    tags = {
-        'pair': '1000',
-        'source': f'liabilities/{slug}.yaml',
-        'type': liab['type'],
-        'term': str(liab['term_months']),
-    }
+    tags = build_tags('1000', source=f'liabilities/{slug}.yaml', type=liab['type'], term=str(liab['term_months']))
 
     # For loans/credit-lines: cash received, liability created
     # For leases: asset created, liability created (handled by asset module linking)
@@ -381,11 +376,7 @@ def cmd_pay(flags, args):
         postings.append((interest_account, currency, float(interest_portion)))
     postings.append((bank, currency, float(-amount)))
 
-    tags = {
-        'pair': '1000',
-        'source': f'liabilities/{slug}.yaml',
-        'seq': f'{payments_made}/{total_payments}',
-    }
+    tags = build_tags('1000', source=f'liabilities/{slug}.yaml', seq=f'{payments_made}/{total_payments}')
 
     entry = format_entry(payment_date,
                          f"Payment: {liab['name']} ({payments_made}/{total_payments})",
@@ -542,11 +533,7 @@ def _generate_payment_entries(liab, through_date_str):
             postings.append((interest_account, currency, float(interest_portion)))
         postings.append((bank, currency, float(-actual_payment)))
 
-        tags = {
-            'pair': '1000',
-            'source': f'liabilities/{slug}.yaml',
-            'seq': f'{seq}/{total_payments}',
-        }
+        tags = build_tags('1000', source=f'liabilities/{slug}.yaml', seq=f'{seq}/{total_payments}')
 
         entry = format_entry(
             pdate.strftime("%Y-%m-%d"),
@@ -699,10 +686,7 @@ def cmd_reclassify(flags, args):
         (new_account, currency, float(-amount)),
     ]
 
-    tags = {
-        'pair': '1100',
-        'source': f'liabilities/{slug}.yaml',
-    }
+    tags = build_tags('1100', source=f'liabilities/{slug}.yaml')
 
     entry = format_entry(reclass_date,
                          f"Reclassify liability: {liab['name']}",

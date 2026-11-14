@@ -12,7 +12,7 @@ from lib.helpers import (
 )
 from lib.yaml_store import load_entity, save_entity, list_entities, entity_exists
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, get_generated_dir
+    build_tags, format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -226,10 +226,7 @@ def cmd_generate(flags, args):
                 (entry['credit_account'], currency, float(-amount)),
             ]
 
-            tags = {
-                'pair': entry.get('pair', '0000'),
-                'recurring': slug,
-            }
+            tags = build_tags(entry.get('pair', '0000'), recurring=slug)
             # User-assigned tags ride along on every generated entry.
             for t in entry.get('tags', []) or []:
                 if isinstance(t, str) and ':' in t:

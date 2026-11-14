@@ -45,6 +45,9 @@ MODULE_MAP = {
     'account': 'modules.account',
     'export': 'modules.export',
     'report': 'modules.report',
+    'stages': 'modules.stages',
+    'inventory': 'modules.inventory',
+    'traction': 'modules.traction',
     'link': 'modules.link',
     'web': 'modules.web',
     'features': 'lib.features',
@@ -178,15 +181,17 @@ Entity management (Company/Project):
   entity list               List all entities
   entity add                Add a new entity
   entity use <slug>         Switch active entity
+  entity migrate --from <file>  Convert consult entities to contacts
   switch <slug>             Switch active entity (shortcut)
 
 Modules:
-  asset add|list|show|edit|dispose|amort|writedown|summary
+  asset add|list|show|edit|dispose|amort|writedown|transfer|summary
   liability add|list|show|pay|payments|reclassify
   expense add|list
-  income add                Non-operating income
+  inventory add|buy|sell|list|show|check
+  income add|statement      Non-operating income; income statement (P&L)
   transfer                  Asset-to-asset moves
-  revenue project|log|invoice|paid|outstanding|status|export|undo|rate|defer|recognize|deferred
+  revenue project|log|invoice|paid|outstanding|status|export|undo|rate|defer|recognize|deferred|receive
   contact add|list|show|edit|remove
   contract add|list|show|edit
   payroll run|list
@@ -208,6 +213,7 @@ Modules:
   chart prices|sankey|bar|plot|vega|treemap
   export csv|beancount|psql|json
   report <hledger-cmd>      Passthrough to hledger (register, bs, is, bal...)
+  report list|run|build   Saved & ad-hoc reports (see 'pair report build --help')
   link                      Progressive entry assembly (link mode)
   web                       PWA server for entry (localhost:8100)
   prices                    Show recent prices (alias for market show)

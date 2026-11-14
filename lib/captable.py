@@ -362,3 +362,26 @@ def apply_steps(reg, steps):
 
 def founder_pct(reg):
     return by_group(reg)['founder']
+
+
+def founder_pct_by_month(reg, months):
+    """{YYYY-MM: founder share (0-1) or None} over time.
+
+    Only issuances and grants dated on or before each month-end count;
+    undated entries count always. SAFEs/notes are not shares until
+    converted, so they do not dilute here; a conversion appears as an
+    issuance with its date. None when nothing is issued yet that month.
+    """
+    out = {}
+    for month in months:
+        end = month + '-31'
+        snap = deepcopy(reg)
+        snap['issuances'] = [i for i in reg.get('issuances') or []
+                             if i.get('date') is None or str(i['date']) <= end]
+        snap['grants'] = [g for g in reg.get('grants') or []
+                          if g.get('date') is None or str(g['date']) <= end]
+        # Nothing issued or granted yet — not 0%, no data. (The unallocated
+        # pool alone does not count: it is authorised, not owned.)
+        issued = sum(holdings(snap).values(), ZERO) + sum(granted(snap).values(), ZERO)
+        out[month] = founder_pct(snap) if issued else None
+    return out

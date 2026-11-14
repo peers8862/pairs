@@ -19,9 +19,11 @@ sys.path.insert(0, str(BASE_DIR))
 from lib.helpers import (
     load_config, money, parse_global_flags, get_active_entity, get_entity_dir
 )
+from lib.report_builder import (compose_query, named_reports, run_report,
+                                safe_query_terms, validate_definition)
 from lib.ui import get_entity_journal, get_entity_name, get_entity_currency, require_entity
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, get_generated_dir
+    build_tags, format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -152,6 +154,30 @@ def _leaf_display(account):
 def _filter_accounts(accounts, prefixes):
     """Filter accounts matching any prefix."""
     return [a for a in accounts if any(a.startswith(p) for p in prefixes)]
+
+
+def _raw_transaction_dates(text):
+    """Transaction dates in hand-written journal text, normalized to ISO.
+
+    A transaction header is a line starting at column 0 with a date
+    (hledger accepts -, / or . separators, an optional status and code
+    after the date, and an optional =secondary date). Comment lines,
+    directives and indented posting lines are not headers and are
+    skipped; text with no headers yields []. Both the primary date and
+    any secondary date are returned, in order.
+    """
+    import re
+    dates = []
+    pattern = (r'(\d{4})[-/.](\d{2})[-/.](\d{2})'
+               r'(?:=(\d{4})[-/.](\d{2})[-/.](\d{2}))?')
+    for line in (text or '').splitlines():
+        m = re.match(pattern, line)
+        if not m:
+            continue
+        dates.append(f"{m.group(1)}-{m.group(2)}-{m.group(3)}")
+        if m.group(4):
+            dates.append(f"{m.group(4)}-{m.group(5)}-{m.group(6)}")
+    return dates
 
 
 # ─── FastAPI app ─────────────────────────────────────────────────────────────
@@ -453,11 +479,16 @@ def create_app():
             (credit_account, currency, float(-amount)),
         ]
 
-        tags = {'mode': 'link', 'pair': str(pair['num']), 'expr': req.expr}
+        tags = build_tags(str(pair['num']), mode='link', expr=req.expr)
         if req.reversal:
             tags['reversal'] = 'true'
 
-        entry = format_entry(entry_date, desc, postings, tags)
+        try:
+            entry = format_entry(entry_date, desc, postings, tags)
+        except ValueError as e:
+            # format_entry rejects CR/LF in the description / accounts:
+            # a newline would smuggle extra postings into the journal.
+            raise HTTPException(status_code=400, detail=str(e))
 
         # Write
         year = entry_date[:4]
@@ -509,7 +540,12 @@ def create_app():
             (req.to_account.strip(), currency, float(amt)),
             (req.from_account.strip(), currency, float(-amt)),
         ]
-        entry = format_entry(entry_date, desc, postings, {'pair': '1011'})
+        try:
+            entry = format_entry(entry_date, desc, postings, {'pair': '1011'})
+        except ValueError as e:
+            # format_entry rejects CR/LF in the description / accounts:
+            # a newline would smuggle extra postings into the journal.
+            raise HTTPException(status_code=400, detail=str(e))
         year = entry_date[:4]
         ensure_year_structure(int(year))
         append_journal(get_generated_dir() / year / "transfers.journal", entry)
@@ -708,60 +744,40 @@ def create_app():
 
     @app.get("/api/recent")
     async def recent(limit: int = 100, offset: int = 0, query: str = ''):
-        """Journal register entries with optional search filter."""
+        """Journal register entries with optional search filter.
+
+        Thin wrapper over the same hledger runner /api/search uses
+        (_run_hledger_csv + _group_search_rows): one implementation
+        behind both, so the two can never drift. Keeps its own
+        response shape {entries, total, offset, limit} and its
+        bare-term-matches-description behaviour — a second run with
+        desc:<query>, unioned by transaction. (The old code passed an
+        `or` infix term for that; this hledger parses a bare `or` as
+        just another AND term, so it matched nothing.)
+        """
         journal = _get_journal_path()
         if not journal:
             raise HTTPException(status_code=404, detail="No journal found")
 
         try:
-            cmd = ['hledger', '-f', journal, 'register', '--output-format', 'csv']
-            terms = []
+            terms, err = _safe_query_terms(query)
+            if err:
+                return {'entries': [], 'total': 0, 'error': err}
+            rows, error = _run_hledger_csv(journal, terms, 'register')
+            if error:
+                return {'entries': [], 'total': 0, 'error': error}
             if query:
-                terms, err = _safe_query_terms(query)
-                if err:
-                    return {'entries': [], 'total': 0, 'error': err}
-                # Bare terms match account names in hledger.
-                # To also match descriptions, we pass both as an OR query.
-                cmd += terms + ['or', 'desc:' + query]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                # If OR query fails (older hledger), fall back to simple account match
-                cmd2 = ['hledger', '-f', journal, 'register', '--output-format', 'csv'] + terms
-                result = subprocess.run(cmd2, capture_output=True, text=True)
-                if result.returncode != 0:
-                    return {'entries': [], 'total': 0}
-
-            lines = result.stdout.strip().split('\n')
-            if len(lines) <= 1:
-                return {'entries': [], 'total': 0}
-
-            # CSV header: "txnidx","date","code","description","account","amount","total"
-            # Group by txnidx
-            txns = {}
-            txn_order = []
-            for line in lines[1:]:
-                parts = [p.strip('"') for p in line.split('","')]
-                if len(parts) >= 6:
-                    idx = parts[0]
-                    if idx not in txns:
-                        txns[idx] = {
-                            'id': idx,
-                            'date': parts[1],
-                            'description': parts[3],
-                            'postings': [],
-                        }
-                        txn_order.append(idx)
-                    txns[idx]['postings'].append({
-                        'account': parts[4],
-                        'amount': parts[5],
-                    })
-
-            # Return in reverse chronological order with pagination
-            txn_order.reverse()
-            total = len(txn_order)
-            page = txn_order[offset:offset + limit]
-            entries = [txns[idx] for idx in page]
-            return {'entries': entries, 'total': total, 'offset': offset, 'limit': limit}
+                desc_rows, desc_error = _run_hledger_csv(
+                    journal, ['desc:' + query], 'register')
+                if not desc_error:
+                    seen = {r.get('txnidx') for r in rows}
+                    rows = rows + [r for r in desc_rows
+                                   if r.get('txnidx') not in seen]
+            entries = _group_search_rows(rows, 'register')
+            total = len(entries)
+            page = entries[offset:offset + limit]
+            return {'entries': page, 'total': total,
+                    'offset': offset, 'limit': limit}
         except Exception as e:
             return {'entries': [], 'total': 0, 'error': str(e)}
 
@@ -778,22 +794,23 @@ def create_app():
         injection but not this. A smuggled --output-file= turns a read-only
         report into an arbitrary file write, and -f repoints it at any file on
         disk. No legitimate query term starts with '-', so reject them.
-        Callers additionally pass '--' before these terms.
+        Callers must NOT pass '--' before these terms: hledger stops parsing
+        prefix: query syntax (amt:/type:/expr:) after '--', so those queries
+        would silently match nothing. The leading-dash rejection here is the
+        whole guard.
+
+        The rule itself lives in lib/report_builder.py (shared with the
+        report builder's CLI paths); this closure is only the local name,
+        so the guard exists in exactly one place.
         """
-        try:
-            terms = shlex.split(query) if query else []
-        except ValueError as e:
-            return [], f"Unbalanced quotes: {e}"
-        bad = [t for t in terms if t.startswith('-')]
-        if bad:
-            return [], f"Query terms cannot start with '-': {', '.join(bad)}"
-        return terms, ''
+        return safe_query_terms(query)
 
     class SearchRequest(BaseModel):
         query: str = ''          # raw hledger query (full parity)
         fields: dict = {}        # structured builder fields
         mode: str = 'register'   # register (postings) | print (transactions)
         limit: int = 200
+        offset: int = 0          # page start; shared with /api/recent
 
     def _compose_query(fields):
         """Build an hledger query string from structured builder fields.
@@ -801,55 +818,12 @@ def create_app():
         One-way by design: fields compose into a query the user can see and
         then edit by hand. Parsing an arbitrary hledger query back into fields
         would need hledger's own grammar and would drift.
+
+        The composition itself lives in lib/report_builder.py (shared with
+        the report builder's CLI flag path); this closure is only the local
+        name, so the composer exists in exactly one place.
         """
-        terms = []
-
-        def add(prefix, value, negate=False):
-            value = (value or '').strip()
-            if not value:
-                return
-            # Quote terms containing spaces so shlex keeps them as one argv item.
-            term = f"{prefix}{value}" if prefix else value
-            if ' ' in value:
-                term = f"{prefix}'{value}'" if prefix else f"'{value}'"
-            terms.append(f"not:{term}" if negate else term)
-
-        neg = fields.get('negate') or {}
-        for key, prefix in (('acct', 'acct:'), ('desc', 'desc:'), ('payee', 'payee:'),
-                            ('note', 'note:'), ('code', 'code:'), ('cur', 'cur:'),
-                            ('date', 'date:'), ('date2', 'date2:')):
-            add(prefix, fields.get(key), bool(neg.get(key)))
-
-        amount = (fields.get('amt') or '').strip()
-        if amount:
-            op = (fields.get('amt_op') or '').strip()
-            terms.append(f"amt:'{op}{amount}'" if op else f"amt:{amount}")
-
-        status = (fields.get('status') or '').strip()
-        if status in ('unmarked', 'pending', 'cleared'):
-            terms.append({'unmarked': 'status:', 'pending': 'status:!', 'cleared': 'status:*'}[status])
-
-        types = ''.join(t for t in (fields.get('type') or '') if t.upper() in 'ALERXCVG')
-        if types:
-            terms.append(f"type:{types.upper()}")
-
-        tag_name = (fields.get('tag_name') or '').strip()
-        if tag_name:
-            tag_value = (fields.get('tag_value') or '').strip()
-            add('tag:', f"{tag_name}={tag_value}" if tag_value else tag_name, bool(neg.get('tag')))
-
-        depth = str(fields.get('depth') or '').strip()
-        if depth.isdigit():
-            terms.append(f"depth:{depth}")
-
-        if fields.get('real'):
-            terms.append('real:')
-
-        expr = (fields.get('expr') or '').strip()
-        if expr:
-            terms.append(f"expr:'{expr}'")
-
-        return ' '.join(terms)
+        return compose_query(fields)
 
     @app.post("/api/search")
     async def search(req: SearchRequest):
@@ -870,30 +844,17 @@ def create_app():
             return {'ok': False, 'query': query, 'error': err, 'entries': [], 'total': 0}
 
         mode = req.mode if req.mode in ('register', 'print') else 'register'
-        # NB: do not add a '--' separator here. hledger stops parsing prefix:
-        # query syntax after '--', so amt:/type:/expr: silently match nothing.
-        # The leading-dash rejection in _safe_query_terms is the guard.
-        cmd = ['hledger', '-f', journal, mode, '--output-format', 'csv'] + terms
-
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        except FileNotFoundError:
-            return {'ok': False, 'query': query, 'error': 'hledger is not installed',
-                    'entries': [], 'total': 0}
-        except subprocess.TimeoutExpired:
-            return {'ok': False, 'query': query, 'error': 'Search timed out',
+        rows, error = _run_hledger_csv(journal, terms, mode)
+        if error:
+            return {'ok': False, 'query': query, 'error': error,
                     'entries': [], 'total': 0}
 
-        if result.returncode != 0:
-            return {'ok': False, 'query': query,
-                    'error': (result.stderr or result.stdout).strip()[:2000],
-                    'entries': [], 'total': 0}
-
-        rows = _parse_csv_rows(result.stdout)
         entries = _group_search_rows(rows, mode)
         total = len(entries)
+        offset = max(0, req.offset)
         return {'ok': True, 'query': query, 'mode': mode, 'error': '',
-                'entries': entries[:req.limit], 'total': total}
+                'entries': entries[offset:offset + req.limit],
+                'total': total, 'offset': offset}
 
     def _parse_csv_rows(text):
         import csv, io
@@ -919,6 +880,120 @@ def create_app():
             })
         order.reverse()
         return [txns[i] for i in order]
+
+    def _run_hledger_csv(journal, terms, mode):
+        """Run one hledger CSV report; returns (rows, error).
+
+        Shared by /api/recent and /api/search — one implementation
+        behind both endpoints, so the two can never drift. Terms are
+        passed as argv (never through a shell) and must already have
+        passed _safe_query_terms: a leading-dash term would be parsed
+        as a flag. NB: do not add a '--' separator here: hledger stops
+        parsing prefix: query syntax (amt:/type:/expr:) after '--', so
+        those queries would silently match nothing.
+        """
+        cmd = ['hledger', '-f', str(journal), mode,
+               '--output-format', 'csv'] + terms
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True,
+                                    timeout=60)
+        except FileNotFoundError:
+            return [], 'hledger is not installed'
+        except subprocess.TimeoutExpired:
+            return [], 'Search timed out'
+        if result.returncode != 0:
+            return [], (result.stderr or result.stdout).strip()[:2000]
+        return _parse_csv_rows(result.stdout), ''
+
+    # ─── Report builder (I76) ─────────────────────────────────────────────
+    # Saved named reports (config.yaml `reports:`) and ad-hoc reports run
+    # through the same lib/report_builder.py core as `pair report
+    # list|run|build`, so the CLI and the web can never drift. A report
+    # definition is a named hledger query (command + terms + display
+    # options), validated at load time; every query term goes through
+    # the same leading-dash guard as /api/search.
+
+    class ReportRunRequest(BaseModel):
+        name: str = ''
+
+    class ReportBuildRequest(BaseModel):
+        command: str = 'register'
+        query: str = ''
+        fields: dict = {}
+        title: str = ''
+        period: str | None = None
+        monthly: bool = False
+        tree: bool = False
+        flat: bool = False
+
+    def _load_reports_config():
+        """Entity config, or {} when there is none (list path)."""
+        try:
+            return load_config()
+        except SystemExit:
+            return {}
+
+    def _run_builder_report(journal, definition):
+        """Run one definition; {ok, ...} with rows + text, or ok: False."""
+        try:
+            out = run_report(journal, definition)
+        except RuntimeError as e:
+            return {'ok': False, 'error': str(e), 'rows': [],
+                    'columns': [], 'text': '',
+                    'command': definition.get('command', ''),
+                    'query': definition.get('query', '')}
+        out.update({'ok': True, 'error': ''})
+        return out
+
+    @app.get("/api/reports")
+    async def reports_list():
+        """Named reports from config.yaml (empty list when none)."""
+        try:
+            reports = named_reports(_load_reports_config())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {'reports': [{'name': name, **definition}
+                            for name, definition in reports.items()]}
+
+    @app.post("/api/reports/run")
+    async def reports_run(req: ReportRunRequest):
+        """Run a saved report by name. Read-only."""
+        journal = _get_journal_path()
+        if not journal:
+            raise HTTPException(status_code=404, detail="No journal found")
+        try:
+            reports = named_reports(_load_reports_config())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        name = (req.name or '').strip()
+        if name not in reports:
+            raise HTTPException(status_code=404, detail=f"Unknown report '{name}'")
+        out = _run_builder_report(journal, reports[name])
+        out['name'] = name
+        return out
+
+    @app.post("/api/reports/build")
+    async def reports_build(req: ReportBuildRequest):
+        """Run an ad-hoc report: fields compose a query, plus raw terms.
+
+        Nothing is saved — `pair report build --save <name>` is the
+        way to persist one.
+        """
+        journal = _get_journal_path()
+        if not journal:
+            raise HTTPException(status_code=404, detail="No journal found")
+        query = (req.query or '').strip()
+        fields_query = _compose_query(req.fields or {})
+        full = ' '.join(x for x in (fields_query, query) if x)
+        raw = {'title': req.title or 'ad-hoc', 'command': req.command,
+               'query': full, 'period': req.period,
+               'monthly': bool(req.monthly), 'tree': bool(req.tree),
+               'flat': bool(req.flat)}
+        try:
+            definition = validate_definition('ad-hoc', raw)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return _run_builder_report(journal, definition)
 
     @app.get("/api/entities")
     async def entities():
@@ -2259,7 +2334,8 @@ def create_app():
 
     @app.get("/api/runway")
     async def runway(scenario: str = '', mode: str = 'add', months: int = 18, start: str = '',
-                     cash: str = '', raise_: str = Query('', alias='raise')):
+                     cash: str = '', raise_: str = Query('', alias='raise'),
+                     rev: str = '', cost: str = '', hire_delay: str = '', rev_shift: str = ''):
         from modules.runway import build
         from lib.runway import to_json
         from lib.features import is_enabled
@@ -2269,9 +2345,21 @@ def create_app():
             _scenario_or_404(scenario)
         if mode not in ('add', 'replace'):
             raise HTTPException(status_code=400, detail="mode is add or replace")
+        # What-if sliders (I55): preview only, nothing is saved. Bad values
+        # raise ValueError inside build and come back as 400 below.
+        whatif = {}
+        if rev:
+            whatif['revenue_mult'] = rev
+        if cost:
+            whatif['cost_mult'] = cost
+        if hire_delay:
+            whatif['hire_delay'] = hire_delay
+        if rev_shift:
+            whatif['revenue_shift'] = rev_shift
         try:
             data = build(load_config(), scenario or None, max(1, min(months, 120)), mode,
-                         start or None, Decimal(cash) if cash else None, raise_ or None)
+                         start or None, Decimal(cash) if cash else None, raise_ or None,
+                         whatif or None)
         except (RuntimeError, ValueError, ArithmeticError) as e:
             raise HTTPException(status_code=400, detail=str(e))
         rows, summary = to_json(data['rows'], data['summary'])
@@ -2303,13 +2391,14 @@ def create_app():
         return {'profile': profile}
 
     @app.get("/api/kpis")
-    async def kpis(months: int = 6, project: int = 0, end: str = ''):
+    async def kpis(months: int = 6, project: int = 0, end: str = '', start: int = 0):
         from modules.kpi import build
         data = build(load_config(), end=end or None, months=max(1, min(months, 36)),
-                     project=max(0, min(project, 36)))
+                     project=max(0, min(project, 36)), start_column=bool(start))
         f = lambda v: None if v is None else float(v)
         return {
             'months': data['months'], 'future': data['future'],
+            'start_month': data.get('start_month'),
             'buckets': [{'id': b, 'label': l, 'description': d} for b, l, d in data['buckets']],
             'metrics': [{**{k: v for k, v in d.items()},
                          'cells': {m: {'value': f(c['value']), 'kind': c['kind']}
@@ -2320,6 +2409,16 @@ def create_app():
                                    if k.startswith('bucket:')},
             'notes': [{'metric': m, 'month': mo, 'note': n} for (m, mo), n in data['notes'].items()],
         }
+
+    @app.get("/api/stages")
+    async def stages():
+        from modules.stages import build
+        try:
+            rows = build(load_config())
+        except (RuntimeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        f = lambda v: float(v) if isinstance(v, Decimal) else v
+        return {'bands': [{k: f(v) for k, v in r.items()} for r in rows]}
 
     class KpiValue(BaseModel):
         metric: str
@@ -2601,6 +2700,12 @@ def create_app():
         sc, mo, md, ca = _rw_args(scenario, mode, months, cash)
         out = statements(load_config(), sc, mo, md, None, ca)
         out['lines'] = [{**l, 'values': {m: float(v) for m, v in l['values'].items()}} for l in out['lines']]
+        if 'balance_sheet' in out:
+            out['balance_sheet'] = {k: {m: float(v) for m, v in vals.items()}
+                                    for k, vals in out['balance_sheet'].items()}
+        if 'cash_flow' in out:
+            out['cash_flow'] = {m: {k: float(v) for k, v in flows.items()}
+                                for m, flows in out['cash_flow'].items()}
         return out
 
     @app.get("/api/runway/compare")
@@ -2780,6 +2885,69 @@ def create_app():
         except Exception as e:
             return {'items': [], 'error': str(e)}
 
+    @app.get("/api/income-statement")
+    async def income_statement(division: str = '', period: str = ''):
+        """Income statement, optionally for one division (I73).
+
+        Same figures as `pair income statement`: hledger balances for the
+        Income and Expenses roots, flipped to positive magnitudes. With a
+        division only transactions tagged with it count; without one the
+        statement is entity-wide.
+        """
+        from lib.helpers import validate_division
+        config = load_config()
+        div = division or None
+        try:
+            div = validate_division(config, div)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        journal = _get_journal_path()
+        if not journal:
+            raise HTTPException(status_code=404, detail="No journal found")
+        currency = config.get('pair', {}).get('currency', 'CAD')
+        cmd = ['hledger', '-f', journal, 'bal', 'Income', 'Expenses',
+               '--flat', '--no-total', '--output-format', 'csv']
+        if period:
+            cmd += ['-p', period]
+        if div:
+            cmd += [f'tag:division={div}']
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                return {'items': [], 'income': 0, 'expenses': 0, 'net': 0,
+                        'currency': currency, 'division': div, 'period': period}
+            income = expenses = 0.0
+            items = []
+            for line in result.stdout.strip().split('\n')[1:]:
+                parts = [p.strip('"') for p in line.split('","')]
+                if len(parts) < 2:
+                    continue
+                acct = parts[0]
+                amt_str = parts[1].replace(currency, '').strip().replace(',', '')
+                try:
+                    amt = float(amt_str)
+                except ValueError:
+                    continue
+                # Credit-normal roots are flipped to positive magnitudes.
+                if acct.startswith('Income'):
+                    kind, amount = 'income', -amt
+                    income += amount
+                elif acct.startswith('Expenses'):
+                    kind, amount = 'expense', amt
+                    expenses += amount
+                else:
+                    continue
+                items.append({'account': acct, 'kind': kind, 'amount': round(amount, 2)})
+            items.sort(key=lambda x: -abs(x['amount']))
+            return {'items': items, 'income': round(income, 2),
+                    'expenses': round(expenses, 2),
+                    'net': round(income - expenses, 2),
+                    'currency': currency, 'division': div, 'period': period}
+        except Exception as e:
+            return {'items': [], 'income': 0, 'expenses': 0, 'net': 0,
+                    'currency': currency, 'division': div, 'period': period,
+                    'error': str(e)}
+
     @app.get("/api/commodities")
     async def commodities():
         """List commodities with latest prices."""
@@ -2842,6 +3010,15 @@ def create_app():
             raise HTTPException(status_code=400, detail="Symbol is required")
         if not re.fullmatch(r'[A-Za-z0-9.\-]+', symbol):
             raise HTTPException(status_code=400, detail="Invalid symbol")
+
+        # A leading-dash source/fetch_pair would be parsed as a flag by
+        # pricehist when this commodity is fetched — refuse to store it.
+        from modules.market import validate_pricehist_arg
+        try:
+            validate_pricehist_arg(req.source, "source")
+            validate_pricehist_arg(req.fetch_pair, "fetch_pair")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
         config = load_config()
         market = config.setdefault('market', {})
@@ -2988,6 +3165,119 @@ def create_app():
             'registered_gains_account': accounts.get('registered_gains', 'Income:Non-Operating:Registered Gains'),
         }
 
+    class VerifyRequest(BaseModel):
+        symbol: str = ''
+        deep: bool = False
+
+    @app.post("/api/market/verify")
+    async def market_verify(req: VerifyRequest = VerifyRequest()):
+        """Verify commodities are fetchable (shared logic with `pair market verify`).
+
+        Read-only: probes pricehist and reads prices.journal; never writes.
+        Unlike the CLI, which always exits 0, the response carries a real
+        pass/fail per commodity (ok / status / gaps / staleness) so the UI
+        — and later automation — can gate on it.
+        """
+        from modules.market import verify_commodities
+        symbol = req.symbol.strip() or None
+        try:
+            return verify_commodities(deep=bool(req.deep), symbol=symbol)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    @app.get("/api/market/prices/{symbol}")
+    async def market_prices(symbol: str):
+        """Per-symbol price history detail — the web's `pair market show`.
+
+        Latest price/date plus entry count and the full dated series
+        (the same data `pair market chart SYMBOL` plots).
+        """
+        from modules.market import read_price_history
+        hist = read_price_history(symbol=symbol.strip())
+        if not hist:
+            raise HTTPException(status_code=404,
+                                detail=f"No price history for '{symbol}'")
+        sym, data = next(iter(hist.items()))
+        return {"symbol": sym,
+                "latest_price": data[-1][1], "latest_date": data[-1][0],
+                "count": len(data),
+                "dates": [d for d, _ in data],
+                "prices": [p for _, p in data]}
+
+    # ─── Market alerts (I64) ──────────────────────────────────────────────
+    # Web parity for `pair market alert` (add/list/check/remove). Rules
+    # live in entity config under market.alerts, exactly as the CLI
+    # stores them; evaluation goes through modules/market.py's
+    # evaluate_alerts — the same function the CLI check prints from.
+
+    class AlertRequest(BaseModel):
+        symbol: str = ""
+        threshold: float = 0.0
+        tags: list = []
+        notify: str = ""
+        interval: str = ""
+
+    class AlertCheckRequest(BaseModel):
+        symbol: str = ""
+        tag: str = ""
+
+    @app.get("/api/market/alerts")
+    async def market_alerts_list():
+        """List alert rules with resolved interval and status."""
+        from modules.market import _get_alert_rules, serialize_alert_rule
+        return {"rules": [serialize_alert_rule(r) for r in _get_alert_rules()]}
+
+    @app.post("/api/market/alerts")
+    async def market_alerts_add(req: AlertRequest):
+        """Add an alert rule. Re-adding a symbol replaces its rule (the
+        web has no interactive confirm step, so replace is the default);
+        the response says which happened."""
+        from modules.market import upsert_alert_rule, serialize_alert_rule
+        try:
+            rule, replaced = upsert_alert_rule(
+                req.symbol, req.threshold,
+                tags=[t for t in req.tags if isinstance(t, str) and t.strip()] or None,
+                notify=req.notify.strip() or None,
+                interval=req.interval.strip() or None,
+                replace=True)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"status": "ok", "rule": serialize_alert_rule(rule),
+                "replaced": replaced}
+
+    @app.delete("/api/market/alerts/{symbol}")
+    async def market_alerts_remove(symbol: str):
+        """Remove the alert rule for a symbol."""
+        from modules.market import remove_alert_rule
+        if not remove_alert_rule(symbol):
+            raise HTTPException(status_code=404,
+                                detail=f"No alert for '{symbol}'")
+        return {"status": "ok", "message": f"Removed alert for '{symbol}'"}
+
+    @app.post("/api/market/alerts/check")
+    async def market_alerts_check(req: AlertCheckRequest = AlertCheckRequest()):
+        """Evaluate alert rules now (one-shot; no loop — the web has no
+        long-lived CLI process to poll from).
+
+        Read-only: reads prices.journal for previous closes and fetches
+        live prices via yfinance. A rule whose live price cannot be
+        fetched reports status no_live_price rather than failing the
+        whole check.
+        """
+        from modules.market import (_get_alert_rules, _filter_rules,
+                                    evaluate_alerts)
+        rules = _get_alert_rules()
+        symbol_filters = [req.symbol.strip().upper()] if req.symbol.strip() else None
+        filtered = _filter_rules(
+            rules, tag_filter=req.tag.strip() or None,
+            symbol_filters=symbol_filters)
+        filtered = [r for r in filtered if r.get("enabled", True)]
+        results = evaluate_alerts(filtered)
+        return {"results": results,
+                "triggered": sum(1 for r in results if r["triggered"]),
+                "errors": sum(1 for r in results if r["status"] in ("no_close", "no_live_price")),
+                "total": len(results)}
+
     @app.get("/api/market/holding")
     async def market_holding(symbol: str, account: str = ''):
         """Current quantity and ACB average for a holding — powers the sell preview."""
@@ -3011,7 +3301,8 @@ def create_app():
     @app.post("/api/market/buy")
     async def market_buy(req: BuyRequest):
         """Record a purchase (ACB tracked). Reuses the CLI's build_buy_entry."""
-        from modules.investment import build_buy_entry, record_investment_entry
+        from modules.investment import (
+            build_buy_entry, record_investment_entry, validate_trade_date)
         if req.qty <= 0 or req.price <= 0:
             raise HTTPException(status_code=400, detail="Quantity and price must be positive")
         commodity = _resolve_trade_commodity(req.symbol)
@@ -3020,6 +3311,10 @@ def create_app():
         quote_currency = commodity.get('currency', entity_currency)
         fx = req.fx if quote_currency != entity_currency else 1.0
         date_str = req.date.strip() or date.today().strftime('%Y-%m-%d')
+        err = validate_trade_date(date_str)
+        if err:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid date: {date_str!r}. {err}")
         try:
             entry = build_buy_entry(
                 date=date_str, symbol=commodity['symbol'], qty=req.qty, unit_price=req.price,
@@ -3038,13 +3333,18 @@ def create_app():
         """Record a disposal with ACB gain/loss. Reuses the CLI's build_sell_entry."""
         from modules.investment import (
             build_sell_entry, record_investment_entry, read_holding_events,
-            compute_acb_from_events, InsufficientHoldingError)
+            compute_acb_from_events, InsufficientHoldingError,
+            validate_trade_date)
         if req.qty <= 0 or req.price <= 0:
             raise HTTPException(status_code=400, detail="Quantity and price must be positive")
         commodity = _resolve_trade_commodity(req.symbol)
         acct = _trade_accounts(commodity, req.account)
         entity_currency = get_entity_currency()
         date_str = req.date.strip() or date.today().strftime('%Y-%m-%d')
+        err = validate_trade_date(date_str)
+        if err:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid date: {date_str!r}. {err}")
         try:
             events = read_holding_events(get_entity_journal(), acct['tax_account'], commodity['symbol'])
         except Exception as e:
@@ -3132,7 +3432,15 @@ def create_app():
             text = raw_text if raw_text.endswith('\n') else raw_text + '\n\n'
             named = _count_raw_postings(text)
         else:
-            text = serialize_entry(fields)
+            try:
+                text = serialize_entry(fields)
+            except ValueError as e:
+                # serialize_entry rejects CR/LF in description / accounts:
+                # a newline would smuggle extra postings into the journal.
+                # Preview is read-only, so report it in-band, not as a 500.
+                return {'ok': False, 'rendered': '', 'errors': str(e),
+                        'journal_text': '', 'posting_count': len(named),
+                        'inferred_pair': '', 'inference_error': ''}
         result = validate_entry(text)
 
         # Valid hledger, but not yet a complete double entry.
@@ -3185,6 +3493,20 @@ def create_app():
 
         raw_text = (req.journal_text or '').strip()
         if req.raw and raw_text:
+            # Raw text is written as-is, but record_entry files by the date
+            # FIELD while hledger reads the date from the TEXT: a mismatched
+            # date would file a 2022 entry under 2026. Every transaction
+            # date in the text (primary and secondary) must equal the
+            # entry date. validate_entry cannot check this — it only proves
+            # hledger parses the text. Text with no parseable date is left
+            # to validate_entry, which already rejects it.
+            bad = [d for d in _raw_transaction_dates(raw_text)
+                   if d != entry_date]
+            if bad:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(f"Raw entry date {bad[0]} does not match "
+                            f"entry date {entry_date}"))
             # Hand-edited text is written as-is apart from the trailing tags,
             # appended to the first line where hledger expects them.
             lines = raw_text.splitlines()
@@ -3194,7 +3516,12 @@ def create_app():
         else:
             existing = (fields.get('tags') or '').strip()
             fields['tags'] = f"{existing}, {', '.join(extra)}" if existing else ', '.join(extra)
-            text = serialize_entry(fields)
+            try:
+                text = serialize_entry(fields)
+            except ValueError as e:
+                # serialize_entry rejects CR/LF in description / accounts:
+                # a newline would smuggle extra postings into the journal.
+                raise HTTPException(status_code=400, detail=str(e))
 
         result = validate_entry(text)
         if not result['ok']:
@@ -3408,11 +3735,16 @@ def create_app():
             if req.period:
                 description += f" | {req.period}"
 
-        tags = {'pair': '0001', 'mode': 'payroll'}
+        tags = build_tags('0001', mode='payroll')
         if req.contact_slug:
             tags['contact'] = req.contact_slug
 
-        entry = format_entry(pay_date, description, postings, tags)
+        try:
+            entry = format_entry(pay_date, description, postings, tags)
+        except ValueError as e:
+            # format_entry rejects CR/LF in the description / accounts:
+            # a newline would smuggle extra postings into the journal.
+            raise HTTPException(status_code=400, detail=str(e))
 
         year = pay_date[:4]
         ensure_year_structure(int(year))
@@ -3616,8 +3948,13 @@ def create_app():
             ('Liabilities:Current:HST Payable', currency, float(amt)),
             (bank, currency, float(-amt)),
         ]
-        entry = format_entry(d, f"Tax remittance: HST {period_desc}", postings,
-                             {'pair': '1000', 'remittance': 'hst', 'period': period_desc})
+        try:
+            entry = format_entry(d, f"Tax remittance: HST {period_desc}", postings,
+                                 {'pair': '1000', 'remittance': 'hst', 'period': period_desc})
+        except ValueError as e:
+            # format_entry rejects CR/LF in the description / accounts:
+            # a newline would smuggle extra postings into the journal.
+            raise HTTPException(status_code=400, detail=str(e))
         year = d[:4]
         ensure_year_structure(int(year))
         append_journal(get_generated_dir() / year / "tax.journal", entry)
@@ -3908,33 +4245,27 @@ def create_app():
 
     @app.get("/api/chart/prices")
     async def chart_prices():
-        """Commodity price history from prices.journal."""
-        entity_dir = get_entity_dir()
-        prices_file = entity_dir / 'include' / 'prices.journal'
-        if not prices_file.exists():
-            return {'commodities': {}}
+        """Commodity price history from prices.journal.
 
-        commodities = {}
-        with open(prices_file) as f:
-            for line in f:
-                line = line.strip()
-                if not line.startswith('P '):
-                    continue
-                parts = line.split()
-                # P 2026-01-02 "SHOP.TO" CAD 125.30
-                if len(parts) >= 5:
-                    pdate = parts[1]
-                    symbol = parts[2].strip('"')
-                    try:
-                        price = float(parts[-1])
-                    except ValueError:
-                        continue
-                    if symbol not in commodities:
-                        commodities[symbol] = {'dates': [], 'prices': []}
-                    commodities[symbol]['dates'].append(pdate)
-                    commodities[symbol]['prices'].append(price)
+        Parsed once, here, by modules/market.py::read_price_history — the
+        same parser behind `pair market show` and the per-symbol
+        /api/market/prices/{symbol} endpoint.
+        """
+        from modules.market import read_price_history
+        hist = read_price_history()
+        return {"commodities": {
+            sym: {"dates": [d for d, _ in data],
+                  "prices": [p for _, p in data]}
+            for sym, data in hist.items()}}
 
-        return {'commodities': commodities}
+    @app.get("/api/chart/traction")
+    async def chart_traction(metric: str = 'paying_customers', months: int = 12,
+                             end: str = ''):
+        from modules.traction import build
+        try:
+            return build(load_config(), metric, max(1, min(months, 36)), end or None)
+        except (RuntimeError, ValueError, ArithmeticError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @app.get("/api/chart/profitloss")
     async def chart_profitloss(period: str = ''):

@@ -80,14 +80,15 @@ pair entry                    Interactive entry from any pair
 pair entity list            List all entities
 pair entity add             Add a new entity
 pair entity use <slug>      Switch active entity
+pair entity migrate --from <file>  Convert consult entities to contacts
 pair switch <slug>           Switch active entity (shortcut)
 
-pair asset add|list|show|edit|dispose|amort|writedown|summary
+pair asset add|list|show|edit|dispose|amort|writedown|transfer|summary
 pair liability add|list|show|pay|payments|reclassify
 pair expense add|list
-pair income add              Non-operating income
+pair income add|statement    Non-operating income; income statement (P&L)
 pair transfer                Asset-to-asset moves
-pair revenue project|log|invoice|paid|outstanding|status|export|undo|rate|defer|recognize|deferred
+pair revenue project|log|invoice|paid|outstanding|status|export|undo|rate|defer|recognize|deferred|receive
 pair contact add|list|show|edit|remove
 pair contract add|list|show|edit
 pair payroll run|list

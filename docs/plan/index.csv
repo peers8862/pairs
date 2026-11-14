@@ -1,6 +1,6 @@
 id,file,sheet_name,title,description,owner,source,generated_by,updated,rows
-items,items.csv,Items,Backlog items,Features and chores under consideration; status idea/candidate/selected/doing/done/dropped,mp,conversation,,2026-11-13,54
-decisions,decisions.csv,Decisions,Decisions,Open and decided questions with proposed answer,mp,conversation,,2026-11-13,18
+items,items.csv,Items,Backlog items,Features and chores under consideration; status idea/candidate/selected/doing/done/dropped,mp,conversation,,2026-11-13,80
+decisions,decisions.csv,Decisions,Decisions,Open and decided questions with proposed answer,mp,conversation,,2026-11-13,20
 artifacts,artifacts.csv,Artifacts,Artifacts,"PRs, branches, code, docs and installs produced",mp,conversation,,2026-11-13,18
 log,log.csv,Log,Log,Dated one-line entries of what happened,mp,conversation,,2026-11-13,20
 sources,sources.csv,Sources,Source documents,Documents analyzed for integration,mp,conversation,,2026-11-12,3

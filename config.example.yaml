@@ -29,3 +29,36 @@ entities:
 defaults:
   entity: my-company
   last_project: null
+
+# Saved reports (I76): named hledger queries, run with
+# `pair report run <name>`, listed with `pair report list`, or built
+# on the spot with `pair report build ... [--save <name>]`. The web
+# Reports tab runs the same definitions. See docs/commands.md.
+# Keys: title (optional), command (register/print/bal/balance/bs/is/
+# accounts), query (optional hledger terms), period (YYYY, YYYY-MM,
+# YYYY-MM-DD or YYYYQn), monthly/tree/flat (optional true/false).
+# Query terms starting with '-' are rejected, as in /api/search.
+#reports:
+#  monthly-expenses:
+#    title: Monthly expenses
+#    command: register
+#    query: "acct:Expenses"
+#    monthly: true
+
+# Bank statement mappings (I69): declared CSV column maps, named here
+# and referenced with `pair account import <file> --mapping <name>`.
+# Keys: date, description, and either amount OR the debit/credit pair;
+# date_format is a strptime format (default %Y-%m-%d). OFX needs no
+# mapping. See docs/commands.md (Bank Reconciliation).
+#statement_mappings:
+#  chequing-csv:
+#    date: Date
+#    description: Description
+#    amount: Amount
+#    date_format: "%Y-%m-%d"
+#  savings-csv:
+#    date: Transaction Date
+#    description: Description
+#    debit: Debit
+#    credit: Credit
+#    date_format: "%d/%m/%Y"

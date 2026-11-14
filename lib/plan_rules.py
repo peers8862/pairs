@@ -24,7 +24,7 @@ and reuse (runway, growth engine and metric projections build on them).
 
 import calendar
 from datetime import date, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 FREQUENCIES = {'weekly': 0, 'monthly': 1, 'quarterly': 3, 'semiannual': 6, 'annual': 12, 'once': None}
 KINDS = ('expense', 'revenue', 'funding')
@@ -103,6 +103,15 @@ def validate(rule):
         v = rule.get(key)
         if v not in (None, '') and not (-1 < float(v) < 10):
             problems.append(f'{key} is a fraction (0.05 = 5%), got {v}')
+    if rule.get('retention') not in (None, ''):
+        if driver != 'units':
+            problems.append('retention only applies to the units driver')
+        else:
+            try:
+                if not (0 <= float(rule['retention']) <= 1):
+                    problems.append(f"retention is a fraction from 0 to 1, got {rule['retention']}")
+            except (TypeError, ValueError):
+                problems.append(f"retention is a fraction from 0 to 1, got {rule['retention']}")
     if driver == 'percent' and kind == 'revenue' and rule.get('of', 'revenue') == 'revenue':
         problems.append('a revenue rule cannot be a percent of revenue')
     if driver == 'salary' and kind != 'expense':
@@ -181,6 +190,24 @@ def _account(rule):
     return DEFAULT_ACCOUNTS[kind]
 
 
+def _retention(rule):
+    """Retention fraction for a units rule, or None (no retention).
+
+    Raises ValueError on a bad value; validate() reports it first on the
+    normal paths, this is the backstop for hand-built rules.
+    """
+    v = rule.get('retention')
+    if v in (None, ''):
+        return None
+    try:
+        r = D(v)
+    except InvalidOperation:
+        raise ValueError(f"retention is a fraction from 0 to 1, got {v!r}")
+    if r < 0 or r > 1:
+        raise ValueError(f"retention is a fraction from 0 to 1, got {v!r}")
+    return r
+
+
 def _occurrences_for(rule, base_by_month):
     out = []
     dates = occurrence_dates(rule)
@@ -192,8 +219,17 @@ def _occurrences_for(rule, base_by_month):
               'account': _account(rule), 'category': rule.get('category', '')}
     if kind == 'funding':
         common['instrument'] = rule.get('instrument', 'equity')
+    retention = _retention(rule) if rule.get('driver') == 'units' else None
+    active = Decimal('0')
     for i, d in enumerate(dates):
         amount = _cents(_amount_at(rule, i, d, first, base_by_month))
+        if retention is not None:
+            # Active units compound: this period's new units plus the retained
+            # share of the base so far. Revenue is active units x price; the
+            # unit-cost line below stays on new units (COGS is paid on units
+            # sold that period, not on the retained base).
+            active = _units_at(rule, i) + retention * active
+            amount = _cents(active * D(rule.get('price')))
         if amount:
             out.append({**common, 'date': d, 'amount': amount})
         if rule.get('driver') == 'units' and rule.get('unit_cost'):
@@ -249,13 +285,13 @@ def monthly_totals(occurrences):
 
 def journal_text(slug, occurrences, currency, cash_account, pair='0000'):
     """hledger entries for the occurrences, tagged scenario:<slug> rule:<id>."""
-    from lib.journal import format_entry
+    from lib.journal import build_tags, format_entry
     parts = []
     for o in occurrences:
         value = float(o['amount'])
         sign = 1 if o['kind'] == 'expense' else -1      # money in: credit the account
         postings = [(o['account'], currency, sign * value), (cash_account, currency, -sign * value)]
-        tags = {'pair': pair, 'scenario': slug, 'rule': o['rule'] or 'x'}
+        tags = build_tags(pair, scenario=slug, rule=o['rule'] or 'x')
         if o.get('category'):
             tags['category'] = o['category']
         if o['kind'] == 'funding':
@@ -282,6 +318,8 @@ def describe(rule):
         what = f"{D(rule.get('units')):g} units x {D(rule.get('price')):,.2f}"
         if rule.get('unit_growth'):
             what += f", units {pct(rule.get('unit_growth'))} each time"
+        if rule.get('retention') not in (None, ''):
+            what += f", {pct(rule.get('retention'))} retained"
     else:
         what = f"salary {D(rule.get('salary')):,.0f}/yr + {pct(rule.get('benefits'))} benefits"
         if rule.get('raise'):

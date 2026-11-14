@@ -8,7 +8,7 @@ from lib.helpers import (
     validate_date, validate_positive_number, parse_global_flags
 )
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, get_generated_dir
+    build_tags, format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 TO_ACCOUNT_OPTIONS = {
@@ -101,7 +101,7 @@ def cmd_transfer(flags, args):
         (from_account, currency, float(-amount)),
     ]
 
-    tags = {'pair': '1011'}
+    tags = build_tags('1011')
     entry = format_entry(transfer_date, description, postings, tags)
 
     year = transfer_date[:4]

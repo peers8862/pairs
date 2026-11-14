@@ -2,15 +2,18 @@
 
 import sys
 import yaml
+from datetime import date
 from pathlib import Path
 
 from lib.helpers import (
     BASE_DIR, GLOBAL_CONFIG_FILE,
-    load_global_config, save_global_config, get_active_entity, entity_dir_for,
+    load_config, load_global_config, save_global_config, get_active_entity,
+    entity_dir_for,
     entity_state, visible_entities, hidden_entities,
     prompt, validate_slug, ensure_dir, expand_path, slugify, save_config, confirm
 )
 from lib.journal import write_journal_atomic
+from lib.yaml_store import save_entity, entity_exists
 
 
 # ─── Directory structure for an entity ───────────────────────────────────────
@@ -68,12 +71,135 @@ def dispatch(args):
         cmd_delete(args[1:])
     elif args[0] == 'archived':
         cmd_archived()
+    elif args[0] == 'migrate':
+        cmd_migrate(args[1:])
     elif args[0] in ('--help', '-h'):
         print_help()
     else:
         print(f"Unknown entity subcommand: {args[0]}")
-        print("Usage: pair entity [show|list|create|use|path|move|remove|restore|archive|delete|archived]")
+        print("Usage: pair entity [show|list|create|use|path|move|remove|restore|archive|delete|archived|migrate]")
         sys.exit(1)
+
+
+# ─── Consult migration (I77) ─────────────────────────────────────────────────
+
+def consult_entity_to_contact(slug, data, config=None):
+    """Convert one consult config entity to a pair contact record (I77).
+
+    Mirrors the contact schema built by `pair contact add --role entity`
+    (modules/contact.py): top-level identity fields plus a nested
+    `billing:` section. A consult field with no pair equivalent is
+    preserved, not dropped: `journal_file` stays on the record so the
+    journal location is not lost (the journal itself is untouched).
+    """
+    config = config or {}
+    accounts = data.get('accounts', {}) or {}
+    contact = {
+        'name': data.get('name') or slug,
+        'slug': slug,
+        'role': 'entity',
+    }
+    for key in ('email', 'phone', 'payment_terms'):
+        if data.get(key):
+            contact[key] = data[key]
+    if data.get('journal_file'):
+        contact['journal_file'] = data['journal_file']
+    contact['billing'] = {
+        'business_number': data.get('business_number'),
+        'currency': data.get('currency', 'CAD'),
+        'tax': float(data.get('tax', 13)),
+        'invoice_prefix': data.get('invoice_prefix', ''),
+        'next_invoice': data.get('next_invoice') or f"{date.today().year}-001",
+        'template': data.get('template'),
+        'accounts': {
+            'receivable': accounts.get(
+                'receivable', 'Assets:Current:Accounts Receivable'),
+            'income': accounts.get(
+                'income', 'Income:Operating:Consulting'),
+            'tax_liability': accounts.get(
+                'tax_liability', 'Liabilities:Current:HST Payable'),
+            'bank': accounts.get('bank') or config.get('accounts', {}).get(
+                'bank', 'Assets:Current:Chequing'),
+        },
+    }
+    return contact
+
+
+def cmd_migrate(args):
+    """Convert consult entities to pair contacts (I77).
+
+    Usage: pair entity migrate --from <consult-config.yaml> [--dry-run]
+
+    Reads the consult config's `entities:` section (see docs/migration.md
+    and config.example.yaml) and writes one contacts/<slug>.yaml per
+    entity into the active entity folder, with role: entity and the
+    billing section nested. Also creates the standard pair directories.
+    The source config is only read, never modified; journals and PDFs are
+    untouched. Contacts that already exist are skipped, so re-running is
+    safe. The include-chain and config-schema steps from docs/migration.md
+    are intentionally out of scope here — `pair init` covers them for a
+    new entity.
+    """
+    source = None
+    dry_run = False
+    i = 0
+    while i < len(args):
+        if args[i] == '--from' and i + 1 < len(args):
+            source = args[i + 1]
+            i += 2
+        elif args[i] == '--dry-run':
+            dry_run = True
+            i += 1
+        else:
+            i += 1
+    if not source:
+        print("Usage: pair entity migrate --from <consult-config.yaml> [--dry-run]")
+        sys.exit(1)
+    source_path = expand_path(source)
+    if not source_path.exists():
+        print(f"  Consult config not found: {source}")
+        sys.exit(1)
+    with open(source_path) as f:
+        consult = yaml.safe_load(f) or {}
+    entities = consult.get('entities', {}) or {}
+    if not entities:
+        print("  No entities in the consult config. Nothing to do.")
+        return
+
+    # Migration is a setup-time command: the active entity may not have a
+    # config.yaml yet, so load it leniently (it only feeds the bank-account
+    # fallback in consult_entity_to_contact).
+    try:
+        config = load_config()
+    except SystemExit:
+        config = {}
+    created, skipped = [], []
+    for slug, data in sorted(entities.items()):
+        if entity_exists('contacts', slug):
+            skipped.append(slug)
+            continue
+        contact = consult_entity_to_contact(slug, data or {}, config)
+        if not dry_run:
+            save_entity('contacts', slug, contact)
+        created.append(slug)
+
+    if not dry_run:
+        # Local import, like lib.yaml_store.entity_dir: resolves the
+        # current get_entity_dir (so tests can monkeypatch it).
+        from lib.helpers import get_entity_dir
+        entity_dir = get_entity_dir()
+        for d in ('assets', 'liabilities', 'contacts', 'contracts',
+                  'journal', 'generated', 'include'):
+            ensure_dir(entity_dir / d)
+
+    if dry_run:
+        print("  Dry run — nothing written.")
+    for slug in created:
+        print(f"  {'Would create' if dry_run else 'Created'}: contacts/{slug}.yaml")
+    for slug in skipped:
+        print(f"  Skipped (already exists): contacts/{slug}.yaml")
+    print(f"\n  {len(created)} converted, {len(skipped)} skipped.")
+    print("  Journals and PDFs untouched; the consult config was not modified.")
 
 
 # ─── Commands ────────────────────────────────────────────────────────────────
@@ -804,6 +930,11 @@ Lifecycle:
   pair entity archive <slug>  Move folder to the archive, keep a reference
   pair entity archived        List removed/archived items
   pair entity delete <slug>   Permanently delete files + registration
+
+Migration from consult:
+  pair entity migrate --from <consult-config.yaml> [--dry-run]
+                                        Convert consult entities to contacts
+                                        (see docs/migration.md)
 
 Entity folder location:
   pair entity path                      Show where the active entity lives

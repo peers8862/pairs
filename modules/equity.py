@@ -8,7 +8,7 @@ from lib.helpers import (
     validate_date, validate_positive_number, parse_global_flags
 )
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, get_generated_dir
+    build_tags, format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 from lib.yaml_store import load_entity, list_entities
 
@@ -86,7 +86,7 @@ def cmd_invest(flags, args):
         ('Equity:Owner Investment', currency, float(-amount)),
     ]
 
-    tags = {'pair': '1001'}
+    tags = build_tags('1001')
     entry = format_entry(invest_date, description, postings, tags)
 
     year = invest_date[:4]
@@ -135,7 +135,7 @@ def cmd_draw(flags, args):
         (bank, currency, float(-amount)),
     ]
 
-    tags = {'pair': '1001'}
+    tags = build_tags('1001')
     entry = format_entry(draw_date, description, postings, tags)
 
     year = draw_date[:4]
@@ -221,7 +221,7 @@ def cmd_convert(flags, args):
         ('Equity:Owner Investment', currency, float(-amount)),
     ]
 
-    tags = {'pair': '1010', 'source': f'liabilities/{liability_slug}.yaml'}
+    tags = build_tags('1010', source=f'liabilities/{liability_slug}.yaml')
     entry = format_entry(convert_date, description, postings, tags)
 
     year = convert_date[:4]

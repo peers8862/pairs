@@ -11,7 +11,7 @@ from lib.helpers import (
 )
 from lib.yaml_store import load_entity, save_entity, list_entities
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, get_generated_dir
+    build_tags, format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -105,10 +105,7 @@ def cmd_run(flags, args):
             ('Expenses:Operating:Payroll:Salaries', currency, float(amount)),
             (bank, currency, float(-amount)),
         ]
-        tags = {
-            'pair': '0000',
-            'contact': contact_slug or '',
-        }
+        tags = build_tags('0000', contact=contact_slug or '')
         if period_desc:
             tags['period'] = period_desc
 
@@ -137,10 +134,7 @@ def cmd_run(flags, args):
         if ei > 0:
             postings.append(('Liabilities:Current:Payroll Payable', currency, float(-ei)))
 
-        tags = {
-            'pair': '0001',
-            'contact': contact_slug or '',
-        }
+        tags = build_tags('0001', contact=contact_slug or '')
         if period_desc:
             tags['period'] = period_desc
 

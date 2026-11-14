@@ -164,7 +164,15 @@ def _get_commodities():
 
 
 def _save_commodities(commodities):
-    """Save commodities list back to entity config."""
+    """Save commodities list back to entity config.
+
+    Backstop for the pricehist guard: every writer validates before
+    saving, but no writer may persist a leading-dash source/fetch_pair
+    even if it forgets to check.
+    """
+    for commodity in commodities:
+        validate_pricehist_arg(commodity.get('source', ''), 'source')
+        validate_pricehist_arg(commodity.get('fetch_pair', ''), 'fetch_pair')
     config = load_config()
     if 'market' not in config:
         config['market'] = {}
@@ -233,6 +241,27 @@ def _existing_directives(prices_file):
         if stripped.startswith('P '):
             existing.add(stripped)
     return existing
+
+
+def validate_pricehist_arg(value, field):
+    """Reject a pricehist argument value that pricehist would parse as a flag.
+
+    `source` and the fetch pair reach pricehist as positional argv
+    (cmd_fetch / cmd_verify), so a stored value starting with '-' becomes
+    a flag — e.g. `--output-file=/tmp/x` turns a read-only fetch into an
+    arbitrary file write. Same rule as _safe_query_terms in modules/web.py:
+    leading-dash values are rejected, never quoted or escaped into safety.
+    An allow-list was considered and rejected: the repo has no single
+    canonical source list (the CLI offers five, the web offers the same
+    five, but alerts also use 'yfinance'), and fetch pairs legitimately
+    take several shapes (SHOP.TO, BTC-CAD, AAPL). Empty values are allowed:
+    they mean "use the default source / fall back to the symbol".
+    """
+    text = "" if value is None else str(value).strip()
+    if text.startswith("-") or any(c in text for c in "\r\n\x00"):
+        raise ValueError(
+            f"Invalid {field} {value!r}: must not start with '-' "
+            "or contain line breaks")
 
 
 def _build_fetch_pair(commodity):
@@ -465,6 +494,15 @@ def cmd_add(flags, args):
     if tags:
         entry['tags'] = tags
 
+    # A leading-dash source/fetch_pair would be parsed as a flag by
+    # pricehist when this commodity is fetched — refuse to store it.
+    try:
+        validate_pricehist_arg(entry.get('source', ''), 'source')
+        validate_pricehist_arg(entry.get('fetch_pair', ''), 'fetch_pair')
+    except ValueError as e:
+        print(f"\n  {e}\n")
+        return
+
     # Save
     commodities = _get_commodities()
     existing_symbols = [c['symbol'].lower() for c in commodities]
@@ -541,6 +579,12 @@ def cmd_edit(flags, args):
                     commodity['tags'] = [t.strip() for t in new_val.split(',') if t.strip()]
                 else:
                     new_val = prompt(f"  {key}", default=old_val, required=False)
+                    if new_val and key in ('source', 'fetch_pair'):
+                        try:
+                            validate_pricehist_arg(new_val, key)
+                        except ValueError as e:
+                            print(f"  {e} Keeping {old_val!r}.")
+                            continue
                     if new_val:
                         commodity[key] = new_val
                     elif key in commodity:
@@ -737,6 +781,15 @@ def cmd_fetch(flags, args):
         source = commodity.get('source', 'yahoo')
         pair_str = _build_fetch_pair(commodity)
 
+        # Defense in depth: a value stored before the write-time guard
+        # existed must still never reach pricehist's argv as a flag.
+        try:
+            validate_pricehist_arg(source, 'source')
+            validate_pricehist_arg(pair_str, 'fetch_pair')
+        except ValueError as e:
+            print(f"  ⚠ {commodity['symbol']}: unsafe source/fetch_pair ({e}), skipping.")
+            continue
+
         cmd = ['pricehist', 'fetch', '-o', 'ledger', '-s', start_str, '-e', end_str, source, pair_str]
 
         if flags.get('dry_run'):
@@ -792,104 +845,294 @@ def cmd_fetch(flags, args):
     print(f"\n  Done. {total_new} new directive(s) added.\n")
 
 
-def cmd_verify(flags, args):
-    """Verify all commodities are fetchable and check for gaps."""
+# ─── Verify: shared core (CLI + web) ──────────────────────────────────────────
+
+VERIFY_DAYS = 5          # probe window: the CLI has always checked "last 5 days"
+GAP_DAYS = 5             # a stored-history gap longer than this is reported (deep)
+STALE_AFTER_DAYS = 7     # stored prices older than this count as stale
+
+
+def _parse_price_line(line):
+    """Parse one `P` directive line -> (date, symbol, price, currency) or None.
+
+    Tolerates both token orders: pricehist's stdout puts the amount before
+    the currency, while cmd_fetch writes `P DATE SYMBOL CURRENCY AMOUNT`
+    into prices.journal (see the example at modules/web.py:4013). The
+    numeric token is the price; any other trailing token is the currency.
+    A time field between the date and the symbol is skipped, as in cmd_fetch.
+    """
+    parts = (line or '').split()
+    if len(parts) < 4 or parts[0] != 'P':
+        return None
+    p_date = parts[1]
+    idx = 3 if ':' in parts[2] else 2
+    if idx >= len(parts):
+        return None
+    symbol = parts[idx].strip('"')
+    if not symbol:
+        return None
+    price = None
+    currency = ''
+    for tok in parts[idx + 1:]:
+        try:
+            price = float(tok.lstrip('$'))
+        except ValueError:
+            if not currency:
+                currency = tok
+    if price is None:
+        return None
+    return p_date, symbol, price, currency
+
+
+def _price_history(symbol, prices_file=None, extra_tokens=()):
+    """Stored (date, symbol, price, currency) rows for one symbol, exact-matched.
+
+    The old _check_price_gaps substring-matched (`symbol in line`), so BTC
+    also matched BTCX lines. Matching is now on the parsed symbol token,
+    case-insensitive, against the configured symbol and any extra tokens
+    (the fetch pair — stored lines can carry it, e.g. SHOP.TO for symbol
+    SHOP). BTC and BTCX histories still stay separate: neither token of
+    one is a token of the other.
+    """
+    if prices_file is None:
+        prices_file = _get_prices_journal()
+    if not prices_file.exists():
+        return []
+    wanted = {symbol.lower()} | {t.lower() for t in extra_tokens if t}
+    rows = []
+    for line in prices_file.read_text().splitlines():
+        parsed = _parse_price_line(line)
+        if parsed and parsed[1].lower() in wanted:
+            rows.append(parsed)
+    rows.sort(key=lambda r: r[0])
+    return rows
+
+
+def _find_gaps(dates):
+    """[{days, from, to}] for consecutive stored dates more than GAP_DAYS apart."""
+    parsed = []
+    for d in dates:
+        try:
+            parsed.append(date.fromisoformat(d))
+        except ValueError:
+            continue
+    parsed.sort()
+    gaps = []
+    for prev, cur in zip(parsed, parsed[1:]):
+        delta = (cur - prev).days
+        if delta > GAP_DAYS:
+            gaps.append({"days": delta,
+                         "from": prev.isoformat(), "to": cur.isoformat()})
+    return gaps
+
+
+def verify_commodities(commodities=None, deep=False, symbol=None, today=None):
+    """Verify commodities are fetchable; shared by `pair market verify` and
+    POST /api/market/verify. Returns structured, JSON-safe results:
+
+        {'pricehist_available': bool, 'total': n, 'ok_count': n,
+         'failed_count': n, 'ok': bool, 'results': [per-commodity dicts]}
+
+    Per commodity: symbol, source, fetch_pair, status (ok | no_data |
+    failed | timeout | error | skipped), ok, prices (fetched P lines),
+    latest_fetched, returned_symbols (P-line symbol tokens from the fetch),
+    stored_latest_date / stored_count / stored_age_days / stale (from
+    prices.journal), gaps + history_count + history_range (deep only),
+    error, issues (human-readable warnings).
+
+    `ok` means the fetch worked (>= 1 P line). Gaps and staleness are
+    reported as issues, not failures: they say the stored history is
+    incomplete or old, which `pair market fetch` fixes — the probe just
+    proved fresh data is available. Identity is NOT verified: pricehist
+    echoes the requested pair, so a wrong fetch_pair pointing at a
+    different valid instrument is indistinguishable without a second
+    price source. A returned token matching neither the fetch_pair nor
+    the symbol is surfaced as an advisory issue only.
+    """
+    if today is None:
+        today = date.today()
     if not _pricehist_available():
+        return {'pricehist_available': False, 'total': 0, 'ok_count': 0,
+                'failed_count': 0, 'ok': False,
+                'error': 'pricehist is not installed', 'results': []}
+    if commodities is None:
+        commodities = _get_commodities()
+    if symbol:
+        matched = [c for c in commodities
+                   if c.get('symbol', '').lower() == symbol.lower()]
+        if not matched:
+            raise ValueError(f"Commodity '{symbol}' is not tracked")
+        commodities = matched
+
+    end = today
+    start = end - timedelta(days=VERIFY_DAYS)
+    results = []
+    ok_count = 0
+    for commodity in commodities:
+        source = commodity.get('source', 'yahoo')
+        pair_str = _build_fetch_pair(commodity)
+        sym = commodity['symbol']
+        result = {'symbol': sym, 'source': source, 'fetch_pair': pair_str,
+                  'status': None, 'ok': False, 'prices': 0,
+                  'latest_fetched': None, 'returned_symbols': [],
+                  'stored_latest_date': None, 'stored_count': 0,
+                  'stored_age_days': None, 'stale': True,
+                  'gaps': [], 'history_count': 0, 'history_range': None,
+                  'error': None, 'issues': []}
+        # Stored history first: it is reported even when the fetch fails.
+        history = _price_history(sym, extra_tokens=(pair_str,))
+        result['history_count'] = len(history)
+        if history:
+            result['stored_latest_date'] = history[-1][0]
+            result['stored_count'] = len(history)
+            try:
+                latest = date.fromisoformat(history[-1][0])
+                result['stored_age_days'] = (today - latest).days
+            except ValueError:
+                pass
+            result['stale'] = (result['stored_age_days'] is None
+                               or result['stored_age_days'] > STALE_AFTER_DAYS)
+            result['history_range'] = [history[0][0], history[-1][0]]
+            if result['stale']:
+                result['issues'].append(
+                    f"stored prices stale: latest {result['stored_latest_date']} "
+                    f"({result['stored_age_days']} days ago)")
+        else:
+            result['issues'].append('no stored price history')
+        if deep:
+            result['gaps'] = _find_gaps([r[0] for r in history])
+            for g in result['gaps']:
+                result['issues'].append(
+                    f"gap: {g['days']} days ({g['from']} → {g['to']})")
+
+        # Defense in depth: a value stored before the write-time guard
+        # existed must still never reach pricehist's argv as a flag.
+        try:
+            validate_pricehist_arg(source, 'source')
+            validate_pricehist_arg(pair_str, 'fetch_pair')
+        except ValueError as e:
+            result['status'] = 'skipped'
+            result['error'] = str(e)
+            result['issues'].append(f"skipped — unsafe source/fetch_pair ({e})")
+            results.append(result)
+            continue
+
+        cmd = ['pricehist', 'fetch', '-o', 'ledger',
+               '-s', start.strftime("%Y-%m-%d"),
+               '-e', end.strftime("%Y-%m-%d"),
+               source, pair_str]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if res.returncode == 0 and res.stdout.strip():
+                lines = [_parse_price_line(l)
+                         for l in res.stdout.splitlines()]
+                lines = [l for l in lines if l]
+                if lines:
+                    result['status'] = 'ok'
+                    result['ok'] = True
+                    result['prices'] = len(lines)
+                    result['latest_fetched'] = max(l[0] for l in lines)
+                    result['returned_symbols'] = sorted({l[1] for l in lines})
+                    ok_count += 1
+                    expected = {pair_str.lower(), sym.lower()}
+                    if not all(t.lower() in expected
+                               for t in result['returned_symbols']):
+                        result['issues'].append(
+                            "fetched prices are labelled "
+                            + ", ".join(result['returned_symbols'])
+                            + f", not {pair_str} — identity unverified")
+                else:
+                    result['status'] = 'no_data'
+                    result['error'] = 'no P lines in fetch output'
+            else:
+                result['status'] = 'failed'
+                result['error'] = (res.stderr.strip()[:200]
+                                   if res.stderr else 'no data')
+        except subprocess.TimeoutExpired:
+            result['status'] = 'timeout'
+            result['error'] = 'timeout'
+        except Exception as e:
+            result['status'] = 'error'
+            result['error'] = str(e)
+        results.append(result)
+
+    failed = len(results) - ok_count
+    return {'pricehist_available': True, 'total': len(results),
+            'ok_count': ok_count, 'failed_count': failed,
+            'ok': failed == 0, 'results': results}
+
+
+def cmd_verify(flags, args):
+    """Verify all commodities are fetchable and check for gaps.
+
+    Prints the same lines as before, from the shared verify_commodities()
+    results; the exit code stays 0 (use POST /api/market/verify for a
+    gateable pass/fail). Accepts an optional symbol (bare arg or --symbol)
+    and --deep.
+    """
+    deep = '--deep' in args
+    symbol = None
+    i = 0
+    while i < len(args):
+        if args[i] == '--symbol' and i + 1 < len(args):
+            symbol = args[i + 1]
+            i += 2
+        elif not args[i].startswith('--'):
+            symbol = args[i]
+            i += 1
+        else:
+            i += 1
+
+    try:
+        result = verify_commodities(deep=deep, symbol=symbol)
+    except ValueError:
+        print(f"\n  Commodity '{symbol}' not found.\n")
+        return
+
+    if not result['pricehist_available']:
         print("\n  pricehist is not installed.\n")
         return
 
-    commodities = _get_commodities()
+    commodities = result['results']
     if not commodities:
         print("\n  No commodities configured.\n")
         return
 
     entity = get_active_entity()
-    deep = '--deep' in args
-
     print(f"\n  [{entity}] Verifying {len(commodities)} commodities...\n")
 
-    ok_count = 0
-    fail_count = 0
+    for r in commodities:
+        sym = r['symbol']
+        if r['status'] == 'skipped':
+            print(f"  {sym:<12} ⚠ skipping — unsafe source/fetch_pair ({r['error']})")
+        elif r['status'] == 'ok':
+            print(f"  {sym:<12} ✓ fetchable   ({r['prices']} price(s) in last 5 days)")
+        elif r['status'] == 'no_data':
+            print(f"  {sym:<12} ⚠ no data     source: {r['source']}, pair: {r['fetch_pair']}")
+        elif r['status'] == 'failed':
+            print(f"  {sym:<12} ✗ FAILED      {(r['error'] or 'no data')[:60]}")
+        elif r['status'] == 'timeout':
+            print(f"  {sym:<12} ✗ timeout")
+        else:
+            print(f"  {sym:<12} ✗ error: {r['error']}")
 
-    for commodity in commodities:
-        source = commodity.get('source', 'yahoo')
-        pair_str = _build_fetch_pair(commodity)
-        symbol = commodity['symbol']
-
-        # Try a 3-day fetch to verify connectivity
-        end_date = date.today()
-        start_date = end_date - timedelta(days=5)
-        cmd = ['pricehist', 'fetch', '-o', 'ledger',
-               '-s', start_date.strftime("%Y-%m-%d"),
-               '-e', end_date.strftime("%Y-%m-%d"),
-               source, pair_str]
-
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-            if result.returncode == 0 and result.stdout.strip():
-                # Get latest price from output
-                lines = [l for l in result.stdout.splitlines() if l.strip().startswith('P ')]
-                if lines:
-                    print(f"  {symbol:<12} ✓ fetchable   ({len(lines)} price(s) in last 5 days)")
-                    ok_count += 1
-                else:
-                    print(f"  {symbol:<12} ⚠ no data     source: {source}, pair: {pair_str}")
-                    fail_count += 1
-            else:
-                err = result.stderr.strip()[:60] if result.stderr else 'no data'
-                print(f"  {symbol:<12} ✗ FAILED      {err}")
-                fail_count += 1
-        except subprocess.TimeoutExpired:
-            print(f"  {symbol:<12} ✗ timeout")
-            fail_count += 1
-        except Exception as e:
-            print(f"  {symbol:<12} ✗ error: {e}")
-            fail_count += 1
-
-        # Deep check: look at prices.journal for gaps
+        # Deep check: gaps in prices.journal, in the old printed shape.
         if deep:
-            _check_price_gaps(symbol)
+            if not r['history_count']:
+                print("             ⚠ no price history in prices.journal")
+            else:
+                print(f"             {r['history_count']} entries "
+                      f"({r['history_range'][0]} → {r['history_range'][1]})")
+                for g in r['gaps']:
+                    print(f"             ⚠ gap: {g['days']} days "
+                          f"({g['from']} → {g['to']})")
 
-    print(f"\n  {ok_count}/{len(commodities)} verified.", end='')
-    if fail_count:
-        print(f" {fail_count} need attention.")
+    print(f"\n  {result['ok_count']}/{len(commodities)} verified.", end='')
+    if result['failed_count']:
+        print(f" {result['failed_count']} need attention.")
     else:
         print(" All good.")
     print()
-
-
-def _check_price_gaps(symbol):
-    """Check prices.journal for gaps in a commodity's history."""
-    from datetime import datetime
-    prices_file = _get_prices_journal()
-    if not prices_file.exists():
-        return
-
-    dates = []
-    for line in prices_file.read_text().splitlines():
-        if not line.strip().startswith('P '):
-            continue
-        # Check if this line is for our symbol
-        if symbol in line or f'"{symbol}"' in line:
-            parts = line.split()
-            try:
-                d = datetime.strptime(parts[1], "%Y-%m-%d")
-                dates.append(d)
-            except (ValueError, IndexError):
-                pass
-
-    if not dates:
-        print(f"             ⚠ no price history in prices.journal")
-        return
-
-    dates.sort()
-    print(f"             {len(dates)} entries ({dates[0].strftime('%Y-%m-%d')} → {dates[-1].strftime('%Y-%m-%d')})")
-
-    # Find gaps > 5 days
-    for i in range(1, len(dates)):
-        gap = (dates[i] - dates[i - 1]).days
-        if gap > 5:
-            print(f"             ⚠ gap: {gap} days ({dates[i-1].strftime('%Y-%m-%d')} → {dates[i].strftime('%Y-%m-%d')})")
 
 
 def cmd_chart(flags, args):
@@ -1000,7 +1243,7 @@ Commands:
   edit [SYMBOL|#]       Edit commodity metadata
   remove [SYMBOL|#]     Remove a commodity from tracking
   fetch [SYMBOL]        Fetch prices for all/one commodity
-  verify [--deep]       Verify all commodities are fetchable
+  verify [SYMBOL] [--deep]  Verify commodities are fetchable (+ gaps)
   chart [SYMBOL]        Generate price history chart (PNG)
   tag                   Tag management (see below)
   sources               Show available pricehist sources
@@ -1031,6 +1274,7 @@ Examples:
   pair market add shopify             Search + add
   pair market fetch --days 30         Fetch last 30 days
   pair market verify --deep           Check connectivity + gaps
+  pair market verify BTC              Check one commodity only
   pair market chart BTC               Chart BTC price history
   pair market tag BTC crypto          Tag BTC as 'crypto'
   pair market list --type equity      List only equities
@@ -1793,18 +2037,69 @@ def _parse_interval(interval_str):
     return 300
 
 
+# ─── Price History (shared by `show`, `chart`, and the web) ──────────────────
+
+def read_price_history(prices_file=None, symbol=None):
+    """Parse prices.journal P directives into {symbol: [(date, price), ...]}.
+
+    Shared by the CLI's show/chart parsing and the web's chart/prices and
+    market/prices endpoints, so all three read the same lines the same
+    way (quoted symbols unquoted, malformed lines skipped, sorted by
+    date). `symbol` filters case-insensitively to one symbol.
+    """
+    prices_file = prices_file or _get_prices_journal()
+    if not prices_file.exists():
+        return {}
+
+    from collections import defaultdict
+    prices = defaultdict(list)
+    for line in prices_file.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped.startswith('P '):
+            continue
+        parts = stripped.split(None, 2)
+        if len(parts) < 3:
+            continue
+        p_date = parts[1]
+        rest = parts[2]
+        if rest.startswith('"'):
+            try:
+                end_q = rest.index('"', 1)
+            except ValueError:
+                continue
+            sym = rest[1:end_q]
+            remainder = rest[end_q + 1:].split()
+        else:
+            remainder = rest.split()
+            sym = remainder[0]
+            remainder = remainder[1:]
+        try:
+            amount = float(remainder[1])
+        except (IndexError, ValueError):
+            continue
+        prices[sym].append((p_date, amount))
+
+    out = {sym: sorted(data) for sym, data in prices.items()}
+    if symbol:
+        out = {sym: data for sym, data in out.items()
+               if sym.lower() == symbol.lower()}
+    return out
+
+
 # ─── Previous Close ──────────────────────────────────────────────────────────
 
-def _get_previous_close(symbol):
+def _get_previous_close(symbol, today=None):
     """Get the most recent P directive price for symbol dated before today.
 
     Returns (price_float, date_str) or (None, None) if not found.
+    `today` is an override ("YYYY-MM-DD") for tests; the CLI always
+    uses the real current date.
     """
     prices_file = _get_prices_journal()
     if not prices_file.exists():
         return None, None
 
-    today_str = date.today().strftime("%Y-%m-%d")
+    today_str = today or date.today().strftime("%Y-%m-%d")
     symbol_upper = symbol.upper()
     best_price = None
     best_date = None
@@ -1933,6 +2228,164 @@ def _notify_alert(rule, close_price, live_price, pct_drop, method='both'):
         _notify_desktop(title, body)
 
 
+# ─── Shared Alert Evaluation ─────────────────────────────────────────────────
+# One code path for the CLI check and the web check endpoint. Returns
+# structured, JSON-safe results; printing and desktop notification stay
+# in the CLI wrapper (_alert_check_once), never in here.
+
+def evaluate_alerts(rules, live_price_fn=None, today=None):
+    """Evaluate alert rules against previous close vs live price.
+
+    `rules`: alert rule dicts (enabled ones; callers filter).
+    `live_price_fn`: commodity dict -> float price or None. Defaults to
+    the module-global _get_live_price — the same fetch the CLI check
+    always used — so tests and the web can stub it the same way.
+    `today`: "YYYY-MM-DD" override for the previous-close cutoff (tests);
+    defaults to the real current date.
+
+    Per rule: {symbol, threshold, close_price, close_date, live_price,
+    pct_drop, triggered, status, error, notify} where status is one of
+    ok | triggered | no_close | no_live_price. pct_drop is the % fall
+    from close (negative when the price rose); triggered when it meets
+    or exceeds the rule's threshold.
+    """
+    if live_price_fn is None:
+        live_price_fn = _get_live_price
+
+    results = []
+    for rule in rules:
+        symbol = rule["symbol"]
+        threshold = rule["threshold"]
+        # Previous close is looked up by price token, not rule symbol:
+        # a commodity's P lines are stored under its fetch_pair
+        # (SHOP.TO, BTC-CAD), while the rule keys on the symbol (SHOP,
+        # BTC). Looking the close up by symbol alone could never find
+        # one for those commodities — the CLI had the same blind spot.
+        commodity = _find_commodity_entry(symbol)
+        if not commodity:
+            commodity = {"symbol": symbol, "fetch_pair": symbol, "currency": "CAD"}
+        price_symbol = commodity.get("fetch_pair") or symbol
+        close_price, close_date = _get_previous_close(price_symbol, today=today)
+        if close_price is None:
+            results.append({
+                "symbol": symbol, "threshold": threshold,
+                "close_price": None, "close_date": None, "live_price": None,
+                "pct_drop": None, "triggered": False, "status": "no_close",
+                "error": "no previous close found in prices.journal",
+                "notify": rule.get("notify", _get_alert_defaults().get("notify", "desktop")),
+            })
+            continue
+
+        live_price = live_price_fn(commodity)
+        if live_price is None:
+            results.append({
+                "symbol": symbol, "threshold": threshold,
+                "close_price": close_price, "close_date": close_date,
+                "live_price": None, "pct_drop": None,
+                "triggered": False, "status": "no_live_price",
+                "error": "could not fetch live price (yfinance missing or unreachable)",
+                "notify": rule.get("notify", _get_alert_defaults().get("notify", "desktop")),
+            })
+            continue
+
+        pct_drop = ((close_price - live_price) / close_price) * 100 if close_price > 0 else 0.0
+        triggered = pct_drop >= threshold
+        results.append({
+            "symbol": symbol, "threshold": threshold,
+            "close_price": close_price, "close_date": close_date,
+            "live_price": live_price, "pct_drop": round(pct_drop, 4),
+            "triggered": triggered,
+            "status": "triggered" if triggered else "ok",
+            "error": None,
+            "notify": rule.get("notify", _get_alert_defaults().get("notify", "desktop")),
+        })
+    return results
+
+
+def serialize_alert_rule(rule):
+    """Rule as the web returns it: stored fields plus resolved interval."""
+    return {
+        "symbol": rule["symbol"],
+        "type": rule.get("type", "drop_from_close"),
+        "threshold": rule["threshold"],
+        "interval": _resolve_interval(rule),
+        "tags": rule.get("tags", []),
+        "notify": rule.get("notify", _get_alert_defaults().get("notify", "desktop")),
+        "enabled": rule.get("enabled", True),
+    }
+
+
+def upsert_alert_rule(symbol, threshold, tags=None, notify=None,
+                      interval=None, replace=False):
+    """Add (or replace) an alert rule. Shared by the CLI add and the web.
+
+    Validates: threshold must be a number > 0; the symbol must be a
+    tracked commodity (the CLI's interactive add offers to register an
+    untracked symbol; the web and CLI batch mode have no interactive
+    step, so they refuse instead). An existing rule is replaced only
+    when replace=True, otherwise ValueError. Returns (rule, replaced).
+    """
+    if isinstance(threshold, bool) or threshold is None:
+        raise ValueError(f"Invalid threshold: {threshold!r}")
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid threshold: {threshold!r}")
+    if threshold <= 0:
+        raise ValueError(f"Threshold must be positive, got {threshold}")
+
+    symbol = str(symbol).strip()
+    if not _find_commodity_entry(symbol):
+        raise ValueError(f"'{symbol}' is not tracked as a commodity")
+
+    alerts = _get_alerts_config()
+    if not alerts:
+        alerts = {"defaults": {"interval": "5m", "source": "yfinance",
+                               "notify": "desktop"}, "rules": []}
+    if "rules" not in alerts:
+        alerts["rules"] = []
+
+    existing_idx = None
+    for idx, r in enumerate(alerts["rules"]):
+        if r["symbol"].upper() == symbol.upper():
+            existing_idx = idx
+            break
+    if existing_idx is not None and not replace:
+        raise ValueError(f"Alert for '{symbol}' already exists")
+
+    rule = {
+        "symbol": symbol,
+        "type": "drop_from_close",
+        "threshold": threshold,
+        "enabled": True,
+    }
+    if tags:
+        rule["tags"] = list(tags)
+    if interval:
+        rule["interval"] = interval
+    if notify is not None and notify != _get_alert_defaults().get("notify", "desktop"):
+        rule["notify"] = notify
+
+    if existing_idx is not None:
+        alerts["rules"][existing_idx] = rule
+    else:
+        alerts["rules"].append(rule)
+    _save_alerts_config(alerts)
+    return rule, existing_idx is not None
+
+
+def remove_alert_rule(symbol):
+    """Remove the alert rule for a symbol. Returns True if one existed."""
+    rules = _get_alert_rules()
+    kept = [r for r in rules if r["symbol"].upper() != symbol.upper()]
+    if len(kept) == len(rules):
+        return False
+    alerts = _get_alerts_config()
+    alerts["rules"] = kept
+    _save_alerts_config(alerts)
+    return True
+
+
 # ─── Alert Commands ───────────────────────────────────────────────────────────
 
 def cmd_alert_add(flags, args):
@@ -2051,43 +2504,17 @@ def cmd_alert_add(flags, args):
     if notify is None:
         notify = _get_alert_defaults().get('notify', 'desktop')
 
-    # Build rule
-    rule = {
-        'symbol': symbol,
-        'type': 'drop_from_close',
-        'threshold': threshold,
-        'enabled': True,
-    }
-    if tags:
-        rule['tags'] = tags
-    if interval:
-        rule['interval'] = interval
-    if notify != _get_alert_defaults().get('notify', 'desktop'):
-        rule['notify'] = notify
-
-    # Save to config
-    alerts = _get_alerts_config()
-    if not alerts:
-        alerts = {'defaults': {'interval': '5m', 'source': 'yfinance', 'notify': 'desktop'}, 'rules': []}
-    if 'rules' not in alerts:
-        alerts['rules'] = []
-
-    # Check for existing rule on same symbol
-    existing_idx = None
-    for idx, r in enumerate(alerts['rules']):
-        if r['symbol'].upper() == symbol.upper():
-            existing_idx = idx
-            break
-
-    if existing_idx is not None:
-        if not flags.get('batch') and not confirm(f"  Alert for '{symbol}' already exists. Replace?", default_yes=False):
+    # Save via the shared upsert (same validation + save path as the web).
+    existing = any(r["symbol"].upper() == symbol.upper()
+                   for r in _get_alert_rules())
+    if existing:
+        if not flags.get("batch") and not confirm(
+                f"  Alert for '{symbol}' already exists. Replace?",
+                default_yes=False):
             print("  Cancelled.")
             return
-        alerts['rules'][existing_idx] = rule
-    else:
-        alerts['rules'].append(rule)
-
-    _save_alerts_config(alerts)
+    upsert_alert_rule(symbol, threshold, tags=tags or None,
+                      notify=notify, interval=interval, replace=True)
     tag_str = f" [{', '.join(tags)}]" if tags else ""
     print(f"\n  ✓ Alert added: {symbol} drops ≥ {threshold}%{tag_str}")
     print(f"  Run 'pair market alert check' to test it.\n")
@@ -2201,15 +2628,9 @@ def cmd_alert_remove(flags, args):
                 symbol = raw
                 break
 
-    before = len(rules)
-    rules = [r for r in rules if r['symbol'].upper() != symbol.upper()]
-    if len(rules) == before:
+    if not remove_alert_rule(symbol):
         print(f"\n  No alert for '{symbol}' found.\n")
         return
-
-    alerts = _get_alerts_config()
-    alerts['rules'] = rules
-    _save_alerts_config(alerts)
     print(f"\n  ✓ Removed alert for '{symbol}'.\n")
 
 
@@ -2269,48 +2690,40 @@ def cmd_alert_check(flags, args):
 
 
 def _alert_check_once(flags, rules, entity):
-    """Run a single alert check pass."""
+    """Run a single alert check pass. Prints from evaluate_alerts results —
+    the evaluation itself (previous close vs live price) is shared with
+    the web check endpoint, so the two can never drift apart."""
     from datetime import datetime
 
     now = datetime.now()
     print(f"\n  [{entity}] Price Alert Check — {now.strftime('%Y-%m-%d %H:%M')}\n")
 
+    results = evaluate_alerts(rules)
     triggered = 0
     errors = 0
 
-    for rule in rules:
-        symbol = rule['symbol']
-        threshold = rule['threshold']
-
-        close_price, close_date = _get_previous_close(symbol)
-        if close_price is None:
+    for result in results:
+        symbol = result["symbol"]
+        threshold = result["threshold"]
+        if result["status"] == "no_close":
             print(f"  ? {symbol:<12} no previous close found in prices.journal")
             errors += 1
             continue
-
-        commodity = _find_commodity_entry(symbol)
-        if not commodity:
-            commodity = {'symbol': symbol, 'fetch_pair': symbol, 'currency': 'CAD'}
-
-        live_price = _get_live_price(commodity)
-        if live_price is None:
+        if result["status"] == "no_live_price":
             print(f"  ? {symbol:<12} could not fetch live price")
             errors += 1
             continue
 
-        if close_price > 0:
-            pct_change = ((close_price - live_price) / close_price) * 100
-        else:
-            pct_change = 0.0
-
-        notify_method = rule.get('notify', _get_alert_defaults().get('notify', 'desktop'))
-
-        if pct_change >= threshold:
-            _notify_alert(rule, close_price, live_price, pct_change, notify_method)
+        close_price = result["close_price"]
+        live_price = result["live_price"]
+        pct_drop = result["pct_drop"]
+        if result["triggered"]:
+            _notify_alert({"symbol": symbol, "threshold": threshold},
+                          close_price, live_price, pct_drop, result["notify"])
             triggered += 1
         else:
-            direction = "▼" if pct_change > 0 else "▲"
-            abs_change = abs(pct_change)
+            direction = "▼" if pct_drop > 0 else "▲"
+            abs_change = abs(pct_drop)
             print(f"  ✓ {symbol:<12} close: ${close_price:,.2f}   now: ${live_price:,.2f}   "
                   f"{direction} {abs_change:.2f}%   OK (threshold: {threshold}%)")
 

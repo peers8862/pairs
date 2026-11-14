@@ -10,7 +10,7 @@ from lib.helpers import (
     validate_positive_number, expand_path, parse_global_flags
 )
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, get_generated_dir
+    build_tags, format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -169,11 +169,7 @@ def cmd_remit(flags, args):
         (bank, currency, float(-amount)),
     ]
 
-    tags = {
-        'pair': '1000',
-        'remittance': 'hst',
-        'period': period_desc,
-    }
+    tags = build_tags('1000', remittance='hst', period=period_desc)
 
     description = f"Tax remittance: HST {period_desc}"
     entry = format_entry(remit_date, description, postings, tags)

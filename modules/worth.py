@@ -45,6 +45,10 @@ Flags:
   --quarterly         Show quarter-by-quarter change
   --detail            Show full account tree
   --division <div>    Filter by division
+  --cost              Value holdings at cost (converted to entity currency)
+  --value=now         Value holdings at current market prices (converted
+                      to entity currency); holdings with no price are
+                      omitted and listed in a note
   --raw               Direct hledger bs output
 """)
 
@@ -64,6 +68,7 @@ def cmd_worth(flags, args):
     show_detail = False
     show_raw = False
     division_filter = None
+    value_mode = None  # None (as recorded) | 'cost' | 'now'  (I75)
 
     for i, a in enumerate(args):
         if a == '--period' and i + 1 < len(args):
@@ -78,27 +83,58 @@ def cmd_worth(flags, args):
             show_raw = True
         elif a == '--division' and i + 1 < len(args):
             division_filter = args[i + 1]
+        elif a == '--cost':
+            if value_mode is not None:
+                print("  --cost and --value=now cannot be combined.")
+                sys.exit(1)
+            value_mode = 'cost'
+        elif a.startswith('--value='):
+            mode = a.split('=', 1)[1]
+            if mode != 'now':
+                print("  Only --value=now is supported.")
+                sys.exit(1)
+            if value_mode is not None:
+                print("  --cost and --value=now cannot be combined.")
+                sys.exit(1)
+            value_mode = 'now'
+        elif a == '--value' and i + 1 < len(args):
+            if args[i + 1] == 'now':
+                if value_mode is not None:
+                    print("  --cost and --value=now cannot be combined.")
+                    sys.exit(1)
+                value_mode = 'now'
+            else:
+                print("  Only --value=now is supported.")
+                sys.exit(1)
 
     # If hledger is available and journals exist, use hledger
     journal_file = config.get('journal_file')
     hledger_available = _check_hledger() and journal_file
 
     if show_raw and hledger_available:
-        _run_hledger_bs(config, period_end)
+        _run_hledger_bs(config, period_end, value_mode)
         return
 
     if show_monthly or show_quarterly:
-        _show_periodic(config, 'monthly' if show_monthly else 'quarterly', period_end)
+        _show_periodic(config, 'monthly' if show_monthly else 'quarterly',
+                       period_end, value_mode)
         return
 
     # Compute from YAML data (works without hledger)
     assets_data = _compute_assets(division_filter=division_filter)
     liabilities_data = _compute_liabilities(division_filter=division_filter)
 
-    # Also try hledger for current assets (bank balances, receivables)
+    # Also try hledger for current assets (bank balances, receivables),
+    # investments, and liabilities not tracked in YAML.
     current_assets_hledger = {}
+    investments_hledger = {}
+    skipped = []
     if hledger_available:
-        current_assets_hledger = _query_current_assets(config, period_end, division_filter=division_filter)
+        current_assets_hledger, skipped = _query_balances(
+            config, 'Assets:Current', period_end, division_filter, value_mode)
+        investments_hledger, inv_skipped = _query_balances(
+            config, 'Assets:Investments', period_end, division_filter, value_mode)
+        skipped += inv_skipped
 
     # Render report
     as_of = period_end or date.today().strftime("%Y-%m-%d")
@@ -107,6 +143,10 @@ def cmd_worth(flags, args):
     print("══════════════════════════════════════════════════════════════")
     print(f"  Entity Net Worth — {entity_name}")
     print(f"  As of {as_of}")
+    if value_mode == 'cost':
+        print("  Valued at cost")
+    elif value_mode == 'now':
+        print("  Valued at current prices (now)")
     print("══════════════════════════════════════════════════════════════")
     print()
 
@@ -125,6 +165,20 @@ def cmd_worth(flags, args):
             print(f"    {short_name:<40} {currency} {balance:>12,.2f}")
         print(f"                                             {'─' * 16}")
         print(f"    {'Total Current Assets':<40} {currency} {total_current:>12,.2f}")
+        print()
+
+    # Investments (from hledger). Only valued rows appear: without a
+    # valuation flag commodity quantities have no number to show, so the
+    # section stays hidden and the default report is unchanged (I75).
+    total_investments = Decimal('0')
+    if investments_hledger:
+        print("  Investments")
+        for account, balance in sorted(investments_hledger.items()):
+            short_name = account.split(':')[-1]
+            total_investments += balance
+            print(f"    {short_name:<40} {currency} {balance:>12,.2f}")
+        print(f"                                             {'─' * 16}")
+        print(f"    {'Total Investments':<40} {currency} {total_investments:>12,.2f}")
         print()
 
     # Fixed assets (from YAML)
@@ -148,7 +202,7 @@ def cmd_worth(flags, args):
         print(f"    {'Total Fixed Assets':<40} {currency} {total_fixed:>12,.2f}")
         print()
 
-    total_assets = total_current + total_fixed
+    total_assets = total_current + total_investments + total_fixed
     print(f"                                             {'─' * 16}")
     print(f"  {'TOTAL ASSETS':<42} {currency} {total_assets:>12,.2f}")
     print()
@@ -186,7 +240,9 @@ def cmd_worth(flags, args):
     # Add hledger liabilities (payables, HST, etc.) if available
     hledger_liabilities = {}
     if hledger_available:
-        hledger_liabilities = _query_hledger_liabilities(config, period_end, division_filter=division_filter)
+        hledger_liabilities, liab_skipped = _query_balances(
+            config, 'Liabilities', period_end, division_filter, value_mode)
+        skipped += liab_skipped
         if hledger_liabilities:
             # Don't double-count liabilities already in YAML
             yaml_accounts = {liab.get('account', '') for liab in liabilities_data}
@@ -201,6 +257,14 @@ def cmd_worth(flags, args):
     print()
     print()
 
+    # Holdings with no price to convert them are omitted from a valuation
+    # (I75); name them so the omission is visible, not silent.
+    if value_mode and skipped:
+        print("  Note: No price available — omitted from this valuation:")
+        for acct in sorted(set(skipped)):
+            print(f"    {acct}")
+        print()
+
     # ─── Net Worth ───
     net_worth = total_assets - total_liabilities
     print("  ══════════════════════════════════════════════════════════")
@@ -211,7 +275,7 @@ def cmd_worth(flags, args):
 
 # ─── Periodic trend ──────────────────────────────────────────────────────────
 
-def _show_periodic(config, frequency, period_end):
+def _show_periodic(config, frequency, period_end, value=None):
     """Show net worth trend over time."""
     entity_name = config.get('pair', {}).get('name', 'Entity')
     currency = config.get('pair', {}).get('currency', 'CAD')
@@ -232,6 +296,7 @@ def _show_periodic(config, frequency, period_end):
     ]
     if period_end:
         cmd += ['-e', period_end]
+    cmd += _value_flags(value, currency)
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -404,57 +469,57 @@ def _check_hledger():
         return False
 
 
-def _query_current_assets(config, period_end=None, division_filter=None):
-    """Query hledger for current asset balances."""
+def _value_flags(value, currency):
+    """hledger flags for a valuation mode (I75).
+
+    None → [] (amounts as recorded). 'cost' → cost basis, 'now' → current
+    market prices. Both convert to the entity currency with -X so the
+    report total stays single-currency; without -X a valued holding stays
+    in its price currency and the total would mix commodities.
+    """
+    if value == 'cost':
+        return ['--cost', '-X', currency]
+    if value == 'now':
+        return ['--value=now', '-X', currency]
+    return []
+
+
+def _query_balances(config, accounts, period_end=None, division_filter=None,
+                    value=None):
+    """Query hledger for balances under `accounts` (e.g. 'Assets:Current').
+
+    Returns ({account: Decimal}, [skipped accounts]). `value` is None (as
+    recorded), 'cost' or 'now' (see _value_flags). Amounts with no price
+    to convert them (e.g. a holding with no P line under --value=now) come
+    back as commodity quantities, have no number to parse, and are
+    reported in the skipped list rather than silently dropped.
+    """
     journal_file = config.get('journal_file')
     if not journal_file:
-        return {}
+        return {}, []
 
     journal_path = str(expand_path(journal_file))
+    currency = config.get('pair', {}).get('currency', 'CAD')
     cmd = [
         'hledger', '-f', journal_path, 'bal',
-        'Assets:Current', '--no-total', '--output-format=csv'
+        accounts, '--no-total', '--output-format=csv'
     ]
     if period_end:
         cmd += ['-e', period_end]
     if division_filter:
         cmd += [f'tag:division={division_filter}']
+    cmd += _value_flags(value, currency)
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            return {}
+            return {}, []
         return _parse_hledger_csv(result.stdout)
     except (FileNotFoundError, OSError):
-        return {}
+        return {}, []
 
 
-def _query_hledger_liabilities(config, period_end=None, division_filter=None):
-    """Query hledger for liability balances not tracked in YAML."""
-    journal_file = config.get('journal_file')
-    if not journal_file:
-        return {}
-
-    journal_path = str(expand_path(journal_file))
-    cmd = [
-        'hledger', '-f', journal_path, 'bal',
-        'Liabilities', '--no-total', '--output-format=csv'
-    ]
-    if period_end:
-        cmd += ['-e', period_end]
-    if division_filter:
-        cmd += [f'tag:division={division_filter}']
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            return {}
-        return _parse_hledger_csv(result.stdout)
-    except (FileNotFoundError, OSError):
-        return {}
-
-
-def _run_hledger_bs(config, period_end=None):
+def _run_hledger_bs(config, period_end=None, value=None):
     """Run hledger bs directly (--raw mode)."""
     journal_file = config.get('journal_file')
     if not journal_file:
@@ -462,9 +527,11 @@ def _run_hledger_bs(config, period_end=None):
         return
 
     journal_path = str(expand_path(journal_file))
+    currency = config.get('pair', {}).get('currency', 'CAD')
     cmd = ['hledger', '-f', journal_path, 'bs']
     if period_end:
         cmd += ['-e', period_end]
+    cmd += _value_flags(value, currency)
 
     try:
         result = subprocess.run(cmd)
@@ -473,13 +540,19 @@ def _run_hledger_bs(config, period_end=None):
 
 
 def _parse_hledger_csv(csv_output):
-    """Parse hledger CSV balance output into {account: Decimal} dict."""
+    """Parse hledger CSV balance output.
+
+    Returns ({account: Decimal}, [skipped accounts]). A row whose balance
+    is a commodity quantity (e.g. "10 TSLA") has no number to parse and is
+    skipped — the account is named so callers can say so.
+    """
     import csv
     from io import StringIO
 
     result = {}
+    skipped = []
     if not csv_output.strip():
-        return result
+        return result, skipped
 
     reader = csv.reader(StringIO(csv_output))
     header = next(reader, None)  # skip header row
@@ -497,9 +570,9 @@ def _parse_hledger_csv(csv_output):
             try:
                 result[account] = Decimal(balance_str)
             except Exception:
-                pass
+                skipped.append(account)
 
-    return result
+    return result, skipped
 
 
 # ─── Subcommands ─────────────────────────────────────────────────────────────
