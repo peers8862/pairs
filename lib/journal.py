@@ -164,6 +164,24 @@ def ensure_generated_include(year, filename):
 
 # ─── Journal entry formatting ────────────────────────────────────────────────
 
+def require_single_line(value, field):
+    """Reject CR/LF in a value interpolated into a one-line journal field.
+
+    A newline in a description or account name lets a caller smuggle extra
+    postings — or a whole second transaction — into the journal file.
+    hledger's own validation does NOT catch this: an amount-less forged
+    posting is inferred and balances, and a forged transaction parses
+    cleanly (verified against hledger 1.52.1). So the formatters refuse
+    multi-line values outright instead of stripping them — stripping would
+    silently alter the entry and hide the attempt. Legitimate values are
+    always single-line: descriptions, account names and tags are one line
+    in hledger journal syntax.
+    """
+    text = value if isinstance(value, str) else str(value)
+    if "\r" in text or "\n" in text:
+        raise ValueError(f"{field} must not contain line breaks")
+
+
 def format_entry(date, description, postings, tags=None):
     """Format a single hledger journal entry.
 
@@ -176,6 +194,13 @@ def format_entry(date, description, postings, tags=None):
     Returns:
         str: formatted journal entry with trailing newline
     """
+    require_single_line(date, "date")
+    require_single_line(description, "description")
+    if tags:
+        for k, v in tags.items():
+            require_single_line(k, "tag name")
+            require_single_line(v, "tag value")
+
     tag_str = ""
     if tags:
         pairs = [f"{k}:{v}" for k, v in tags.items()]
@@ -184,6 +209,7 @@ def format_entry(date, description, postings, tags=None):
     lines = [f"{date} * {description}{tag_str}"]
 
     for account, currency, amount in postings:
+        require_single_line(account, "account")
         # Right-align amount at column 56
         amount_str = f"{currency} {amount:.2f}" if amount >= 0 else f"{currency} {amount:.2f}"
         padding = max(1, 52 - len(account))
@@ -218,6 +244,13 @@ def format_commodity_entry(date, description, commodity_posting, cash_postings, 
     Returns:
         str: formatted journal entry with trailing newline
     """
+    require_single_line(date, "date")
+    require_single_line(description, "description")
+    if tags:
+        for k, v in tags.items():
+            require_single_line(k, "tag name")
+            require_single_line(v, "tag value")
+
     tag_str = ""
     if tags:
         pairs = [f"{k}:{v}" for k, v in tags.items()]
@@ -226,11 +259,14 @@ def format_commodity_entry(date, description, commodity_posting, cash_postings, 
     lines = [f"{date} * {description}{tag_str}"]
 
     account, quantity, symbol, total_currency, total_cost = commodity_posting
+    require_single_line(account, "account")
+    require_single_line(symbol, "symbol")
     amount_str = f"{format_quantity(quantity)} {symbol} @@ {total_currency} {total_cost:.2f}"
     padding = max(1, 52 - len(account))
     lines.append(f"    {account}{' ' * padding}{amount_str}")
 
     for acct, currency, amount in cash_postings:
+        require_single_line(acct, "account")
         amount_str = f"{currency} {amount:.2f}"
         padding = max(1, 52 - len(acct))
         lines.append(f"    {acct}{' ' * padding}{amount_str}")

@@ -7,8 +7,9 @@ and are not permissible here.
 
 import re
 import subprocess
+import sys
 
-from lib.journal import format_commodity_entry, format_quantity
+from lib.journal import build_tags, format_commodity_entry, format_quantity
 
 
 class InsufficientHoldingError(Exception):
@@ -123,10 +124,17 @@ def build_buy_entry(date, symbol, qty, unit_price, quote_currency, fx, fee,
     denominated in CAD by construction and FX stays out of the basis.
     Commission is folded into the total per CRA treatment.
     """
+    err = validate_trade_date(date)
+    if err:
+        raise ValueError(f"Invalid date: {date!r}. {err}")
     if qty <= 0:
         raise ValueError(f"Quantity must be positive, got {qty}")
     if unit_price <= 0:
         raise ValueError(f"Price must be positive, got {unit_price}")
+    if fee < 0:
+        raise ValueError(f"Fee must not be negative, got {fee}")
+    if fx <= 0:
+        raise ValueError(f"FX rate must be positive, got {fx}")
     if tax_account.lower() not in TAX_ACCOUNTS:
         raise ValueError(
             f"Invalid tax account '{tax_account}'. Valid: {', '.join(TAX_ACCOUNTS)}"
@@ -134,7 +142,7 @@ def build_buy_entry(date, symbol, qty, unit_price, quote_currency, fx, fee,
 
     total = round(qty * unit_price * fx + fee, 2)
 
-    tags = {'pair': '1011', 'price': f"{unit_price:.2f}", 'fee': f"{fee:.2f}"}
+    tags = build_tags('1011', price=f"{unit_price:.2f}", fee=f"{fee:.2f}")
     if quote_currency != entity_currency:
         tags['fx'] = f"{fx:g}"
 
@@ -159,19 +167,32 @@ def build_sell_entry(date, symbol, qty, unit_price, fee, tax_account,
     balance; keeping it in its own account is what lets tax reporting exclude
     it without breaking double-entry.
     """
+    err = validate_trade_date(date)
+    if err:
+        raise ValueError(f"Invalid date: {date!r}. {err}")
     if qty <= 0:
         raise ValueError(f"Quantity must be positive, got {qty}")
+    if unit_price <= 0:
+        raise ValueError(f"Price must be positive, got {unit_price}")
+    if fee < 0:
+        raise ValueError(f"Fee must not be negative, got {fee}")
     if tax_account.lower() not in TAX_ACCOUNTS:
         raise ValueError(
             f"Invalid tax account '{tax_account}'. Valid: {', '.join(TAX_ACCOUNTS)}"
         )
 
     held_qty, _, average = compute_acb_from_events(events)
-    if qty > held_qty:
+    if qty > held_qty + _EPSILON:
         raise InsufficientHoldingError(
             f"Cannot sell {format_quantity(qty)} {symbol}; "
             f"only {format_quantity(held_qty)} held in {tax_account}"
         )
+    if held_qty > 0 and qty > held_qty:
+        # Within _EPSILON of the holding: float dust from replaying
+        # fractional buys (e.g. ten 0.1 buys sum to 0.9999999999999999, not
+        # 1.0). A full disposal is a full disposal — book exactly what is
+        # held, mirroring compute_acb_from_events' dust-snapping.
+        qty = held_qty
 
     basis = round(qty * average, 2)
     proceeds = round(qty * unit_price - fee, 2)
@@ -187,7 +208,7 @@ def build_sell_entry(date, symbol, qty, unit_price, fee, tax_account,
         target = registered_gains_account if registered else gains_account
         cash_postings.append((target, entity_currency, -gain))
 
-    tags = {'pair': pair, 'acb_per_unit': f"{average:.4f}", 'fee': f"{fee:.2f}"}
+    tags = build_tags(pair, acb_per_unit=f"{average:.4f}", fee=f"{fee:.2f}")
 
     description = f"Sell {symbol} | {format_quantity(qty)} units"
     return format_commodity_entry(
@@ -201,12 +222,30 @@ def build_sell_entry(date, symbol, qty, unit_price, fee, tax_account,
 from datetime import date as _date
 
 from lib.helpers import (
-    load_config, prompt, validate_positive_number,
+    load_config, prompt, validate_date, validate_positive_number,
 )
 from lib.journal import (
     append_journal, ensure_year_structure, ensure_generated_include, get_generated_dir,
 )
 from lib.ui import get_entity_currency, get_entity_journal
+
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def validate_trade_date(value):
+    """Strict YYYY-MM-DD check for trade dates. Returns an error string or None.
+
+    lib.helpers.validate_date uses strptime, which accepts "2026-7-20" and
+    would let a non-canonical date into the journal; the regex pins the
+    zero-padded shape first and strptime then checks it is a real calendar
+    date (so 2026-13-45, 2026-02-30 and 2026/07/20 are all rejected).
+    Shared by the builders, _resolve_common and the web endpoints so the
+    rule is stated once.
+    """
+    if not isinstance(value, str) or not _DATE_RE.match(value):
+        return "Must be YYYY-MM-DD format."
+    return validate_date(value)
 
 
 def _to_number(raw, label):
@@ -254,8 +293,13 @@ def _resolve_common(opts, commodity):
     fee = _to_number(opts.get('fee', 0) or 0, 'fee')
     if fee is None:
         return None
+    date_str = opts.get('date') or _date.today().strftime('%Y-%m-%d')
+    err = validate_trade_date(date_str)
+    if err:
+        print(f"\n  Invalid date: {date_str!r}. {err}\n")
+        return None
     return {
-        'date': opts.get('date') or _date.today().strftime('%Y-%m-%d'),
+        'date': date_str,
         'tax_account': tax_account,
         'cash_account': (opts.get('cash')
                          or accounts.get('bank', 'Assets:Current:Chequing')),
@@ -299,26 +343,30 @@ def cmd_buy(flags, args):
     commodity, _ = _find_commodity(symbol)
     if commodity is None:
         print(f"\n  '{symbol}' is not tracked. Add it first: pair market add {symbol}\n")
-        return
+        sys.exit(1)
     symbol = commodity['symbol']
 
-    common = _resolve_common(opts, commodity)
+    try:
+        common = _resolve_common(opts, commodity)
+    except ValueError as e:
+        print(f"\n  {e}\n")
+        sys.exit(1)
     if common is None:
-        return
+        sys.exit(1)
     entity_currency = get_entity_currency()
     quote_currency = commodity.get('currency', entity_currency)
 
     if opts.get('qty'):
         qty = _to_number(opts['qty'], 'quantity')
         if qty is None:
-            return
+            sys.exit(1)
     else:
         qty = float(prompt("  Quantity", validator=validate_positive_number))
 
     if opts.get('price'):
         unit_price = _to_number(opts['price'], 'price')
         if unit_price is None:
-            return
+            sys.exit(1)
     else:
         unit_price = float(prompt(
             f"  Unit price ({quote_currency})", validator=validate_positive_number))
@@ -328,12 +376,16 @@ def cmd_buy(flags, args):
         fx = float(prompt(f"  FX rate {quote_currency}->{entity_currency}",
                           validator=validate_positive_number))
 
-    entry = build_buy_entry(
-        date=common['date'], symbol=symbol, qty=qty, unit_price=unit_price,
-        quote_currency=quote_currency, fx=fx, fee=common['fee'],
-        tax_account=common['tax_account'], cash_account=common['cash_account'],
-        entity_currency=entity_currency,
-    )
+    try:
+        entry = build_buy_entry(
+            date=common['date'], symbol=symbol, qty=qty, unit_price=unit_price,
+            quote_currency=quote_currency, fx=fx, fee=common['fee'],
+            tax_account=common['tax_account'], cash_account=common['cash_account'],
+            entity_currency=entity_currency,
+        )
+    except ValueError as e:
+        print(f"\n  {e}\n")
+        sys.exit(1)
     _write(entry, common['date'], f"Buy {format_quantity(qty)} {symbol}")
 
 
@@ -346,25 +398,29 @@ def cmd_sell(flags, args):
     commodity, _ = _find_commodity(symbol)
     if commodity is None:
         print(f"\n  '{symbol}' is not tracked.\n")
-        return
+        sys.exit(1)
     symbol = commodity['symbol']
 
-    common = _resolve_common(opts, commodity)
+    try:
+        common = _resolve_common(opts, commodity)
+    except ValueError as e:
+        print(f"\n  {e}\n")
+        sys.exit(1)
     if common is None:
-        return
+        sys.exit(1)
     entity_currency = get_entity_currency()
 
     if opts.get('qty'):
         qty = _to_number(opts['qty'], 'quantity')
         if qty is None:
-            return
+            sys.exit(1)
     else:
         qty = float(prompt("  Quantity", validator=validate_positive_number))
 
     if opts.get('price'):
         unit_price = _to_number(opts['price'], 'price')
         if unit_price is None:
-            return
+            sys.exit(1)
     else:
         unit_price = float(prompt(
             f"  Unit price ({entity_currency})", validator=validate_positive_number))
@@ -382,7 +438,10 @@ def cmd_sell(flags, args):
         )
     except InsufficientHoldingError as e:
         print(f"\n  {e}\n")
-        return
+        sys.exit(1)
+    except ValueError as e:
+        print(f"\n  {e}\n")
+        sys.exit(1)
 
     _write(entry, common['date'], f"Sell {format_quantity(qty)} {symbol}")
     if (common['tax_account'] in REGISTERED_ACCOUNTS

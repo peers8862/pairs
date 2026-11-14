@@ -30,7 +30,7 @@ from lib.helpers import (
 )
 from lib.ui import get_entity_journal, get_entity_name, require_entity
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, get_generated_dir
+    build_tags, format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -395,7 +395,7 @@ def cmd_dot(args):
         (credit_account, currency, float(-amount)),
     ]
 
-    tags = {'mode': 'link', 'pair': str(pair['num']), 'expr': expr}
+    tags = build_tags(str(pair['num']), mode='link', expr=expr)
     if reversal:
         tags['reversal'] = 'true'
 

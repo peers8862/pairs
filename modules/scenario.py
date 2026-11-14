@@ -24,7 +24,7 @@ from lib.helpers import (
     validate_slug, validate_date, validate_positive_number,
     parse_global_flags, get_entity_dir, get_active_entity, expand_path,
 )
-from lib.journal import format_entry
+from lib.journal import build_tags, format_entry
 from modules.expense import CATEGORIES, CATEGORY_ACCOUNTS, PAYMENT_METHODS
 
 
@@ -109,7 +109,7 @@ def build_scenario_entries(slug, start, description, account, amount,
     """Journal entries for one scenario item. An Income/Revenue account makes
     it revenue (money in to source_account); otherwise it is an expense."""
     value = float(money(amount))
-    tags = {'pair': pair, 'scenario': slug}
+    tags = build_tags(pair, scenario=slug)
     if category:
         tags['category'] = category
     if every != 'monthly' or months:
@@ -420,9 +420,65 @@ def remove_rule(slug, rule_id, config=None):
     save_rules(slug, kept, config)
 
 
-def scenario_monthly(slug, config=None):
+def _rule_drivers(slug, meta=None, _seen=None):
+    """{rule id: driver} for a scenario and the scenarios it layers on.
+
+    Layered rule ids are prefixed with the layer slug, matching
+    scenario_occurrences. Growth-model occurrences are not rules, so they
+    have no entry here — hire delay never touches them.
+    """
+    seen = set(_seen or ()) | {slug}
+    meta = meta if meta is not None else (load_scenario(slug) or {})
+    drivers = {r.get('id', ''): r.get('driver', 'fixed') for r in meta.get('rules') or []}
+    for layer in meta.get('layers') or []:
+        if layer in seen or load_scenario(layer) is None:
+            continue
+        for rid, driver in _rule_drivers(layer, None, seen).items():
+            drivers[f"{layer}/{rid}"] = driver
+    return drivers
+
+
+def _shift_occurrences(occurrences, drivers, hire_delay, revenue_shift):
+    """Move salary-driver occurrences later by hire_delay months and revenue
+    occurrences later by revenue_shift months.
+
+    Percent-rule amounts were computed from same-month revenue during
+    expansion, so they stay where they were computed; manual entries are not
+    occurrences and are not shifted either.
+    """
+    out = []
+    for o in occurrences:
+        months = 0
+        if o['kind'] == 'revenue' and revenue_shift:
+            months = revenue_shift
+        elif drivers.get(o['rule']) == 'salary' and hire_delay:
+            months = hire_delay
+        if months:
+            d = o['date']
+            o = {**o, 'date': step_month(d, months, d.day)}
+        out.append(o)
+    return sorted(out, key=lambda o: (o['date'], o['rule']))
+
+
+def _whatif_months(value, name):
+    """A what-if delay as a whole number of months (0 or more)."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'{name} must be a whole number of months')
+    if Decimal(str(value)) != n or n < 0:
+        raise ValueError(f'{name} must be a whole number of months, 0 or more')
+    return n
+
+
+def scenario_monthly(slug, config=None, whatif=None):
     """Planned amounts by month: ({YYYY-MM: {revenue, expense, funding}},
-    {YYYY-MM: {account: expense}}) from rules and manual entries."""
+    {YYYY-MM: {account: expense}}) from rules and manual entries.
+
+    whatif  {'hire_delay': months, 'revenue_shift': months} — a preview-only
+            shift of the dated occurrences before they are totalled; the saved
+            scenario is never touched. See _shift_occurrences for the limits.
+    """
     from lib.plan_rules import month_key
     months, by_account = {}, {}
 
@@ -434,7 +490,14 @@ def scenario_monthly(slug, config=None):
             a = by_account.setdefault(month, {})
             a[account] = a.get(account, Decimal('0')) + amount
 
-    for o in scenario_occurrences(slug):
+    whatif = whatif or {}
+    hire_delay = _whatif_months(whatif.get('hire_delay', 0), 'hire_delay')
+    revenue_shift = _whatif_months(whatif.get('revenue_shift', 0), 'revenue_shift')
+    occurrences = scenario_occurrences(slug)
+    if hire_delay or revenue_shift:
+        occurrences = _shift_occurrences(occurrences, _rule_drivers(slug),
+                                         hire_delay, revenue_shift)
+    for o in occurrences:
         add(month_key(o['date']), o['kind'], o['account'], o['amount'])
     for e in read_entries(slug):
         add(e['date'][:7], e['kind'], e['account'], e['amount'])
@@ -606,7 +669,7 @@ Rule flags ('rule add'):
   --step DATE=AMOUNT  step: new amount from DATE (repeatable)
   --percent F         percent: share of revenue (0.029 = 2.9%)
   --of RULE           percent: of another rule's amount instead of revenue
-  --units N --price P [--unit-growth F] [--unit-cost C]   units: units x price (+ cost)
+  --units N --price P [--unit-growth F] [--retention F] [--unit-cost C]   units: units x price (+ cost)
   --salary N [--benefits F] [--raise F] [--setup-cost N]  salary: a hire
   --instrument I      funding: equity | safe | note | debt | grant
   --account ACCOUNT   Account (defaults by kind) ; --category NAME
@@ -864,12 +927,12 @@ RULE_FLAGS = {
     '--name': 'name', '--kind': 'kind', '--driver': 'driver', '--account': 'account',
     '--category': 'category', '--amount': 'amount', '--rate': 'rate', '--percent': 'percent',
     '--of': 'of', '--units': 'units', '--price': 'price', '--unit-growth': 'unit_growth',
-    '--unit-cost': 'unit_cost', '--salary': 'salary', '--benefits': 'benefits',
+    '--retention': 'retention', '--unit-cost': 'unit_cost', '--salary': 'salary', '--benefits': 'benefits',
     '--raise': 'raise', '--setup-cost': 'setup_cost', '--instrument': 'instrument',
     '--start': 'start', '--every': 'every', '--end': 'end', '--months': 'months',
     '--repeat': 'repeat', '--round': 'round',
 }
-NUMERIC = {'amount', 'rate', 'percent', 'units', 'price', 'unit_growth', 'unit_cost', 'salary',
+NUMERIC = {'amount', 'rate', 'percent', 'units', 'price', 'unit_growth', 'retention', 'unit_cost', 'salary',
            'benefits', 'raise', 'setup_cost'}
 
 

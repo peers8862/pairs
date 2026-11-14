@@ -11,7 +11,11 @@ from lib.runway import add_months, months_between, month_key
 
 
 def ledger_series(config):
-    """{query: {YYYY-MM: Decimal}} for ledger metrics: revenue, expenses, cogs, cash."""
+    """{query: {YYYY-MM: Decimal}} for ledger metrics: revenue, expenses, cogs, cash.
+
+    acquisition_spend is fed only when cac_allocation is configured (I52):
+    the allocated share of each month's expenses, by report category.
+    """
     from lib.runway import actual_months, _tidy
     journal = config.get('journal_file')
     journal = expand_path(journal) if journal else None
@@ -34,6 +38,13 @@ def ledger_series(config):
                     out['cogs'][k] = out['cogs'].get(k, Decimal('0')) + Decimal(r['value'].replace(',', ''))
         except RuntimeError:
             pass
+    try:
+        from lib.cac import monthly_acquisition_spend
+        spend = monthly_acquisition_spend(journal, config, currency)
+        if spend:
+            out['acquisition_spend'] = spend
+    except (RuntimeError, ValueError):
+        pass
     return out
 
 
@@ -42,8 +53,14 @@ def window(end=None, months=12):
     return months_between(add_months(end, -(int(months) - 1)), end)
 
 
-def build(config, entity_dir=None, end=None, months=12, project=0):
-    """Data for the CLI and web: definitions, buckets, months and cells."""
+def build(config, entity_dir=None, end=None, months=12, project=0, start_column=False):
+    """Data for the CLI and web: definitions, buckets, months and cells.
+
+    start_column  also resolve the month before the window and return it as
+                  start_month, with its cells — the opening value for stock
+                  metrics, the previous month for flow metrics. Off by
+                  default, so existing output is unchanged.
+    """
     entity_dir = entity_dir or get_entity_dir()
     defs = K.load_definitions(entity_dir)
     values, notes = K.load_values(entity_dir)
@@ -56,9 +73,11 @@ def build(config, entity_dir=None, end=None, months=12, project=0):
         from modules.fundraise import load_deals
         from lib.fundraising import momentum
         feeds.update(momentum(load_deals(entity_dir), config))
-    cells = K.grid(defs, values, feeds, ms, projections, future)
+    grid_months = [add_months(ms[0], -1)] + ms if start_column else ms
+    cells = K.grid(defs, values, feeds, grid_months, projections, future)
     return {'defs': defs, 'months': ms, 'future': future, 'cells': cells, 'notes': notes,
-            'projections': projections, 'buckets': K.BUCKETS}
+            'projections': projections, 'buckets': K.BUCKETS,
+            'start_month': grid_months[0] if start_column else None}
 
 
 def has_data(cells, mid):
@@ -101,7 +120,7 @@ def dispatch(args):
 
     if action in ('show', 'list'):
         show(config, flag('--bucket'), int(flag('--months', 6)), int(flag('--project', 0)),
-             '--all' in rest, action == 'list')
+             '--all' in rest, action == 'list', flag('--end'), '--start' in rest)
     elif action == 'set':
         if len(positional) < 2:
             print("  Usage: pair kpi set <metric> <value> [--month YYYY-MM] [--note TEXT]")
@@ -176,10 +195,11 @@ def define(entity_dir, name, bucket, unit='count', formula=None, mid=None, mtype
     return d
 
 
-def show(config, bucket=None, months=6, project=0, show_all=False, list_only=False):
-    data = build(config, months=months, project=project)
+def show(config, bucket=None, months=6, project=0, show_all=False, list_only=False,
+         end=None, start_column=False):
+    data = build(config, months=months, project=project, end=end, start_column=start_column)
     defs, cells = data['defs'], data['cells']
-    cols = data['months'] + data['future']
+    cols = ([data['start_month']] if start_column else []) + data['months'] + data['future']
     co = get_active_entity() or 'entity'
     print(f"\n  [{co}] KPIs — {cols[0]} to {cols[-1]}" + (f" (last {project} projected)" if project else '') + "\n")
     for bid, label, _ in K.BUCKETS:
@@ -195,7 +215,8 @@ def show(config, bucket=None, months=6, project=0, show_all=False, list_only=Fal
                 extra = f"  = {d['formula']}" if d.get('formula') and d['source'] == 'derived' else ''
                 print(f"    {m:<22} {d['name']:<40} {d['unit']:<8} {d['source']}{extra}")
             continue
-        print(f"    {'':<34}" + ''.join(f"{c[2:]:>10}" for c in cols))
+        labels = [('Start' if start_column and c == cols[0] else c[2:]) for c in cols]
+        print(f"    {'':<34}" + ''.join(f"{label:>10}" for label in labels))
         for m in ids:
             d = defs[m]
             row = ''.join(f"{fmt(cells[m][c]['value'], d['unit']) + ('*' if cells[m][c]['kind'] == 'projected' and cells[m][c]['value'] is not None else ''):>10}" for c in cols)

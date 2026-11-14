@@ -104,6 +104,43 @@ pair where "equipment"           # find assets, expenses by category
 
 Searches across: contacts, contracts, assets, liabilities, invoices, journal entries.
 
+### `pair report` — passthrough + report builder
+
+`pair report <hledger-cmd>` passes arguments through to hledger against
+the active entity's journal. The report builder (I76) sits alongside it:
+a report is a named hledger query (command + terms + display options),
+validated before it runs, and the CLI, config.yaml, and the web UI all
+run through the same core, so they can never drift.
+
+```bash
+pair report list                               # saved reports from config.yaml
+pair report run monthly-expenses               # run a saved report
+pair report build --cmd register --acct Expenses
+pair report build --cmd bs --period 2026 --save year-bs
+pair report build --cmd register --amt 100 --amt-op '>' --save big-items
+```
+
+Saved reports live in config.yaml (no defaults):
+
+```yaml
+reports:
+  monthly-expenses:
+    title: Monthly expenses
+    command: register
+    query: "acct:Expenses"
+    monthly: true
+```
+
+Definition keys: `title` (optional, defaults to the name), `command`
+(required: register, print, bal, balance, bs, is, accounts), `query`
+(optional hledger query terms), `period` (optional: YYYY, YYYY-MM,
+YYYY-MM-DD or YYYYQn), `monthly` / `tree` / `flat` (optional true/false).
+Unknown keys, unknown commands, bad periods, and query terms starting
+with '-' are rejected — the same leading-dash guard as /api/search, so
+a saved report can never smuggle a flag into hledger. Web: the Reports
+tab lists and runs saved reports and builds ad-hoc ones
+(`GET /api/reports`, `POST /api/reports/run`, `POST /api/reports/build`).
+
 ### `pair pairs`
 
 Display the BitLedger account pair reference table.
@@ -114,7 +151,11 @@ pair pairs --normal              # normal operation pairs only
 pair pairs --reversals           # reversal/correction pairs only
 pair pairs --edge                # edge-case pairs only
 pair pairs 5                     # show detail for pair #5
+pair pairs --narrow              # stacked per-pair layout (narrow terminal)
+pair pairs --wide                # force the wide table
 ```
+
+Below ~130 columns the stacked layout is used automatically.
 
 ### `pair entry`
 
@@ -126,6 +167,17 @@ pair entry 3                      # start from pair #3 directly
 ```
 
 Generates: journal entry in the appropriate module journal.
+
+### `pair entity migrate`
+
+Convert consult entities to pair contacts (see `docs/migration.md`).
+
+```bash
+pair entity migrate --from <consult-config.yaml>
+pair entity migrate --from <consult-config.yaml> --dry-run
+```
+
+Each `entities:` entry becomes `contacts/<slug>.yaml` (role: entity, billing nested per the contact schema); the standard pair directories are created; contacts that already exist are skipped. The source config is only read, never modified; journals and PDFs are untouched.
 
 ---
 
@@ -210,6 +262,17 @@ pair asset writedown macbook-pro-2026 --amount 1000 --date 2026-06-30 \
 Updates: `assets/<slug>.yaml` (adds impairment record)
 Generates: impairment entry in `generated/<year>/assets.journal`
 
+### `pair asset transfer <slug>`
+
+Move an asset between divisions.
+
+```bash
+pair asset transfer macbook-pro-2026 --to operations
+pair asset transfer macbook-pro-2026 --to operations --date 2026-11-13
+```
+
+Updates `assets/<slug>.yaml` (division) and writes a balanced journal entry at net book value (same asset account debited/credited, pair 1011, tagged with the new division). Zero-NBV assets update the YAML only; transferring to the same division is a no-op.
+
 ### `pair asset summary`
 
 Aggregate asset view by category.
@@ -220,6 +283,96 @@ pair asset summary --division ops
 ```
 
 Shows: total cost, total NBV, count, and amortization remaining — grouped by category.
+
+---
+
+## Inventory Module
+
+Stock quantities with FIFO/LIFO/average cost layering (I68). Data lives in
+`inventory/<slug>.yaml`: {name, slug, unit, method, layers}. The costing
+method is per-item, chosen at `add` (default fifo) — different goods may
+need different methods, so there is no entity-wide default.
+
+One truth for inventory: every buy/sell writes the journal AND updates the
+YAML, so the YAML layer total always equals the hledger `Assets:Inventory`
+balance. `pair inventory check` verifies exactly that.
+
+```bash
+pair inventory add widget --name "Widget" --unit unit --method fifo
+pair inventory buy widget --qty 10 --cost 5.00 --date 2026-01-05
+pair inventory buy widget --qty 10 --cost 7.00 --date 2026-01-20
+pair inventory sell widget --qty 12 --price 10.00 --date 2026-02-01
+pair inventory list
+pair inventory show widget
+pair inventory check
+```
+
+Accounts: a single `Assets:Inventory` for all items (the YAML is the
+per-item truth), `Expenses:COGS` (the first of the lib.statements COGS
+tuple, so the P&L reads it), `Income:Sales`, bank from config
+`accounts.bank`. Entries land in `generated/<year>/inventory.journal`
+(registered in the year aggregator, not orphaned).
+
+- Buy: one entry, pair 1011 (asset/asset, same as a cash asset
+  acquisition): `Assets:Inventory +total` / bank `-total`.
+- Sell: TWO 2-posting entries — lib.entry.infer_pair returns COMPOUND for
+  anything but 2 postings, so one 4-posting entry cannot honestly carry a
+  single pair code. Revenue leg, pair 0100 (operating revenue vs asset):
+  bank `+total` / `Income:Sales -total`. COGS leg, pair 0000 (operating
+  expense vs asset): `Expenses:COGS +cogs` / `Assets:Inventory -cogs`.
+  Both entries are tagged `item:<slug>`.
+
+Selling more than is held, or an unknown item, fails with a clear message
+and exit 1 and writes nothing — cost is computed before any write happens.
+`pair inventory check` exits 1 when the YAML total drifts from the books.
+
+---
+
+## Bank Reconciliation
+
+CSV/OFX import plus automatic statement matching (I69). Import stores
+statement lines only — it never writes to the journal; matching records
+which statement line corresponds to which journal posting. Unmatched
+lines are findings to investigate, not entries to auto-book (deliberately
+not built: auto-booking from a bank file is a trust step for the owner).
+
+```bash
+pair account import statement.csv --account Assets:Current:Chequing \
+    --mapping chequing-csv
+pair account import statement.ofx --account Assets:Current:Savings
+pair account match Assets:Current:Chequing [--window 3]
+pair account reconcile Assets:Current:Chequing
+```
+
+Data: `statements/<slug>.yaml` (one file per account, slug is the
+slugified account path), with `imports:` (file, sha256, imported_at,
+lines) and `lines:` (date, description, amount, fitid, source_file,
+matched, status).
+
+Idempotency, two layers: (1) the file's sha256 is recorded — re-importing
+the same file is a no-op; (2) a line-level dedup key (account, date,
+amount, description, fitid-or-'') skips lines already in the store, so
+overlapping statements do not duplicate. Known limit: two genuinely
+identical same-day purchases with byte-identical descriptions (CSV, no
+FITID) share a key and dedup to one line.
+
+CSV column mapping is DECLARED, never guessed: a named mapping in
+config.yaml `statement_mappings:` (see config.example.yaml), referenced
+with `--mapping NAME`, or `--col-date/--col-desc/--col-amount` (or
+`--col-debit/--col-credit`) flags. `date_format` is declared in the
+mapping (default `%Y-%m-%d`). A missing column fails with a clear
+message and writes nothing. OFX needs no mapping (fixed field names).
+
+Matching rules: a journal posting is a candidate when the amount matches
+exactly (to the cent) and the dates are within the window (default ±3
+days, `--window` to override). Exactly one candidate → matched. Several
+→ the uniquely closest date wins; a tie on distance is ambiguous. None
+→ unmatched. Re-running match only touches lines still unmatched;
+matched lines keep their match.
+
+`pair account reconcile` behaves as before, plus one read-only line
+when a statement store exists for the account: the matched / unmatched /
+ambiguous counts. Web UI is not part of this item: CLI only.
 
 ---
 
@@ -294,9 +447,13 @@ pair expense add
 pair expense add --batch --desc "Office Supplies" --amount 147.50 \
     --account "Expenses:Operating:Office Supplies" --from chequing --date 2026-07-10
 pair expense add --division admin
+pair expense add --batch --desc "Team lunch" --amount 85.00 --category meals \
+    --receipt receipts/lunch.pdf
 ```
 
 Appends to: `generated/<year>/expenses.journal`
+
+`--receipt PATH` records a `receipt:<path>` tag on the entry. The file must exist; relative paths resolve against the entity dir and are stored relative to it. `pair expense list` shows the receipt under the entry.
 
 ### `pair expense list`
 
@@ -377,7 +534,7 @@ A rule is kept once in `scenario.yaml` and turned into dated entries (`rules.jou
 | `growth` | changes by a % each occurrence | `--amount --rate 0.05` |
 | `step` | new amount from a date | `--amount --step 2027-01-01=1700` |
 | `percent` | share of the scenario's revenue that month (or of another rule) | `--percent 0.029 [--of r2]` |
-| `units` | units × price, units growing; optional cost per unit (COGS) | `--units --price [--unit-growth --unit-cost]` |
+| `units` | units × price, units growing; optional cost per unit (COGS); optional retention (0–1) keeps part of the base each period, so revenue is active units × price | `--units --price [--unit-growth --retention --unit-cost]` |
 | `salary` | a hire: salary/12 + benefits, yearly raise, one-off setup | `--salary --benefits --raise --setup-cost` |
 
 Kinds: `expense`, `revenue`, `funding` (`--instrument equity|safe|note|debt|grant`; cash in, not profit). Timing: `--start`, `--every weekly|monthly|quarterly|semiannual|annual|once`, then `--end DATE`, `--months N` or `--repeat N`.
@@ -421,6 +578,43 @@ runway:
 
 Web: Plan > Runway. Budget forecasts with `--scenario` use the same rule as `add` mode: actuals to date, the run rate for the rest of the year, plus the scenario's planned items.
 
+What-if sliders (preview only, nothing is saved) sit on the Runway tab and as flags: `pair runway --rev 1.2 --cost 0.9 --hire-delay 3 --rev-shift 2` scales projected revenue / costs and shifts hires and revenue starts later. See `GET /api/runway?rev=&cost=&hire_delay=&rev_shift=`.
+
+CAC allocation (`cac_allocation` in config.yaml) counts a % of each report category as acquisition cost, so the KPI `acquisition_spend` — and the derived CAC — is computed from the books instead of typed in:
+
+```yaml
+cac_allocation:
+  Marketing & Sales: 1.0
+  Salaries & Benefits: 0.25
+```
+
+## Stages Module
+
+Total spending by company stage, from the books. Stage bands come from config.yaml (no defaults):
+
+```bash
+pair stages
+```
+
+```yaml
+stage_bands:
+  startup: {start: 2024-01, end: 2024-12}
+  seed: {start: 2025-01, end: 2025-06}
+  growth: {start: 2025-07}
+```
+
+An open band (no end) runs to the last month with spending. Spending is all `Expenses:*` postings in the band's months. Web: `GET /api/stages`.
+
+## Traction chart
+
+One chart — a chosen traction metric, founder ownership and cash over time (Company > Overview):
+
+```bash
+pair traction --metric mrr --months 24
+```
+
+Traction is any KPI metric; ownership is founder % of fully diluted shares from the captable register's dated issuances and grants (SAFEs/notes dilute only when converted); cash is month-end cash from the runway rows. Web: `GET /api/chart/traction?metric=&months=&end=`.
+
 ## Profile and KPI Modules  `[executive pack]`
 
 **Profile** — who the company is (stored under `profile:` in the entity config). `status` is `real` or `speculative` (an idea or a company not formed yet; scenarios, runway and KPIs work without books).
@@ -437,6 +631,7 @@ pair profile link "Pitch deck" https://...
 
 ```bash
 pair kpi                                   # metrics with data, last 6 months
+pair kpi --start                           # also show the starting column (month before the window)
 pair kpi list --bucket momentum            # ids, units, sources, formulas
 pair kpi set investor_meetings 5 --month 2026-11
 pair kpi set churn 3%                      # percents can be typed with %
@@ -529,7 +724,13 @@ pair scenario compare base hire-editor aggressive --replace --cash 60000 --month
 
 **Scenario → budget** — `pair scenario budget hire-editor --year 2027 --activate` writes a monthly budget from the plan's expense lines (then `pair budget vs --full`).
 
-**Statements** — Plan > Runway > Statements: monthly profit & loss (revenue, cost of goods sold, gross profit, operating expenses by report category, operating income, non-operating, net income) and cash, actual months from the books then the plan. Balance sheet projection is not modelled.
+**Statements** — Plan > Runway > Statements: monthly profit & loss (revenue, cost of goods sold, gross profit, operating expenses by report category, operating income, non-operating, net income) and cash, actual months from the books then the plan. With an `assumptions:` block in the scenario, the balance sheet is projected too (working capital from DSO/DPO/DIO days, equipment/depreciation from hires, debt/interest, tax-loss carryforward). A credit line draws automatically to the runway's cash floor and repays when cash allows:
+
+```yaml
+assumptions:
+  credit_line_limit: 50000   # max drawn; 0 = no auto-draw
+  credit_line_rate: 0.12     # annual fraction on the drawn balance
+```
 
 **Export** — Plan > Runway: download runway, statements or the comparison as CSV.
 
@@ -548,6 +749,18 @@ pair income add --batch --desc "Bank interest" --amount 42.50 \
 ```
 
 Appends to: `generated/<year>/income.journal`
+
+### `pair income statement`
+
+Income statement (P&L), optionally per division.
+
+```bash
+pair income statement
+pair income statement --division operations
+pair income statement --division operations --period 2026
+```
+
+Runs hledger's own `is` filtered by `tag:division=<div>` when a division is given (only transactions tagged with that division count; untagged entries are excluded per-division, included entity-wide). Also at `GET /api/income-statement`.
 
 ---
 
@@ -637,6 +850,17 @@ pair revenue outstanding         # unpaid invoices + aging
 pair revenue export              # CSV export
 pair revenue undo                # remove last entry
 ```
+
+### `pair revenue receive`
+
+Quick cash receipt without a full invoice.
+
+```bash
+pair revenue receive --amount 500 --desc "Consulting" --date 2026-11-13
+pair revenue receive --amount 500 --client acme --project acme-web
+```
+
+Direct receipt (pair 0110, bank vs entity income account, no receivable, no tax — the amount is the full receipt, all to income). Writes to `generated/<year>/revenue.journal`.
 
 ### `pair revenue defer`
 
@@ -758,7 +982,11 @@ pair worth --quarterly           # quarterly trend
 pair worth --detail              # full account breakdown
 pair worth --division operations # filter by division
 pair worth --raw                 # pass-through to hledger bs
+pair worth --cost                # value investments at cost, converted to entity currency
+pair worth --value=now           # value investments at current prices, converted to entity currency
 ```
+
+`--cost` and `--value=now` are mutually exclusive. Holdings with no price are omitted under `--value=now` and named in a note.
 
 ---
 
@@ -780,15 +1008,15 @@ Commands:
   pairs                   BitLedger pair reference table
   entry                   Interactive entry from any pair
 
-  entity list|add|use     Entity (Company/Project) management
-  asset add|list|show|edit|dispose|amort|writedown|summary
+  entity list|add|use|migrate  Entity (Company/Project) management
+  asset add|list|show|edit|dispose|amort|writedown|transfer|summary
   liability add|list|show|pay|payments|reclassify
   expense add|list
-  income add
+  income add|statement
   transfer                Asset-to-asset moves
   contact add|list|show|edit|remove
   contract add|list|show|edit
-  revenue project|log|invoice|paid|outstanding|status|export|undo|rate|defer|recognize|deferred
+  revenue project|log|invoice|paid|outstanding|status|export|undo|rate|defer|recognize|deferred|receive
   payroll run|list
   equity invest|draw|convert
   division list

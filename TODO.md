@@ -19,9 +19,17 @@ deferred, known-broken, or unverified. Updated 2026-07-21.
 
 ## Unverified
 
-- **Commodity trade modal (Buy/Sell)** — endpoints tested end to end, but the UI
-  was never rendered in a browser. Playwright now works in this repo, so it can
-  be smoke-tested the same way the entry overlay and search were.
+- **Commodity trade modal (Buy/Sell)** — now browser-tested (done
+  2026-11-13, I66): `tests/test_browser_trade_modal.py` renders the
+  Commodities tab in headless Chromium (in-process uvicorn + Playwright),
+  opens the Buy modal, records a buy, and opens the Sell modal with the
+  live holding preview before recording a sale. Setup: `pip install
+  playwright && python -m playwright install chromium` in the repo venv.
+  The test fulfils the three jsdelivr Chart.js requests from vendored
+  copies under `tests/fixtures/chartjs/` (exact versions from
+  `index.html`) because this VM's browser cannot reach the CDN and the
+  page's top-level `Chart.defaults.*` statements abort all page
+  JavaScript when Chart is undefined — see the test's docstring.
 
 ## Missing tests
 
@@ -44,17 +52,22 @@ deferred, known-broken, or unverified. Updated 2026-07-21.
 
 ## CLI → web parity gaps
 
-The web still lacks these `pair market` commands:
-
-- `verify [--deep]` — **recommended next.** Read-only; catches broken
-  `fetch_pair` values, which directly protects the buy/sell flow.
-- `show` (price history detail), `chart SYMBOL`, `alert` (add/list/check/remove).
+- `verify [--deep]` — done (I63): `POST /api/market/verify`.
+- `show` (price history detail), `chart SYMBOL`, `alert`
+  (add/list/check/remove) — done (I64): `GET /api/market/prices/{symbol}`,
+  `GET /api/chart/prices` on the shared parser, alert endpoints +
+  Commodities-tab panel.
 - Tag editing (the web filters by tag but cannot add/remove; the CLI can).
 
 ## Consolidation
 
-- `/api/recent` still backs the Dash register's pagination while search now goes
-  through `/api/search`. Worth pointing both at one endpoint.
+- `/api/recent` and `/api/search` now share one implementation
+  (done 2026-11-13, I65): `_run_hledger_csv` + `_group_search_rows`
+  in `modules/web.py`; `/api/search` gained `offset`, `/api/recent`
+  is a thin wrapper keeping its response shape. The old `or` infix
+  term for description matching matched nothing in this hledger
+  (bare `or` parses as another AND term), so description matching is
+  now a union of two runs (bare terms + `desc:<query>`).
 
 ## Landmine — do not "fix"
 

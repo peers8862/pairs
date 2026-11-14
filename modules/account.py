@@ -1,10 +1,17 @@
 """pair account — account registry with rich metadata."""
 
+import csv
+import hashlib
+import io
 import sys
 import subprocess
 import yaml
 from pathlib import Path
 from datetime import date
+from decimal import Decimal
+
+import lib.reconcile as R
+from lib.yaml_store import load_entity, save_entity
 
 from lib.helpers import (
     load_config, save_config, get_entity_dir, get_active_entity,
@@ -29,6 +36,8 @@ ACCOUNT_OPTIONS = [
     {'key': 'find',      'label': 'Search accounts by any field'},
     {'key': 'link',      'label': 'Link account to asset/liability/contact'},
     {'key': 'reconcile', 'label': 'Check balance against statement'},
+    {'key': 'import',    'label': 'Import bank statement (CSV/OFX)'},
+    {'key': 'match',     'label': 'Match statement lines to journal postings'},
 ]
 
 
@@ -68,7 +77,8 @@ def _dispatch_action(action, flags, args):
         'list': cmd_list, 'add': cmd_add, 'show': cmd_show,
         'edit': cmd_edit, 'remove': cmd_remove, 'tree': cmd_tree,
         'tag': cmd_tag, 'find': cmd_find, 'link': cmd_link,
-        'reconcile': cmd_reconcile,
+        'reconcile': cmd_reconcile, 'import': cmd_import,
+        'match': cmd_match,
     }
     if action in actions:
         actions[action](flags, args)
@@ -688,6 +698,277 @@ def cmd_reconcile(flags, args):
     except (ValueError, AttributeError):
         print("  Could not compare balances.\n")
 
+    _print_statement_summary(path)
+
+
+# ─── Bank statement import + matching (I69) ─────────────────────────────────
+
+# Statement lines live in the YAML store, one file per account
+# (statements/<slug>.yaml, slug = slugified account path). Import stores
+# lines only — it never writes to the journal; matching records which
+# statement line corresponds to which journal posting.
+STATEMENT_MODULE = "statements"
+
+
+def _flag(args, name, default=None):
+    """Value after --name in args, or default."""
+    for i, a in enumerate(args):
+        if a == name and i + 1 < len(args):
+            return args[i + 1]
+    return default
+
+
+def _load_statement_store(account):
+    """Statement store dict or None."""
+    return load_entity(STATEMENT_MODULE, R.account_slug(account))
+
+
+def _save_statement_store(account, store):
+    save_entity(STATEMENT_MODULE, R.account_slug(account), store)
+
+
+def _line_to_store(line, source_file):
+    """Core line dict → YAML-safe stored dict (Decimal as string)."""
+    return {
+        "date": line["date"],
+        "description": line["description"],
+        "amount": str(line["amount"]),
+        "fitid": line.get("fitid"),
+        "source_file": source_file,
+        "matched": None,
+        "status": "unmatched",
+    }
+
+
+def _line_from_store(raw):
+    """Stored dict → core line dict (Decimal amount)."""
+    return {
+        "date": raw["date"],
+        "description": raw["description"],
+        "amount": Decimal(str(raw["amount"])),
+        "fitid": raw.get("fitid"),
+        "source_file": raw.get("source_file", ""),
+    }
+
+
+def _csv_mapping_from(args):
+    """Resolve the CSV column mapping: a named mapping from config.yaml
+    statement_mappings: (--mapping NAME), or --col-* flags. Returns the
+    mapping dict. Exits 1 with a clear message when neither is given
+    or the named mapping does not exist."""
+    config = load_config()
+    name = _flag(args, "--mapping")
+    mappings = config.get("statement_mappings") or {}
+    if name:
+        if name not in mappings:
+            available = ", ".join(sorted(mappings)) or "(none defined)"
+            print(f"  Unknown statement mapping: {name}")
+            print(f"  Available mappings: {available}")
+            sys.exit(1)
+        return dict(mappings[name])
+    mapping = {}
+    for key, flag in (("date", "--col-date"),
+                      ("description", "--col-desc"),
+                      ("amount", "--col-amount"),
+                      ("debit", "--col-debit"),
+                      ("credit", "--col-credit")):
+        value = _flag(args, flag)
+        if value:
+            mapping[key] = value
+    date_format = _flag(args, "--date-format")
+    if date_format:
+        mapping["date_format"] = date_format
+    if not mapping:
+        print("  No column mapping: pass --mapping NAME (a named mapping "
+              "in config.yaml statement_mappings:) or --col-date/--col-desc/"
+              "--col-amount (or --col-debit/--col-credit) flags.")
+        sys.exit(1)
+    return mapping
+
+
+def cmd_import(flags, args):
+    """Import a bank statement: `pair account import <file> --account PATH
+    [--mapping NAME | --col-* flags] [--format csv|ofx]`.
+
+    Idempotent: the file's sha256 is recorded, so re-importing the same
+    file is a no-op; lines already in the store (same account, date,
+    amount, description, fitid) are skipped. Nothing is written to the
+    journal — import only stores statement lines.
+    """
+    if not args:
+        print("  Usage: pair account import <file> --account <path> "
+              "[--mapping NAME | --col-* flags]")
+        sys.exit(1)
+    path = Path(args[0])
+    if not path.exists():
+        print(f"  Statement file not found: {path}")
+        sys.exit(1)
+    account = _flag(args, "--account") or prompt("  Account path")
+    fmt = _flag(args, "--format")
+    if fmt is None:
+        suffix = path.suffix.lower()
+        fmt = {"csv": "csv", ".csv": "csv",
+               ".ofx": "ofx", ".qfx": "ofx"}.get(suffix)
+        if fmt is None:
+            print(f"  Unknown statement format for {path.name}: pass "
+                  f"--format csv|ofx.")
+            sys.exit(1)
+    if fmt not in ("csv", "ofx"):
+        print(f"  Unknown statement format: {fmt} (csv or ofx)")
+        sys.exit(1)
+
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    store = _load_statement_store(account) or {
+        "account": account, "imports": [], "lines": []}
+    if any(i.get("sha256") == digest for i in store.get("imports", [])):
+        print(f"  Already imported {path.name}; nothing new.")
+        return
+    text = data.decode("utf-8-sig", errors="replace")
+    try:
+        if fmt == "csv":
+            mapping = _csv_mapping_from(args)
+            lines = R.parse_csv_statement(text, mapping)
+        else:
+            lines = R.parse_ofx_statement(text)
+    except ValueError as e:
+        print(f"  Cannot import {path.name}: {e}")
+        sys.exit(1)
+
+    existing = {R.dedup_key(_line_from_store(raw), account)
+                for raw in store.get("lines", [])}
+    new_lines = []
+    skipped = 0
+    for line in lines:
+        key = R.dedup_key(line, account)
+        if key in existing:
+            skipped += 1
+            continue
+        existing.add(key)
+        new_lines.append(_line_to_store(line, path.name))
+    store.setdefault("lines", []).extend(new_lines)
+    store.setdefault("imports", []).append({
+        "file": path.name, "sha256": digest,
+        "imported_at": date.today().strftime("%Y-%m-%d"),
+        "lines": len(lines),
+    })
+    _save_statement_store(account, store)
+    print(f"  Imported {len(lines)} lines from {path.name} "
+          f"({len(new_lines)} new, {skipped} duplicates skipped).")
+
+
+def _journal_postings(account):
+    """Journal postings on an account via hledger reg CSV.
+
+    Returns [{date, description, amount}] or raises SystemExit with a
+    clear message when the journal or hledger is unavailable. Uses the
+    module-level get_entity_journal (imported from lib.ui at the top),
+    which tests patch — do not re-import it locally.
+    """
+    journal = get_entity_journal()
+    if not journal.exists():
+        print("  No entity journal found.")
+        sys.exit(1)
+    result = subprocess.run(
+        ["hledger", "-f", str(journal), "reg", account,
+         "--output-format", "csv"],
+        capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        print(f"  Could not read postings for {account}: "
+              f"{(result.stderr or result.stdout).strip()[:500]}")
+        sys.exit(1)
+    postings = []
+    for row in csv.DictReader(io.StringIO(result.stdout)):
+        raw_amount = (row.get("amount") or "").strip()
+        try:
+            amount = Decimal(raw_amount.rsplit(" ", 1)[-1].replace(",", ""))
+        except Exception:
+            continue
+        postings.append({
+            "date": (row.get("date") or "").strip(),
+            "description": (row.get("description") or "").strip(),
+            "amount": amount,
+        })
+    return postings
+
+
+def cmd_match(flags, args):
+    """Match stored statement lines to journal postings:
+    `pair account match <account-path> [--window N]`.
+
+    Only lines still unmatched are (re)matched; matched lines keep
+    their match. Unmatched lines are findings, not failures: the
+    command exits 0 and reports the counts.
+    """
+    account = args[0] if args else _flag(args, "--account")
+    if not account:
+        account = prompt("  Account path")
+    window = _flag(args, "--window")
+    try:
+        window_days = int(window) if window else R.DEFAULT_WINDOW_DAYS
+    except ValueError:
+        print(f"  Invalid --window: {window!r}")
+        sys.exit(1)
+    if window_days < 0:
+        print("  --window cannot be negative.")
+        sys.exit(1)
+
+    store = _load_statement_store(account)
+    if not store or not store.get("lines"):
+        print(f"  No imported statements for {account}. "
+              f"Run `pair account import` first.")
+        sys.exit(1)
+    postings = _journal_postings(account)
+
+    pending = [raw for raw in store["lines"] if not raw.get("matched")]
+    results = R.match_lines([_line_from_store(raw) for raw in pending],
+                            postings, window_days=window_days)
+    for raw, result in zip(pending, results):
+        raw["status"] = result["status"]
+        if result["status"] == "matched":
+            posting = result["posting"]
+            raw["matched"] = {
+                "date": posting["date"],
+                "description": posting["description"],
+                "amount": str(posting["amount"]),
+            }
+    _save_statement_store(account, store)
+
+    counts = {"matched": 0, "ambiguous": 0, "unmatched": 0}
+    for raw in store["lines"]:
+        counts[raw.get("status", "unmatched")] += 1
+    for raw, result in zip(pending, results):
+        line = result["line"]
+        mark = {"matched": "✓", "ambiguous": "?", "unmatched": "✗"}[
+            result["status"]]
+        detail = ""
+        if result["status"] == "matched":
+            p = result["posting"]
+            detail = f"  -> {p['date']} {p['description']}"
+        elif result["status"] == "ambiguous":
+            detail = (f"  -> {len(result['candidates'])} candidates, "
+                      f"no unique closest")
+        print(f"  {mark} {line['date']} {line['description'][:40]:<40} "
+              f"{line['amount']:>12.2f}{detail}")
+    print(f"\n  {counts['matched']} matched, {counts['ambiguous']} ambiguous, "
+          f"{counts['unmatched']} unmatched.")
+
+
+def _print_statement_summary(path):
+    """One read-only line after a reconcile, when a statement store
+    exists for the account. Prints nothing otherwise, so reconcile
+    behaves exactly as before for accounts with no imports."""
+    store = _load_statement_store(path)
+    if not store or not store.get("lines"):
+        return
+    counts = {"matched": 0, "ambiguous": 0, "unmatched": 0}
+    for raw in store["lines"]:
+        counts[raw.get("status", "unmatched")] += 1
+    print(f"  Statement lines: {counts['matched']} matched, "
+          f"{counts['unmatched']} unmatched, "
+          f"{counts['ambiguous']} ambiguous. "
+          f"Run `pair account match {path}` to update.")
+
 
 # ─── Help ─────────────────────────────────────────────────────────────────────
 
@@ -709,6 +990,10 @@ Commands:
   find [QUERY]          Search accounts by any field
   link [ACCOUNT]        Link to asset/liability/contact
   reconcile [ACCOUNT]   Check balance against statement
+  import <FILE> --account PATH [--mapping NAME | --col-* flags]
+                      Import a bank statement (CSV/OFX)
+  match [ACCOUNT] [--window N]
+                      Match statement lines to journal postings
 
 List filters:
   --tag TAG             Filter by tag

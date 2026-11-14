@@ -11,8 +11,15 @@ from lib import runway as rw
 
 
 def build(config, scenario=None, months=18, mode='add', start=None, starting_cash=None,
-          raise_amount=None):
-    """Everything the CLI and web show: rows, summary, sources & uses."""
+          raise_amount=None, whatif=None):
+    """Everything the CLI and web show: rows, summary, sources & uses.
+
+    whatif  {'revenue_mult', 'cost_mult', 'hire_delay', 'revenue_shift'} —
+            preview-only sliders (I55). Multipliers scale projected revenue /
+            expense (plan + recent pace); delays shift the scenario's dated
+            occurrences before they are totalled. Nothing is persisted and
+            the saved scenario is never touched.
+    """
     from lib.categories import summarise
     s = rw.settings(config)
     currency = config.get('pair', {}).get('currency', 'CAD')
@@ -26,12 +33,19 @@ def build(config, scenario=None, months=18, mode='add', start=None, starting_cas
     plan, by_account = {}, {}
     if scenario:
         from modules.scenario import scenario_monthly
-        plan, by_account = scenario_monthly(scenario, config)
+        plan, by_account = scenario_monthly(scenario, config, whatif=whatif)
+    whatif = whatif or {}
+    try:
+        rev_mult = Decimal(str(whatif.get('revenue_mult', 1)))
+        exp_mult = Decimal(str(whatif.get('cost_mult', 1)))
+    except ArithmeticError:
+        raise ValueError('what-if multipliers must be numbers')
     rows, summary = rw.project(actual, plan, start, int(months),
                                starting_cash=starting_cash if not has_cash else None,
                                mode=mode, trailing=int(s['trailing_months']),
                                min_cash_months=s.get('min_cash_months'), min_cash=s.get('min_cash'),
-                               buffer_months=s['buffer_months'], burn_window=int(s['burn_window']))
+                               buffer_months=s['buffer_months'], burn_window=int(s['burn_window']),
+                               rev_mult=rev_mult, exp_mult=exp_mult)
     # Sources & uses: planned scenario spend in the window, by report category
     window = [r['month'] for r in rows if r['source'] == 'plan']
     spend = {}
@@ -52,17 +66,60 @@ def build(config, scenario=None, months=18, mode='add', start=None, starting_cas
     }
 
 
+def _scenario_rules(slug, seen=None):
+    """A scenario's rules plus the rules of every scenario it layers on."""
+    from modules.scenario import load_scenario
+    seen = set(seen or ()) | {slug}
+    meta = load_scenario(slug) or {}
+    rules = list(meta.get('rules') or [])
+    for layer in meta.get('layers') or []:
+        if layer in seen or load_scenario(layer) is None:
+            continue
+        rules += _scenario_rules(layer, seen)
+    return rules
+
+
 def statements(config, scenario=None, months=18, mode='add', start=None, starting_cash=None):
     from lib import statements as ST
+    from pathlib import Path
     data = build(config, scenario, months, mode, start, starting_cash)
     journal = config.get('journal_file')
     journal = expand_path(journal) if journal else None
-    actual_exp, _ = ST.actual_by_account(journal, data['currency'], start or rw.this_month())
+    start_month = start or rw.this_month()
+    actual_exp, _ = ST.actual_by_account(journal, data['currency'], start_month)
     plan_exp = {}
+    assumptions = None
+    funding_split = None
+    hires = None
     if scenario:
-        from modules.scenario import scenario_monthly
+        from modules.scenario import scenario_monthly, scenario_occurrences, load_scenario
         _, plan_exp = scenario_monthly(scenario, config)
-    out = ST.build(data['rows'], actual_exp, plan_exp, data['summary']['base_expense'], mode, config)
+        meta = load_scenario(scenario) or {}
+        assumptions = meta.get('assumptions')
+        # Funding split from the same occurrences the monthly totals are
+        # built from, so the split sums to the runway funding lump exactly.
+        funding_split = ST.funding_split(scenario_occurrences(scenario))
+        hires = ST.hire_months(_scenario_rules(scenario))
+    opening = None
+    actual_bs = None
+    if journal and Path(journal).exists():
+        opening = ST.opening_balances(journal, data['currency'], start_month, config)
+        actual_bs = ST.actual_bs(
+            journal, data['currency'],
+            [r['month'] for r in data['rows'] if r['source'] == 'actual'], config)
+    if opening is None and actual_bs:
+        # Books exist but nothing before the window: anchor on the last
+        # actual balance sheet instead of the starting-cash fallback.
+        opening = actual_bs[sorted(actual_bs)[-1]]
+    if opening is None:
+        # No books at all: the starting cash is contributed capital, so the
+        # opening sheet balances (cash on one side, share capital on the other).
+        cash0 = data['summary']['cash_now']
+        opening = {'cash': cash0, 'share_capital': cash0}
+    out = ST.build(data['rows'], actual_exp, plan_exp, data['summary']['base_expense'], mode, config,
+                   assumptions=assumptions, funding_split=funding_split, hires=hires,
+                   opening=opening, actual_bs=actual_bs or None,
+                   floor=data['summary']['floor'])
     out['currency'] = data['currency']
     return out
 
@@ -104,9 +161,14 @@ def dispatch(args):
             sys.exit(1)
     mode = 'replace' if '--replace' in remaining else 'add'
     cash = flag('--cash')
+    whatif = {}
+    for name, key in (('--rev', 'revenue_mult'), ('--cost', 'cost_mult'),
+                      ('--hire-delay', 'hire_delay'), ('--rev-shift', 'revenue_shift')):
+        if flag(name) is not None:
+            whatif[key] = flag(name)
     try:
         data = build(config, scenario, int(flag('--months', 18)), mode, flag('--start'),
-                     Decimal(cash) if cash else None, flag('--raise'))
+                     Decimal(cash) if cash else None, flag('--raise'), whatif or None)
     except (RuntimeError, ValueError) as e:
         print(f"  {e}")
         sys.exit(1)
@@ -167,6 +229,11 @@ def print_help():
   --start YYYY-MM first projected month (default this month)
   --cash N        starting cash when the books have none yet
   --raise N       size of the raise for Sources & Uses (default: raise target)
+  --rev X         what-if only: projected revenue x X (default 1)
+  --cost X        what-if only: projected costs x X (default 1)
+  --hire-delay N  what-if only: hires start N months later (default 0)
+  --rev-shift N   what-if only: revenue starts N months later (default 0)
+  What-if flags change the preview only; nothing is saved.
 
 Settings in config.yaml under runway: starting_cash, cash_accounts,
 min_cash_months, min_cash, buffer_months (15), trailing_months (3),

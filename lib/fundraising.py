@@ -13,6 +13,8 @@ config.yaml (fundraising: {stages: [...], investor_types: [...]}).
 from datetime import date
 from decimal import Decimal
 
+from lib.journal import build_tags
+
 STAGES = ['1st call', '2nd call', 'due diligence', 'documents requested', 'soft committed',
           'agreement sent', 'signed', 'capital received']
 CLOSED_LOST = 'passed'
@@ -111,7 +113,7 @@ def funding_entry(deal, round_, bank, currency, on):
     if amount <= 0:
         raise ValueError("The commitment has no amount")
     postings = [(bank, currency, amount), (account, currency, -amount)]
-    tags = {'pair': pair, 'funding': instrument, 'round': round_['id'], 'investor': deal['id']}
+    tags = build_tags(pair, funding=instrument, round=round_['id'], investor=deal['id'])
     desc = f"{round_.get('name', round_['id'])} — {deal.get('investor', deal['id'])}"
     return postings, tags, desc
 

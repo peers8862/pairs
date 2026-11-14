@@ -1,6 +1,8 @@
 """pair pairs / pair — account pair reference and interactive entry creation."""
 
+import shutil
 import sys
+import textwrap
 from datetime import date
 
 from lib.helpers import (
@@ -386,7 +388,7 @@ def cmd_pair_advanced(args):
 
     if len(postings) < 2:
         print("\n  Need at least two postings. Cancelled.\n")
-        return
+        sys.exit(1)
 
     fields = {'date': entry_date, 'status': status, 'code': code, 'payee': payee,
               'note': note, 'tags': tags, 'postings': postings}
@@ -422,7 +424,7 @@ def cmd_pair_advanced(args):
 
     if not result['ok']:
         print(f"\n  hledger rejected this entry:\n\n{result['errors']}\n")
-        return
+        sys.exit(1)
 
     print("\n  hledger sees:\n")
     for line in result['rendered'].splitlines():
@@ -445,7 +447,7 @@ def cmd_pair_advanced(args):
     recheck = validate_entry(final)
     if not recheck['ok']:
         print(f"\n  Tagging broke the entry, nothing written:\n\n{recheck['errors']}\n")
-        return
+        sys.exit(1)
 
     year = record_entry(final, entry_date)
     print(f"\n  ✓ Written to generated/{year}/entries.journal\n")
@@ -455,6 +457,11 @@ def cmd_pair_advanced(args):
 
 def cmd_pairs(args):
     """Show account pair reference tables."""
+    # Layout flags apply to the full view; strip them before parsing so
+    # they are not mistaken for a pair number.
+    force_narrow = '--narrow' in args
+    force_wide = '--wide' in args
+    args = [a for a in args if a not in ('--narrow', '--wide')]
     flags, remaining = parse_global_flags(args)
 
     if flags['help']:
@@ -488,6 +495,17 @@ def cmd_pairs(args):
             sys.exit(1)
 
     # No args — show full combined output
+    width = terminal_width()
+    if force_narrow or (width < WIDE_MIN_WIDTH and not force_wide):
+        # Narrow fallback (I70): the wide table's fixed columns need ~125
+        # columns and its edge text runs longer, so below the threshold the
+        # table would wrap mid-column. The stacked layout carries the same
+        # information (name + normal + reversal + edge per pair); the grouped
+        # table is skipped because its 76-column box does not fit either.
+        show_narrow_table(width)
+        print()
+        show_help_lines(width=width)
+        return
     show_wide_table()
     print()
     show_grouped_table()
@@ -504,10 +522,55 @@ Usage:
   pair pairs --normal     Normal direction descriptions (long)
   pair pairs --reversals  Reversal descriptions (long)
   pair pairs --edge       Edge case descriptions (long)
+  pair pairs --narrow    Stacked layout (also automatic below 130 columns)
+  pair pairs --wide      Force the wide table on a narrow terminal
 
 See also:
   pair entry               Interactive entry creation using any pair
 """)
+
+
+# The wide table's fixed columns need ~125 columns (header alone is 123
+# plus indent, and edge text runs longer), so below this width the stacked
+# layout is used instead. The fallback for a non-tty (piped output, unknown
+# size) is 200 — piped output keeps the wide table, because nothing wraps
+# when writing to a file; only a real narrow terminal triggers the fallback.
+WIDE_MIN_WIDTH = 130
+
+
+def terminal_width():
+    """Terminal width in columns; 200 (wide) when not a tty / unknown."""
+    try:
+        return shutil.get_terminal_size(fallback=(200, 24)).columns
+    except Exception:
+        return 200
+
+
+def show_narrow_table(width):
+    """Print a stacked per-pair layout for narrow terminals (I70).
+
+    One block per pair; every line is at most `width` columns.
+    """
+    print()
+    for line in textwrap.wrap(
+            f"Account Pair Matrix — 14 Double-Entry Relationships "
+            f"(narrow layout; terminal width {width} is below "
+            f"{WIDE_MIN_WIDTH} columns)",
+            width=max(20, width - 2)):
+        print(f"  {line}")
+    print()
+    # "  Reversal: " is the longest label prefix (13 columns).
+    wrap_w = max(20, width - 13)
+    for p in PAIRS:
+        print(f"  {p['num']:>2}. [{p['code']}] {p['name']}")
+        for label, text in (("Normal", p['normal']),
+                            ("Reversal", p['reversal']),
+                            ("Edge", p['edge'])):
+            lines = textwrap.wrap(text, width=wrap_w) or [""]
+            print(f"  {label + ':':<10} {lines[0]}")
+            for cont in lines[1:]:
+                print(f"  {'':<10} {cont}")
+        print()
 
 
 def show_wide_table():
@@ -558,14 +621,27 @@ def show_grouped_table():
     print("  └─────────────────────────────────────────────────────────────────────────┘")
 
 
-def show_help_lines():
-    """Print help lines at the bottom."""
-    print("  Usage:")
-    print("    pair pairs <N>          Drill-down with scenarios for pair N")
-    print("    pair pairs --normal     Full descriptions for normal direction")
-    print("    pair pairs --reversals  Full descriptions for reversal direction")
-    print("    pair pairs --edge       Full descriptions for edge cases")
-    print("    pair entry               Interactive entry builder (any pair)")
+def show_help_lines(width=None):
+    """Print help lines at the bottom.
+
+    In narrow mode (I70) the lines are wrapped at `width` so nothing
+    exceeds the terminal; with width=None the output is byte-identical
+    to the historical wide layout.
+    """
+    lines = [
+        "  Usage:",
+        "    pair pairs <N>          Drill-down with scenarios for pair N",
+        "    pair pairs --normal     Full descriptions for normal direction",
+        "    pair pairs --reversals  Full descriptions for reversal direction",
+        "    pair pairs --edge       Full descriptions for edge cases",
+        "    pair entry               Interactive entry builder (any pair)",
+    ]
+    for line in lines:
+        if width is not None and len(line) > width:
+            for wrapped in textwrap.wrap(line.strip(), width=max(20, width - 4)):
+                print(f"    {wrapped}")
+        else:
+            print(line)
     print()
 
 

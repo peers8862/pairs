@@ -115,7 +115,8 @@ def actual_months(journal, config, currency, end_month=None):
 # ─── Projection (pure) ───────────────────────────────────────────────────────
 
 def project(actual, plan, start_month, months, starting_cash=None, mode='add',
-            trailing=3, min_cash_months=3, min_cash=None, buffer_months=15, burn_window=12):
+            trailing=3, min_cash_months=3, min_cash=None, buffer_months=15, burn_window=12,
+            rev_mult=Decimal('1'), exp_mult=Decimal('1')):
     """Month rows plus a summary.
 
     actual         {YYYY-MM: {'revenue', 'expense', 'cash_end'}} months already closed
@@ -124,9 +125,16 @@ def project(actual, plan, start_month, months, starting_cash=None, mode='add',
     months         how many months to project
     starting_cash  cash at the start of start_month when the books have none
     mode           'add' (recent pace + scenario) or 'replace' (scenario only)
+    rev_mult       what-if multiplier on projected revenue (plan + recent pace)
+    exp_mult       what-if multiplier on projected expense (plan + recent pace)
+    Funding is never scaled: a what-if changes how the business performs, not
+    how much it raises.
     """
     if mode not in ('add', 'replace'):
         raise ValueError("mode must be 'add' or 'replace'")
+    rev_mult, exp_mult = Decimal(str(rev_mult)), Decimal(str(exp_mult))
+    if rev_mult < 0 or exp_mult < 0:
+        raise ValueError('what-if multipliers must be 0 or more')
     closed = [k for k in sorted(actual) if k < start_month]
     recent = closed[-trailing:] if trailing else []
     base_rev = sum((actual[k]['revenue'] for k in recent), ZERO) / len(recent) if recent else ZERO
@@ -149,8 +157,8 @@ def project(actual, plan, start_month, months, starting_cash=None, mode='add',
 
     for k in months_between(start_month, add_months(start_month, months - 1)):
         p = plan.get(k, {})
-        rev = p.get('revenue', ZERO) + (base_rev if mode == 'add' else ZERO)
-        exp = p.get('expense', ZERO) + (base_exp if mode == 'add' else ZERO)
+        rev = (p.get('revenue', ZERO) + (base_rev if mode == 'add' else ZERO)) * rev_mult
+        exp = (p.get('expense', ZERO) + (base_exp if mode == 'add' else ZERO)) * exp_mult
         fund = p.get('funding', ZERO)
         begin = cash
         cash = begin + rev - exp + fund

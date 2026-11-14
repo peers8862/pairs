@@ -945,13 +945,6 @@ def cmd_forecast(flags, args):
         if load_scenario(scenario) is None:
             print(f"Scenario '{scenario}' not found. See 'pair scenario list'.")
             return
-        try:
-            project_with_scenario(Decimal('0'), 1, 1, Decimal('0'))
-        except NotImplementedError:
-            print("Forecast with a scenario needs project_with_scenario in modules/budget.py.\n"
-                  "Use 'pair budget vs --full --scenario <slug>' meanwhile.")
-            return
-
     periods = budget.get('periods', [])
     lines = budget.get('lines', [])
     today = date.today()
@@ -1185,8 +1178,9 @@ def budget_vs_rows(config, budget, scenario=None, periods=None):
 
 
 def forecast_rows(config, budget, scenario=None, today=None):
-    """Year-end projection per line, as data. Raises NotImplementedError until
-    project_with_scenario is written, when a scenario is given."""
+    """Year-end projection per line, as data. When a scenario is given, the
+    remaining periods use project_with_scenario (actuals to date, then run
+    rate plus scenario items; see D01)."""
     today = (today or date.today()).strftime("%Y-%m-%d")
     periods = budget.get('periods', [])
     elapsed = [p for p in periods if p['to'] <= today]

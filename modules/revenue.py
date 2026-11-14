@@ -16,7 +16,7 @@ from lib.helpers import (
     parse_global_flags, confirm, prompt_choice, BASE_DIR
 )
 from lib.journal import (
-    format_entry, generated_header, write_journal_atomic, append_journal,
+    build_tags, format_entry, generated_header, write_journal_atomic, append_journal,
     ensure_year_structure, get_generated_dir, get_journal_dir, get_include_dir
 )
 
@@ -234,6 +234,8 @@ def dispatch(args):
         cmd_invoice(flags, action_args)
     elif action == 'paid':
         cmd_paid(flags, action_args)
+    elif action == 'receive':
+        cmd_receive(flags, action_args)
     elif action == 'outstanding':
         cmd_outstanding(flags, action_args)
     elif action == 'export':
@@ -269,6 +271,14 @@ Commands:
   status            Show unbilled time summary
   invoice           Generate invoice from unbilled time
   paid              Record payment received
+  receive           Quick cash receipt without a full invoice
+
+Options for 'receive':
+  --amount NUM      Amount received
+  --date DATE       Receipt date (default: today)
+  --desc TEXT       Description (default: Cash receipt)
+  --client TEXT     Client name (tag)
+  --project SLUG    Billing project (resolves client + income account)
   outstanding       Show unpaid invoices (aging report)
   export            Export time entries to CSV
   undo              Remove last time entry
@@ -1029,6 +1039,105 @@ def cmd_paid(flags, args):
     print(f"\n✓ Recorded ${pay_amount} {currency} payment for {inv['invoice']}. {status_msg}")
 
 
+# ─── Receive (quick cash receipt, no invoice) ───────────────────────────────
+
+def cmd_receive(flags, args):
+    """Record a quick cash receipt without a full invoice (I74).
+
+    Direct cash in (pair 0110): debit bank, credit the entity's income
+    account. No invoice is created and no receivable is touched — for
+    simple receipts; use `pair revenue invoice` when the client needs an
+    invoice or tax must be tracked. No tax is applied here: the amount is
+    the full receipt, all to income.
+    """
+    config = load_config()
+    currency = config.get('pair', {}).get('currency', 'CAD')
+
+    # Parse flags
+    amount_str = None
+    receive_date = flags.get('date')
+    description = None
+    client = None
+    project_slug = None
+    for i, a in enumerate(args):
+        if a == '--amount' and i + 1 < len(args):
+            amount_str = args[i + 1]
+        elif a == '--date' and i + 1 < len(args):
+            receive_date = args[i + 1]
+        elif a == '--desc' and i + 1 < len(args):
+            description = args[i + 1]
+        elif a == '--client' and i + 1 < len(args):
+            client = args[i + 1]
+        elif a == '--project' and i + 1 < len(args):
+            project_slug = args[i + 1]
+
+    # Validate flag-provided values before prompting for the rest.
+    if amount_str is not None:
+        err = validate_positive_number(amount_str)
+        if err:
+            print(f"  Invalid amount '{amount_str}': {err}")
+            sys.exit(1)
+    if receive_date is not None:
+        err = validate_date(receive_date)
+        if err:
+            print(f"  Invalid date '{receive_date}': {err}")
+            sys.exit(1)
+
+    # Resolve project/entity for accounts and client default (same source
+    # as cmd_invoice: the legacy entities section in config.yaml).
+    project = _load_project(project_slug) if project_slug else None
+    if project_slug and not project:
+        print(f"  Unknown project '{project_slug}'.")
+        sys.exit(1)
+    if project:
+        client = client or project.get('client')
+        currency = project.get('currency', currency)
+        entity_slug = project.get('entity')
+    else:
+        entity_slug = config.get('defaults', {}).get('entity')
+    entity = config.get('entities', {}).get(entity_slug, {}) if entity_slug else {}
+    accts = entity.get('accounts', {})
+    income_acct = accts.get('income', 'Income:Consulting')
+    bank_acct = config.get('accounts', {}).get(
+        'bank', accts.get('bank', 'Assets:Current:Chequing'))
+
+    if not description:
+        description = prompt("Description", default="Cash receipt")
+    if not amount_str:
+        amount_str = prompt("Amount", validator=validate_positive_number)
+    if not receive_date:
+        receive_date = prompt("Date", default=date.today().isoformat(),
+                              validator=validate_date)
+
+    amount = money(amount_str)
+
+    if project_slug:
+        config.setdefault('defaults', {})['last_project'] = project_slug
+        save_config(config)
+
+    tags = build_tags('0110')
+    if client:
+        tags['client'] = client
+    if project:
+        tags['project'] = project.get('project', project_slug)
+
+    postings = [
+        (bank_acct, currency, float(amount)),
+        (income_acct, currency, float(-amount)),
+    ]
+    entry = format_entry(receive_date, description, postings, tags)
+
+    year = receive_date[:4]
+    ensure_year_structure(int(year))
+    journal_path = get_generated_dir() / year / "revenue.journal"
+    append_journal(journal_path, entry)
+
+    if not flags.get('quiet'):
+        print(f"\n  Recorded: {description}")
+        print(f"  Amount:   {currency} {amount}")
+        print(f"  Written to: generated/{year}/revenue.journal")
+
+
 # ─── Outstanding ─────────────────────────────────────────────────────────────
 
 def cmd_outstanding(flags, args):
@@ -1274,10 +1383,7 @@ def cmd_defer(flags, args):
         (liability_account, currency, float(-amount_val)),
     ]
 
-    tags = {
-        'pair': '1001',
-        'source': f'deferred/{slug}.yaml',
-    }
+    tags = build_tags('1001', source=f'deferred/{slug}.yaml')
 
     entry = format_entry(defer_date, f"Deferred revenue: {description}", postings, tags)
 
@@ -1359,10 +1465,7 @@ def cmd_recognize(flags, args):
         (income_account, deferred['currency'], float(-amount_val)),
     ]
 
-    tags = {
-        'pair': '0110',
-        'source': f'deferred/{slug}.yaml',
-    }
+    tags = build_tags('0110', source=f'deferred/{slug}.yaml')
 
     entry = format_entry(recognize_date, f"Recognize revenue: {deferred['name']}", postings, tags)
 

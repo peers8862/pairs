@@ -9,11 +9,11 @@ from lib.helpers import (
     load_config, money, prompt, prompt_choice, confirm,
     validate_slug, validate_date, validate_positive_number,
     validate_non_negative_number, validate_positive_int,
-    parse_global_flags
+    parse_global_flags, prompt_division, resolve_division_flag
 )
 from lib.yaml_store import load_entity, save_entity, list_entities, entity_exists
 from lib.journal import (
-    format_entry, generated_header, write_journal_atomic, append_journal,
+    build_tags, format_entry, generated_header, write_journal_atomic, append_journal,
     ensure_year_structure, get_generated_dir
 )
 
@@ -74,6 +74,8 @@ def dispatch(args):
         cmd_edit(flags, action_args)
     elif action == 'dispose':
         cmd_dispose(flags, action_args)
+    elif action == 'transfer':
+        cmd_transfer(flags, action_args)
     elif action == 'amort':
         cmd_amort(flags, action_args)
     elif action == 'summary':
@@ -96,8 +98,13 @@ Actions:
   show <slug>         Show asset details and amortization status
   edit <slug>         Edit asset fields
   dispose <slug>      Record disposal (sale or scrap)
+  transfer <slug> --to <division>
+                      Move an asset between divisions
   amort               Generate amortization journal entries
   writedown <slug>    Record an impairment writedown
+
+Flags for 'add':
+  --division <div>    Division (explicit flag wins over the last-used default)
 
 Flags for 'list':
   --all               Include disposed assets
@@ -123,6 +130,12 @@ def cmd_add(flags, args):
     config = load_config()
     currency = config.get('pair', {}).get('currency', 'CAD')
 
+    # Explicit --division wins over the last-used default (I71).
+    flag_division = None
+    for i, a in enumerate(args):
+        if a == '--division' and i + 1 < len(args):
+            flag_division = args[i + 1]
+
     print("Record a capital asset\n")
 
     name = prompt("Asset name")
@@ -137,14 +150,17 @@ def cmd_add(flags, args):
 
     category = prompt_choice("Category", CATEGORIES)
 
-    # Division prompt (if divisions configured)
-    divisions = config.get('divisions', [])
+    # Division (I71): explicit --division wins and is recorded as the
+    # last used; otherwise prompt, defaulting to the last used division.
     division = None
-    if divisions:
-        default_div = divisions[0]
-        division = prompt(f"Division", default=default_div, required=False)
-        if not division:
-            division = default_div
+    if flag_division is not None:
+        try:
+            division = resolve_division_flag(config, flag_division)
+        except ValueError as e:
+            print(f"  {e}")
+            sys.exit(1)
+    else:
+        division = prompt_division(config)
 
     purchase_date = prompt("Purchase date", default=date.today().strftime("%Y-%m-%d"),
                            validator=validate_date)
@@ -254,12 +270,7 @@ def _write_acquisition_entry(asset, config):
 
     mode = acquisition_mode(asset)
     pair = ACQUISITION_PAIRS[mode]
-    tags = {
-        'pair': pair,
-        'source': f'assets/{slug}.yaml',
-        'category': asset['category'],
-        'acquisition': mode,
-    }
+    tags = build_tags(pair, source=f'assets/{slug}.yaml', category=asset['category'], acquisition=mode)
 
     # An explicit credit account always wins — it is what the user picked.
     credit_account = (asset.get('accounts', {}).get('credit') or '').strip()
@@ -619,6 +630,98 @@ def cmd_edit(flags, args):
     print("  Run 'pair asset amort' to regenerate amortization entries.")
 
 
+# ─── pair asset transfer ──────────────────────────────────────────────────
+
+def cmd_transfer(flags, args):
+    """Move an asset between divisions (I72).
+
+    Updates the asset YAML and writes a balanced journal entry at net book
+    value: the asset account is debited and credited for the same amount,
+    so the books are unchanged, and the entry is tagged with the new
+    division so the move is visible in the register. Division is otherwise
+    only a YAML attribute — no asset journal entry carries it — so this
+    entry is the auditable record of the move. An asset with zero net book
+    value needs no entry; only the YAML changes.
+    """
+    config = load_config()
+    currency = config.get('pair', {}).get('currency', 'CAD')
+
+    if not args:
+        print("Usage: pair asset transfer <slug> --to <division> [--date DATE]")
+        sys.exit(1)
+    slug = args[0]
+
+    to_division = None
+    transfer_date = flags.get('date')
+    for i, a in enumerate(args):
+        if a == '--to' and i + 1 < len(args):
+            to_division = args[i + 1]
+        elif a == '--date' and i + 1 < len(args):
+            transfer_date = args[i + 1]
+
+    if to_division is None:
+        print("  --to <division> is required.")
+        sys.exit(1)
+
+    if not transfer_date:
+        transfer_date = date.today().strftime("%Y-%m-%d")
+    err = validate_date(transfer_date)
+    if err:
+        print(f"  Invalid date '{transfer_date}': {err}")
+        sys.exit(1)
+
+    divisions = config.get('divisions', [])
+    if not divisions:
+        print("  No divisions configured. Add divisions to config.yaml first.")
+        sys.exit(1)
+    if to_division not in divisions:
+        print(f"  Unknown division '{to_division}'. Configured: {', '.join(divisions)}")
+        sys.exit(1)
+
+    asset = load_entity(MODULE, slug)
+    if not asset:
+        print(f"Asset '{slug}' not found.")
+        sys.exit(1)
+
+    old_division = asset.get('division')
+    if old_division == to_division:
+        print(f"  Asset '{asset['name']}' is already in division '{to_division}'. Nothing to do.")
+        return
+
+    nbv = _calculate_nbv(asset)
+    if nbv > 0:
+        asset_account = asset['accounts']['asset']
+        tags = build_tags('1011', source=f'assets/{slug}.yaml', division=to_division, transfer=f"{old_division or 'none'}->{to_division}")
+        postings = [
+            (asset_account, currency, float(nbv)),
+            (asset_account, currency, float(-nbv)),
+        ]
+        entry = format_entry(
+            transfer_date,
+            f"Transfer asset: {asset['name']} ({old_division or 'none'} → {to_division})",
+            postings, tags)
+        year = transfer_date[:4]
+        ensure_year_structure(int(year))
+        journal_path = get_generated_dir() / year / "assets.journal"
+        append_journal(journal_path, entry)
+
+    asset['division'] = to_division
+    save_entity(MODULE, slug, asset)
+    # The division was used: record it as the last used (I71).
+    config.setdefault('defaults', {})['last_division'] = to_division
+    from lib.helpers import save_config
+    save_config(config)
+
+    if not flags.get('quiet'):
+        print(f"\n  Transferred: {asset['name']} ({old_division or 'none'} → {to_division})")
+        if nbv > 0:
+            print(f"  Net book value: {currency} {nbv}")
+            print(f"  Written to: generated/{transfer_date[:4]}/assets.journal")
+        else:
+            print("  Net book value is 0 — no journal entry needed.")
+        print(f"  Updated: assets/{slug}.yaml")
+
+
 # ─── pair asset summary ───────────────────────────────────────────────────
 
 def cmd_summary(flags, args):
@@ -770,12 +873,7 @@ def _write_disposal_entry(asset, config):
         pair = '1011'
         postings.append((asset_account, currency, float(-cost)))
 
-    tags = {
-        'pair': pair,
-        'source': f'assets/{slug}.yaml',
-        'disposal': disposal['method'],
-        'proceeds': str(float(proceeds)),
-    }
+    tags = build_tags(pair, source=f'assets/{slug}.yaml', disposal=disposal['method'], proceeds=str(float(proceeds)))
 
     entry = format_entry(disposal_date, f"Dispose asset: {name} ({disposal['method']})",
                          postings, tags)
@@ -944,12 +1042,7 @@ def _generate_amort_entries(asset, through_date_str):
             desc_parts[0] += " final"
 
         # Tags
-        tags = {
-            'pair': '0010',
-            'source': f'assets/{slug}.yaml',
-            'period': entry_date.strftime("%Y-%m"),
-            'seq': f'{seq}/{useful_life}',
-        }
+        tags = build_tags('0010', source=f'assets/{slug}.yaml', period=entry_date.strftime("%Y-%m"), seq=f'{seq}/{useful_life}')
         if seq == 1 and purchase_date.day > 1:
             days_in_month = monthrange(purchase_date.year, purchase_date.month)[1]
             days_remaining = days_in_month - purchase_date.day + 1
@@ -1095,11 +1188,7 @@ def cmd_writedown(flags, args):
         (accum_account, currency, float(-amount)),
     ]
 
-    tags = {
-        'pair': '0010',
-        'source': f'assets/{slug}.yaml',
-        'reason': reason,
-    }
+    tags = build_tags('0010', source=f'assets/{slug}.yaml', reason=reason)
 
     entry = format_entry(writedown_date,
                          f"Writedown: {asset['name']} — {reason}",

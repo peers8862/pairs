@@ -4,13 +4,15 @@ import sys
 import re
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from lib.helpers import (
     load_config, money, prompt, prompt_choice, confirm,
-    validate_date, validate_positive_number, parse_global_flags, BASE_DIR
+    validate_date, validate_positive_number, parse_global_flags, BASE_DIR,
+    prompt_division, resolve_division_flag
 )
 from lib.journal import (
-    format_entry, append_journal, ensure_year_structure, get_generated_dir
+    build_tags, format_entry, append_journal, ensure_year_structure, get_generated_dir
 )
 
 
@@ -74,6 +76,8 @@ Flags for 'add':
   --category CAT      Category
   --from METHOD       Payment method (bank or credit-card)
   --date DATE         Expense date
+  --division DIV      Division (explicit flag wins over the last-used default)
+  --receipt PATH      Receipt file (must exist; stored as a receipt: tag)
 
 Flags for 'list':
   --period SPEC       Filter by period (YYYY, YYYY-MM, YYYY-QN)
@@ -84,6 +88,35 @@ Categories:
   office, software, professional, travel, meals, marketing,
   telecom, utilities, insurance, bank-fees, repairs, rent, other
 """)
+
+
+def resolve_receipt_path(raw):
+    """Validate a receipt file path and return the form stored in the tag.
+
+    Relative paths resolve against the entity dir; paths inside the
+    entity dir are stored relative to it, so the tag stays valid when the
+    entity folder moves between machines. The file must exist — a receipt
+    path pointing at nothing is a broken link. Raises ValueError.
+    """
+    if raw is None:
+        return None
+    raw = str(raw).strip()
+    if not raw:
+        return None
+    if '\n' in raw or '\r' in raw:
+        raise ValueError("Receipt path must be a single line.")
+    # Local import, like lib.yaml_store.entity_dir: resolves the current
+    # get_entity_dir (so tests can monkeypatch it).
+    from lib.helpers import get_entity_dir
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = get_entity_dir() / path
+    if not path.is_file():
+        raise ValueError(f"Receipt file not found: {raw}")
+    try:
+        return str(path.relative_to(get_entity_dir()))
+    except ValueError:
+        return str(path)
 
 
 # ─── pair expense add ─────────────────────────────────────────────────────
@@ -100,6 +133,8 @@ def cmd_add(flags, args):
     batch_category = None
     batch_method = None
     batch_date = flags.get('date')  # --date is consumed by global flags
+    batch_receipt = None
+    flag_division = None
 
     i = 0
     while i < len(args):
@@ -113,6 +148,10 @@ def cmd_add(flags, args):
             batch_method = args[i + 1]; i += 2
         elif args[i] == '--date' and i + 1 < len(args):
             batch_date = args[i + 1]; i += 2
+        elif args[i] == '--division' and i + 1 < len(args):
+            flag_division = args[i + 1]; i += 2
+        elif args[i] == '--receipt' and i + 1 < len(args):
+            batch_receipt = args[i + 1]; i += 2
         else:
             i += 1
 
@@ -135,20 +174,36 @@ def cmd_add(flags, args):
         expense_date = prompt("Date", default=date.today().strftime("%Y-%m-%d"),
                               validator=validate_date)
 
-    # Division prompt (if divisions configured)
-    divisions = config.get('divisions', [])
+    # Division (I71): an explicit --division flag wins and is recorded as
+    # the last used; otherwise the interactive prompt defaults to the last
+    # used division. Batch mode without a flag records no division.
     division = None
-    if divisions and not flags.get('batch'):
-        last_div = config.get('defaults', {}).get('last_division', divisions[0])
-        division = prompt(f"Division", default=last_div, required=False)
-        if not division:
-            division = last_div
-        # Save last-used division
-        if 'defaults' not in config:
-            config['defaults'] = {}
-        config['defaults']['last_division'] = division
-        from lib.helpers import save_config
-        save_config(config)
+    if flag_division is not None:
+        try:
+            division = resolve_division_flag(config, flag_division)
+        except ValueError as e:
+            print(f"  {e}")
+            sys.exit(1)
+    elif not flags.get('batch'):
+        division = prompt_division(config)
+
+    # Receipt (I79): the file must exist — a path pointing at nothing is
+    # a broken link. Batch takes --receipt; interactive prompts for it.
+    receipt = None
+    if batch_receipt is not None:
+        try:
+            receipt = resolve_receipt_path(batch_receipt)
+        except ValueError as e:
+            print(f"  {e}")
+            sys.exit(1)
+    elif not flags.get('batch'):
+        raw_receipt = prompt("Receipt file (optional)", default='', required=False)
+        if raw_receipt:
+            try:
+                receipt = resolve_receipt_path(raw_receipt)
+            except ValueError as e:
+                print(f"  {e}")
+                sys.exit(1)
 
     # Resolve accounts
     expense_account = CATEGORY_ACCOUNTS.get(category, CATEGORY_ACCOUNTS['other'])
@@ -168,12 +223,11 @@ def cmd_add(flags, args):
         (source_account, currency, float(-amount_val)),
     ]
 
-    tags = {
-        'pair': pair,
-        'category': category,
-    }
+    tags = build_tags(pair, category=category)
     if division:
         tags['division'] = division
+    if receipt:
+        tags['receipt'] = receipt
 
     entry = format_entry(expense_date, description, postings, tags)
 
@@ -232,6 +286,8 @@ def cmd_list(flags, args):
     for entry in entries:
         print(f"{entry['date']:<12} {entry['description']:<35} "
               f"{entry['category']:<14} {entry['currency']} {entry['amount']:>9,.2f}")
+        if entry.get('receipt'):
+            print(f"{'':<12} Receipt: {entry['receipt']}")
         total += entry['amount']
 
     print("─" * 77)
@@ -274,6 +330,7 @@ def _parse_expense_journal(path, period_filter=None, category_filter=None, divis
                     'description': description,
                     'category': tags.get('category', 'other'),
                     'division': tags.get('division', ''),
+                    'receipt': tags.get('receipt', ''),
                     'amount': Decimal('0'),
                     'currency': 'CAD',
                 }

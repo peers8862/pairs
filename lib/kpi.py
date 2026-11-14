@@ -62,7 +62,7 @@ _B = [
     ('sales_count', 'unit', 'Sales (count)', 'count', 'manual', '', 'flow'),
     ('take_rate', 'unit', 'Take rate', 'percent', 'manual', '', 'ratio'),
     ('new_customers', 'unit', 'New paying customers', 'count', 'manual', '', 'flow'),
-    ('acquisition_spend', 'unit', 'Acquisition spend', 'money', 'manual', '', 'flow'),
+    ('acquisition_spend', 'unit', 'Acquisition spend', 'money', 'ledger', 'acquisition_spend', 'flow'),
     ('cac', 'unit', 'Customer acquisition cost (CAC)', 'money', 'derived',
      'acquisition_spend / new_customers', 'ratio'),
     ('ltv', 'unit', 'Customer lifetime value (LTV)', 'money', 'manual', '', 'ratio'),

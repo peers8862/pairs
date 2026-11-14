@@ -213,6 +213,67 @@ def confirm(message, default_yes=True):
     return raw in ('y', 'yes')
 
 
+def prompt_division(config, label="Division"):
+    """Prompt for a division, defaulting to defaults.last_division (I71).
+
+    Returns None when no divisions are configured. The chosen division is
+    recorded as config['defaults']['last_division'] (and saved) so the next
+    prompt defaults to it. A stored default never overrides an explicit
+    value: callers that already resolved a --division flag use
+    resolve_division_flag() instead and never call this. When the stored
+    default is no longer a configured division it is ignored and the first
+    division is the default.
+    """
+    divisions = config.get('divisions', [])
+    if not divisions:
+        return None
+    last = config.get('defaults', {}).get('last_division')
+    default = last if last in divisions else divisions[0]
+    division = prompt(label, default=default, required=False)
+    if not division:
+        division = default
+    config.setdefault('defaults', {})['last_division'] = division
+    save_config(config)
+    return division
+
+
+def resolve_division_flag(config, division):
+    """Validate an explicit --division value; record it as last used (I71).
+
+    Returns the division. Raises ValueError for an unknown division when
+    divisions are configured. An explicit flag always wins over the stored
+    default and is itself recorded as the new last used division.
+    """
+    divisions = config.get('divisions', [])
+    if divisions and division not in divisions:
+        raise ValueError(
+            f"Unknown division '{division}'. "
+            f"Configured: {', '.join(divisions)}")
+    config.setdefault('defaults', {})['last_division'] = division
+    save_config(config)
+    return division
+
+
+def validate_division(config, division):
+    """Validate a division filter value against configured divisions (I73).
+
+    Returns the division unchanged, or None when no division was given.
+    Raises ValueError when a division is given but none are configured, or
+    when the value is not one of the configured divisions. Unlike
+    resolve_division_flag() this only validates — it records nothing.
+    """
+    if division is None:
+        return None
+    divisions = config.get('divisions', [])
+    if not divisions:
+        raise ValueError("No divisions configured. Add divisions to config.yaml first.")
+    if division not in divisions:
+        raise ValueError(
+            f"Unknown division '{division}'. "
+            f"Configured: {', '.join(divisions)}")
+    return division
+
+
 # ─── Validators ──────────────────────────────────────────────────────────────
 
 def slugify(text):

@@ -14,6 +14,7 @@ import subprocess
 
 from lib.journal import (
     append_journal, ensure_year_structure, ensure_generated_include, get_generated_dir,
+    require_single_line,
 )
 
 # Column at which posting amounts are aligned (matches lib/journal.py convention).
@@ -58,21 +59,26 @@ def serialize_entry(fields):
 
     Returns journal text ending with a blank line.
     """
+    require_single_line(fields['date'], "date")
     header = fields['date']
 
     status = (fields.get('status') or '').strip()
+    require_single_line(status, "status")
     if status in ('!', '*'):
         header += f" {status}"
 
     code = (fields.get('code') or '').strip()
+    require_single_line(code, "code")
     if code:
         header += f" ({code})"
 
     desc = _description(fields)
+    require_single_line(desc, "description")
     if desc:
         header += f" {desc}"
 
     tags = (fields.get('tags') or '').strip()
+    require_single_line(tags, "tags")
     if tags:
         header += f"  ; {tags}"
 
@@ -82,22 +88,27 @@ def serialize_entry(fields):
         account = (posting.get('account') or '').strip()
         if not account:
             continue
+        require_single_line(account, "account")
 
         # Everything right of the account name. Assembled first so we know
         # whether the two-space delimiter is needed at all.
         right = (posting.get('amount') or '').strip()
+        require_single_line(right, "amount")
 
         cost = (posting.get('cost') or '').strip()
+        require_single_line(cost, "cost")
         if right and cost:
             cost_type = posting.get('cost_type') or '@'
             right += f" {cost_type} {cost}"
 
         assertion = (posting.get('assertion') or '').strip()
+        require_single_line(assertion, "assertion")
         if assertion:
             assertion_type = posting.get('assertion_type') or '='
             right = f"{right} {assertion_type} {assertion}" if right else f"{assertion_type} {assertion}"
 
         comment = (posting.get('comment') or '').strip()
+        require_single_line(comment, "comment")
 
         if right:
             padding = max(2, _AMOUNT_COLUMN - len(account))
